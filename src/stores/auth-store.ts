@@ -51,8 +51,11 @@ function checkRateLimit(): { allowed: boolean; retryAfterMs: number } {
 
 /** Map Supabase error messages to user-friendly Arabic messages */
 function getSafeErrorMessage(error: unknown): string {
-  if (error && typeof error === 'object' && 'message' in error) {
-    const msg = (error as { message: string }).message.toLowerCase();
+  if (error && typeof error === 'object') {
+    const err = error as { message?: string; code?: string; error_code?: string; status?: number; msg?: string };
+    const msg = (err.message || err.msg || '').toLowerCase();
+    const code = err.code || err.error_code || '';
+
     if (msg.includes('invalid login credentials') || msg.includes('invalid_credentials')) {
       return 'البريد الإلكتروني أو كلمة المرور غير صحيحة';
     }
@@ -68,8 +71,22 @@ function getSafeErrorMessage(error: unknown): string {
     if (msg.includes('rate limit') || msg.includes('too many')) {
       return 'طلبات كثيرة جداً، يرجى المحاولة لاحقاً';
     }
-    if (msg.includes('network')) {
+    if (msg.includes('network') || msg.includes('failed to fetch') || msg.includes('networkerror')) {
       return 'خطأ في الاتصال بالشبكة';
+    }
+    // RLS policy violation - most common cause of registration errors
+    if (msg.includes('row-level security') || msg.includes('rls') || code === '42501') {
+      return 'خطأ في إنشاء الملف الشخصي. يرجى المحاولة مرة أخرى أو التواصل مع الدعم';
+    }
+    // Duplicate key error (trigger already created the profile)
+    if (msg.includes('duplicate key') || msg.includes('unique constraint') || code === '23505') {
+      return 'الحساب موجود بالفعل. يرجى تسجيل الدخول';
+    }
+    // Signup disabled or email provider disabled
+    if (msg.includes('signup is disabled') || msg.includes('signups not allowed') || 
+        msg.includes('email_provider_disabled') || msg.includes('email signups are disabled') ||
+        code === 'email_provider_disabled') {
+      return 'التسجيل بالبريد الإلكتروني غير مفعّل حالياً. يرجى التواصل مع المشرف أو تفعيل التسجيل من إعدادات Supabase';
     }
   }
   // Generic message - don't leak internal details
@@ -104,11 +121,33 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.user) {
-        const { data: profile } = await supabase
+        let { data: profile } = await supabase
           .from('users')
           .select('*')
           .eq('id', session.user.id)
           .single();
+        
+        // If profile doesn't exist, try to create it from auth metadata
+        if (!profile) {
+          const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'مستخدم';
+          const userRole = session.user.user_metadata?.role || 'student';
+          
+          await supabase.from('users').insert({
+            id: session.user.id,
+            email: session.user.email || '',
+            name: userName,
+            role: userRole,
+          });
+          
+          // Fetch the newly created profile (with teacher_code if teacher)
+          const { data: newProfile } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          
+          profile = newProfile;
+        }
         
         if (profile) {
           set({ user: profile as UserProfile, loading: false, initialized: true });
@@ -125,11 +164,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Listen for auth changes
     supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
-        const { data: profile } = await supabase
+        let { data: profile } = await supabase
           .from('users')
           .select('*')
           .eq('id', session.user.id)
           .single();
+        
+        // If profile doesn't exist, try to create it from auth metadata
+        if (!profile) {
+          const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'مستخدم';
+          const userRole = session.user.user_metadata?.role || 'student';
+          
+          await supabase.from('users').insert({
+            id: session.user.id,
+            email: session.user.email || '',
+            name: userName,
+            role: userRole,
+          });
+          
+          const { data: newProfile } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          
+          profile = newProfile;
+        }
         
         if (profile) {
           set({ user: profile as UserProfile, loading: false });
@@ -164,7 +224,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) return { error: 'فشل في الحصول على بيانات المستخدم' };
       
-      const { data: profile } = await supabase
+      let { data: profile } = await supabase
         .from('users')
         .select('*')
         .eq('id', authUser.id)
@@ -175,9 +235,55 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         signInRateLimit.attempts = 0;
         set({ user: profile as UserProfile, loading: false });
         return { error: null };
-      } else {
+      }
+      
+      // Profile doesn't exist yet - try to create it
+      // This handles users who signed up but profile wasn't created (e.g. email confirmation flow)
+      const userName = authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'مستخدم';
+      const userRole = authUser.user_metadata?.role || 'student';
+      
+      const { error: createError } = await supabase
+        .from('users')
+        .insert({
+          id: authUser.id,
+          email: authUser.email || sanitizedEmail,
+          name: userName,
+          role: userRole,
+        });
+      
+      if (createError) {
+        // If duplicate key, the profile was just created (race condition) - fetch it
+        const err = createError as { code?: string; message?: string };
+        if (err.code === '23505' || (err.message || '').includes('duplicate key')) {
+          const { data: retryProfile } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', authUser.id)
+            .single();
+          
+          if (retryProfile) {
+            signInRateLimit.attempts = 0;
+            set({ user: retryProfile as UserProfile, loading: false });
+            return { error: null };
+          }
+        }
         return { error: 'لم يتم العثور على حساب. يرجى التسجيل أولاً.' };
       }
+      
+      // Fetch the newly created profile
+      const { data: newProfile } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
+      
+      if (newProfile) {
+        signInRateLimit.attempts = 0;
+        set({ user: newProfile as UserProfile, loading: false });
+        return { error: null };
+      }
+      
+      return { error: 'لم يتم العثور على حساب. يرجى التسجيل أولاً.' };
     } catch {
       return { error: 'حدث خطأ غير متوقع' };
     }
@@ -214,6 +320,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const needsConfirmation = !!signUpData.user && !signUpData.session;
       
       if (needsConfirmation) {
+        // The auth trigger (if set up) will auto-create the profile.
+        // If no trigger, the profile will be created on first login.
         return { error: null, needsConfirmation: true };
       }
 
@@ -221,7 +329,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const authUser = signUpData.user;
       if (!authUser) return { error: 'فشل في إنشاء الحساب' };
       
-      // Create profile in users table
+      // Try to fetch existing profile first (may have been created by auth trigger)
+      let { data: profile } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
+      
+      if (profile) {
+        // Profile already exists (created by auth trigger)
+        set({ user: profile as UserProfile, loading: false });
+        return { error: null, needsConfirmation: false };
+      }
+
+      // Profile doesn't exist yet - create it manually
+      // This handles the case where the auth trigger hasn't been set up
       const { error: profileError } = await supabase
         .from('users')
         .insert({
@@ -231,18 +353,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           role,
         });
       
-      if (profileError) return { error: getSafeErrorMessage(profileError) };
+      if (profileError) {
+        // If duplicate key error, the profile was created by the trigger
+        // after our select but before our insert - just fetch it
+        const err = profileError as { code?: string; message?: string };
+        if (err.code === '23505' || (err.message || '').includes('duplicate key')) {
+          const { data: retryProfile } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', authUser.id)
+            .single();
+          
+          if (retryProfile) {
+            set({ user: retryProfile as UserProfile, loading: false });
+            return { error: null, needsConfirmation: false };
+          }
+        }
+        return { error: getSafeErrorMessage(profileError) };
+      }
       
       // Fetch the created profile (with teacher_code if teacher)
-      const { data: profile } = await supabase
+      const { data: newProfile } = await supabase
         .from('users')
         .select('*')
         .eq('id', authUser.id)
         .single();
       
-      if (profile) {
-        set({ user: profile as UserProfile, loading: false });
-        return { error: null, needsConfirmation: false };
+      if (newProfile) {
+        set({ user: newProfile as UserProfile, loading: false });
       }
       
       return { error: null, needsConfirmation: false };
