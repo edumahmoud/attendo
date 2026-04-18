@@ -11,7 +11,11 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useAppStore } from '@/stores/app-store';
 import { toast } from 'sonner';
 
-export default function LoginForm() {
+interface LoginFormProps {
+  onSwitchToRegister?: () => void;
+}
+
+export default function LoginForm({ onSwitchToRegister }: LoginFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -66,10 +70,18 @@ export default function LoginForm() {
       if (error) {
         toast.error(error);
       }
+      // Google OAuth redirects away - the auth state change listener
+      // in the auth store will handle navigation after redirect back
     } catch {
       toast.error('حدث خطأ غير متوقع');
     } finally {
       setIsGoogleLoading(false);
+    }
+  };
+
+  const handleSwitchToRegister = () => {
+    if (onSwitchToRegister) {
+      onSwitchToRegister();
     }
   };
 
@@ -120,6 +132,7 @@ export default function LoginForm() {
                     className="pr-10 h-11 bg-gray-50/50 border-gray-200 focus:border-emerald-500 focus:ring-emerald-500/20 text-right"
                     disabled={isLoading}
                     dir="ltr"
+                    maxLength={254}
                   />
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 </div>
@@ -239,24 +252,26 @@ export default function LoginForm() {
               </Button>
             </motion.div>
 
-            {/* Register Link */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.8 }}
-              className="mt-6 text-center"
-            >
-              <p className="text-sm text-gray-500">
-                ليس لديك حساب؟{' '}
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage('role-selection')}
-                  className="font-semibold text-emerald-600 hover:text-emerald-700 transition-colors hover:underline"
-                >
-                  أنشئ حساباً جديداً
-                </button>
-              </p>
-            </motion.div>
+            {/* Register Link - uses onSwitchToRegister prop */}
+            {onSwitchToRegister && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.8 }}
+                className="mt-6 text-center"
+              >
+                <p className="text-sm text-gray-500">
+                  ليس لديك حساب؟{' '}
+                  <button
+                    type="button"
+                    onClick={handleSwitchToRegister}
+                    className="font-semibold text-emerald-600 hover:text-emerald-700 transition-colors hover:underline"
+                  >
+                    أنشئ حساباً جديداً
+                  </button>
+                </p>
+              </motion.div>
+            )}
           </CardContent>
         </Card>
       </motion.div>

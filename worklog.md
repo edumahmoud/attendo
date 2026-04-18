@@ -1,48 +1,122 @@
-# Examy Project Worklog
+# Worklog - EduAI (Examy) Security & Code Quality Improvements
+
+## Date: 2025-03-05
 
 ---
-Task ID: 1
-Agent: Main Orchestrator
-Task: Clone and understand the Examy application
 
-Work Log:
-- Cloned the repo from https://github.com/edumahmoud/examy.git
-- Read all source files (App.tsx, Auth.tsx, StudentDashboard.tsx, TeacherDashboard.tsx, QuizView.tsx, SummaryView.tsx, Sidebar.tsx, Settings.tsx, gemini.ts, firebase.ts, Toast.tsx, ErrorBoundary.tsx)
-- Analyzed the complete application architecture, data models, and features
+## Task 1: Improve Auth Store Security ✅
 
-Stage Summary:
-- Examy (EduAI) is an Arabic RTL educational platform for university students and teachers
-- Uses Google Gemini AI for summarizing content and generating quizzes (MCQ, Boolean, Completion, Matching)
-- Currently uses Firebase (Auth + Firestore) for backend
-- Key data models: users, summaries, quizzes, scores
-- Only supports Google OAuth sign-in (no email/password registration)
-- Identified multiple issues: security vulnerabilities, incomplete features, code duplication, type safety issues
+**File:** `src/stores/auth-store.ts`
+
+### Changes Made:
+1. **Input Validation & Sanitization**
+   - Added `sanitizeInput()` — strips HTML tags and trims whitespace to prevent XSS
+   - Added `isValidEmail()` — validates email format and max length (254 chars)
+   - Added `isValidName()` — validates name length (1-100 chars) after sanitization
+   - Applied sanitization in `signInWithEmail`, `signUpWithEmail`, and `updateProfile`
+   - All emails are lowercased after sanitization
+
+2. **Rate Limiting for Sign-In**
+   - Added client-side rate limiting: max 5 attempts per 15-minute window
+   - `checkRateLimit()` tracks attempts with timestamps
+   - Rate limit resets on successful login
+   - Displays remaining wait time in Arabic when blocked
+
+3. **Safe Error Messages**
+   - Added `getSafeErrorMessage()` that maps Supabase error codes to user-friendly Arabic messages
+   - Handles: invalid credentials, email not confirmed, user already registered, weak password, rate limits, network errors
+   - Falls back to generic Arabic message — never exposes internal error details
+
+4. **signUpWithEmail Improvements**
+   - Return type now includes `needsConfirmation?: boolean`
+   - Detects if Supabase auto-confirms emails (session available immediately) vs requires email confirmation (user exists but no session)
+   - When confirmation needed, returns `{ error: null, needsConfirmation: true }`
+   - When auto-confirmed, creates profile in users table and returns `{ error: null, needsConfirmation: false }`
 
 ---
-Task ID: 2
-Agent: Main Orchestrator
-Task: Build complete Examy application with Supabase migration
 
-Work Log:
-- Created Supabase database schema (supabase/schema.sql) with users, teacher_student_links, summaries, quizzes, scores tables, RLS policies, triggers, and views
-- Created Supabase client (lib/supabase.ts) and server client (lib/supabase-server.ts)
-- Created TypeScript types (lib/types.ts) for all data models
-- Created Zustand stores: auth-store.ts (auth state management) and app-store.ts (navigation state)
-- Created API routes: /api/gemini/summary, /api/gemini/quiz, /api/gemini/evaluate (using z-ai-web-dev-sdk)
-- Built auth components: login-form.tsx, register-form.tsx, role-selection.tsx (email/password + Google OAuth)
-- Built shared components: app-sidebar.tsx, settings-modal.tsx, stat-card.tsx
-- Built student dashboard: student-dashboard.tsx with all 5 sections
-- Built teacher dashboard: teacher-dashboard.tsx with all 5 sections including analytics charts
-- Built quiz-view.tsx with 4 question types (MCQ, Boolean, Completion, Matching)
-- Built summary-view.tsx with ReactMarkdown rendering and RTL Arabic typography
-- Built main page.tsx that ties everything together with auth flow and navigation
-- Fixed pdfjs-dist DOMMatrix server-side error with lazy loading
-- Fixed auth form navigation links
+## Task 2: Improve API Routes Security ✅
 
-Stage Summary:
-- Complete migration from Firebase to Supabase (no Firebase code remains)
-- Added email/password registration capability (not just Google OAuth)
-- Improved UI with emerald/teal color scheme, shadcn/ui components, framer-motion animations
-- Improved security: Gemini API calls moved to backend API routes, content length limits, RLS policies
-- Comprehensive Supabase database schema with proper indexes, triggers, and RLS
-- App passes ESLint and runs successfully on port 3000
+**Files:**
+- `src/lib/api-security.ts` (NEW — shared security utilities)
+- `src/app/api/gemini/summary/route.ts`
+- `src/app/api/gemini/quiz/route.ts`
+- `src/app/api/gemini/evaluate/route.ts`
+
+### Changes Made:
+
+1. **New Shared Module: `src/lib/api-security.ts`**
+   - `checkRateLimit()` — IP-based in-memory rate limiting (10 requests/minute per IP)
+   - `getRateLimitHeaders()` — generates `X-RateLimit-Remaining`, `X-RateLimit-Limit`, `Retry-After` headers
+   - `validateRequest()` — validates Content-Type must be `application/json`, validates Content-Length <= 1MB
+   - `sanitizeString()` — strips HTML tags, trims whitespace, enforces max length
+   - `safeErrorResponse()` — returns error JSON without exposing internals
+
+2. **All 3 API Routes Updated:**
+   - Content-Type validation (415 if not JSON)
+   - Request body size limit (413 if too large)
+   - Rate limiting with proper headers (429 if exceeded)
+   - Input sanitization with `sanitizeString()` before sending to AI
+   - Rate limit headers included in all responses
+   - Removed `raw` field from quiz route error response (was leaking AI output)
+   - Better type checking (e.g., evaluate route now validates all fields are strings)
+   - Generic error responses that don't expose internal details
+
+---
+
+## Task 3: Fix Register Form ✅
+
+**File:** `src/components/auth/register-form.tsx`
+
+### Changes Made:
+1. **Added `onSwitchToLogin` prop** — allows parent component to control auth mode switching
+2. **Fixed Google Sign-In** — added comment clarifying that Google OAuth redirects away; the auth state change listener handles navigation after redirect (no incorrect `setCurrentPage` call)
+3. **Fixed "Login Link"** — now uses `onSwitchToLogin` prop instead of `setCurrentPage('role-selection')` which was incorrect
+4. **Added Password Strength Indicator:**
+   - Visual bar with 5 segments showing strength level
+   - Color-coded: red (weak), yellow (medium), blue (good), emerald (strong)
+   - Criteria: length >= 6, length >= 8, uppercase letter, number, special character
+   - Shows Arabic label: ضعيفة / متوسطة / جيدة / قوية
+5. **Added `maxLength` attributes** — name (100), email (254) to match backend validation
+6. **Handle `needsConfirmation`** — shows appropriate toast message when email confirmation is required
+
+---
+
+## Task 4: Fix Login Form ✅
+
+**File:** `src/components/auth/login-form.tsx`
+
+### Changes Made:
+1. **Added `onSwitchToRegister` prop** — allows parent to control mode switching
+2. **Fixed "Register Link"** — now uses `onSwitchToRegister` prop instead of `setCurrentPage('role-selection')` which was wrong
+3. **Google Sign-In comment** — clarified that auth state listener handles post-OAuth navigation
+4. **Added `maxLength` attribute** — email input limited to 254 characters
+5. **Conditional rendering** — register link only shows when `onSwitchToRegister` prop is provided
+
+---
+
+## Task 5: Update page.tsx for Auth Mode Switching ✅
+
+**File:** `src/app/page.tsx`
+
+### Changes Made:
+1. **Passed props to LoginForm:** `onSwitchToRegister={() => setAuthMode('register')}`
+2. **Passed props to RegisterForm:** `onSwitchToLogin={() => setAuthMode('login')}`
+3. **Removed duplicate external links** — the "Override the register/login link" sections that were rendered below the forms have been removed since the forms now handle switching internally via props
+
+---
+
+## Task 6: Update Supabase Client ✅
+
+**File:** `src/lib/supabase.ts`
+
+### Changes Made:
+1. **Added `supabasePublishableKey`** — reads from `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` env variable with fallback to `sb_publishable_zOn0U6HWMiINle9g7IshIw_bOOYNtRm`
+2. **Exported `supabasePublishableKey`** — available for use throughout the application
+
+---
+
+## Lint Verification ✅
+
+- Ran `bun run lint` — **passed with no errors**
+- Dev server compiles successfully

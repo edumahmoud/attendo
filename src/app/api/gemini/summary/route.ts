@@ -1,19 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
+import { checkRateLimit, getRateLimitHeaders, validateRequest, sanitizeString, safeErrorResponse } from '@/lib/api-security';
 
 export async function POST(request: NextRequest) {
   try {
-    const { content } = await request.json();
-    
-    if (!content || typeof content !== 'string' || content.trim().length === 0) {
+    // Content-Type and size validation
+    const validationError = validateRequest(request);
+    if (validationError) return validationError;
+
+    // Rate limiting
+    const rateLimit = checkRateLimit(request);
+    const rateLimitHeaders = getRateLimitHeaders(rateLimit.remaining, rateLimit.retryAfterMs);
+    if (!rateLimit.allowed) {
       return NextResponse.json(
-        { success: false, error: 'المحتوى مطلوب' },
-        { status: 400 }
+        { success: false, error: 'طلبات كثيرة جداً. يرجى المحاولة لاحقاً' },
+        { status: 429, headers: rateLimitHeaders }
       );
     }
 
-    // Limit content length to prevent abuse
-    const sanitizedContent = content.substring(0, 50000);
+    const body = await request.json();
+    const rawContent = body.content;
+
+    if (!rawContent || typeof rawContent !== 'string' || rawContent.trim().length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'المحتوى مطلوب' },
+        { status: 400, headers: rateLimitHeaders }
+      );
+    }
+
+    // Sanitize and limit content length
+    const sanitizedContent = sanitizeString(rawContent, 50000);
+    if (sanitizedContent.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'المحتوى غير صالح بعد التنظيف' },
+        { status: 400, headers: rateLimitHeaders }
+      );
+    }
 
     const zai = await ZAI.create();
     const completion = await zai.chat.completions.create({
@@ -35,16 +57,16 @@ export async function POST(request: NextRequest) {
     if (!summary) {
       return NextResponse.json(
         { success: false, error: 'فشل في إنشاء الملخص' },
-        { status: 500 }
+        { status: 500, headers: rateLimitHeaders }
       );
     }
 
-    return NextResponse.json({ success: true, data: { summary } });
+    return NextResponse.json(
+      { success: true, data: { summary } },
+      { headers: rateLimitHeaders }
+    );
   } catch (error) {
     console.error('Summary generation error:', error);
-    return NextResponse.json(
-      { success: false, error: 'حدث خطأ أثناء إنشاء الملخص' },
-      { status: 500 }
-    );
+    return safeErrorResponse('حدث خطأ أثناء إنشاء الملخص');
   }
 }

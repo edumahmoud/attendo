@@ -1,20 +1,58 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
+import { checkRateLimit, getRateLimitHeaders, validateRequest, sanitizeString, safeErrorResponse } from '@/lib/api-security';
 
 export async function POST(request: NextRequest) {
   try {
-    const { question, correctAnswer, studentAnswer } = await request.json();
+    // Content-Type and size validation
+    const validationError = validateRequest(request);
+    if (validationError) return validationError;
+
+    // Rate limiting
+    const rateLimit = checkRateLimit(request);
+    const rateLimitHeaders = getRateLimitHeaders(rateLimit.remaining, rateLimit.retryAfterMs);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { success: false, error: 'طلبات كثيرة جداً. يرجى المحاولة لاحقاً' },
+        { status: 429, headers: rateLimitHeaders }
+      );
+    }
+
+    const body = await request.json();
+    const { question, correctAnswer, studentAnswer } = body;
     
     if (!question || !correctAnswer || !studentAnswer) {
       return NextResponse.json(
         { success: false, error: 'جميع الحقول مطلوبة' },
-        { status: 400 }
+        { status: 400, headers: rateLimitHeaders }
+      );
+    }
+
+    if (typeof question !== 'string' || typeof correctAnswer !== 'string' || typeof studentAnswer !== 'string') {
+      return NextResponse.json(
+        { success: false, error: 'يجب أن تكون جميع الحقول نصية' },
+        { status: 400, headers: rateLimitHeaders }
+      );
+    }
+
+    // Sanitize inputs with reasonable length limits
+    const sanitizedQuestion = sanitizeString(question, 2000);
+    const sanitizedCorrectAnswer = sanitizeString(correctAnswer, 1000);
+    const sanitizedStudentAnswer = sanitizeString(studentAnswer, 1000);
+
+    if (!sanitizedQuestion || !sanitizedCorrectAnswer || !sanitizedStudentAnswer) {
+      return NextResponse.json(
+        { success: false, error: 'حقول غير صالحة بعد التنظيف' },
+        { status: 400, headers: rateLimitHeaders }
       );
     }
 
     // First check for exact match
-    if (studentAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase()) {
-      return NextResponse.json({ success: true, data: { isCorrect: true } });
+    if (sanitizedStudentAnswer.toLowerCase() === sanitizedCorrectAnswer.toLowerCase()) {
+      return NextResponse.json(
+        { success: true, data: { isCorrect: true } },
+        { headers: rateLimitHeaders }
+      );
     }
 
     const zai = await ZAI.create();
@@ -26,7 +64,7 @@ export async function POST(request: NextRequest) {
         },
         {
           role: 'user',
-          content: `السؤال: ${question}\nالإجابة النموذجية: ${correctAnswer}\nإجابة الطالب: ${studentAnswer}\n\nهل إجابة الطالب صحيحة معنوياً؟ رد بـ true أو false فقط.`
+          content: `السؤال: ${sanitizedQuestion}\nالإجابة النموذجية: ${sanitizedCorrectAnswer}\nإجابة الطالب: ${sanitizedStudentAnswer}\n\nهل إجابة الطالب صحيحة معنوياً؟ رد بـ true أو false فقط.`
         }
       ],
       thinking: { type: 'disabled' }
@@ -35,12 +73,12 @@ export async function POST(request: NextRequest) {
     const response = completion.choices[0]?.message?.content?.trim().toLowerCase() || '';
     const isCorrect = response.includes('true');
 
-    return NextResponse.json({ success: true, data: { isCorrect } });
+    return NextResponse.json(
+      { success: true, data: { isCorrect } },
+      { headers: rateLimitHeaders }
+    );
   } catch (error) {
     console.error('Evaluation error:', error);
-    return NextResponse.json(
-      { success: false, error: 'حدث خطأ أثناء تقييم الإجابة' },
-      { status: 500 }
-    );
+    return safeErrorResponse('حدث خطأ أثناء تقييم الإجابة');
   }
 }

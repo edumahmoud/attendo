@@ -111,20 +111,7 @@ export default function Home() {
                 exit={{ opacity: 0, x: 30 }}
                 transition={{ duration: 0.3 }}
               >
-                <LoginForm />
-                {/* Override the register link */}
-                <div className="mt-4 text-center">
-                  <p className="text-sm text-white/60">
-                    ليس لديك حساب؟{' '}
-                    <button
-                      type="button"
-                      onClick={() => setAuthMode('register')}
-                      className="font-semibold text-white hover:text-emerald-200 transition-colors hover:underline"
-                    >
-                      أنشئ حساباً جديداً
-                    </button>
-                  </p>
-                </div>
+                <LoginForm onSwitchToRegister={() => setAuthMode('register')} />
               </motion.div>
             ) : (
               <motion.div
@@ -134,20 +121,7 @@ export default function Home() {
                 exit={{ opacity: 0, x: -30 }}
                 transition={{ duration: 0.3 }}
               >
-                <RegisterForm />
-                {/* Override the login link */}
-                <div className="mt-4 text-center">
-                  <p className="text-sm text-white/60">
-                    لديك حساب بالفعل؟{' '}
-                    <button
-                      type="button"
-                      onClick={() => setAuthMode('login')}
-                      className="font-semibold text-white hover:text-emerald-200 transition-colors hover:underline"
-                    >
-                      سجّل دخولك
-                    </button>
-                  </p>
-                </div>
+                <RegisterForm onSwitchToLogin={() => setAuthMode('login')} />
               </motion.div>
             )}
           </AnimatePresence>

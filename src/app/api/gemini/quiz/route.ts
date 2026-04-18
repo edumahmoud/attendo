@@ -1,18 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
+import { checkRateLimit, getRateLimitHeaders, validateRequest, sanitizeString, safeErrorResponse } from '@/lib/api-security';
 
 export async function POST(request: NextRequest) {
   try {
-    const { content } = await request.json();
-    
-    if (!content || typeof content !== 'string' || content.trim().length === 0) {
+    // Content-Type and size validation
+    const validationError = validateRequest(request);
+    if (validationError) return validationError;
+
+    // Rate limiting
+    const rateLimit = checkRateLimit(request);
+    const rateLimitHeaders = getRateLimitHeaders(rateLimit.remaining, rateLimit.retryAfterMs);
+    if (!rateLimit.allowed) {
       return NextResponse.json(
-        { success: false, error: 'المحتوى مطلوب' },
-        { status: 400 }
+        { success: false, error: 'طلبات كثيرة جداً. يرجى المحاولة لاحقاً' },
+        { status: 429, headers: rateLimitHeaders }
       );
     }
 
-    const sanitizedContent = content.substring(0, 50000);
+    const body = await request.json();
+    const rawContent = body.content;
+
+    if (!rawContent || typeof rawContent !== 'string' || rawContent.trim().length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'المحتوى مطلوب' },
+        { status: 400, headers: rateLimitHeaders }
+      );
+    }
+
+    // Sanitize and limit content length
+    const sanitizedContent = sanitizeString(rawContent, 50000);
+    if (sanitizedContent.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'المحتوى غير صالح بعد التنظيف' },
+        { status: 400, headers: rateLimitHeaders }
+      );
+    }
 
     const zai = await ZAI.create();
     const completion = await zai.chat.completions.create({
@@ -42,7 +65,7 @@ export async function POST(request: NextRequest) {
     if (!responseText) {
       return NextResponse.json(
         { success: false, error: 'فشل في إنشاء الاختبار' },
-        { status: 500 }
+        { status: 500, headers: rateLimitHeaders }
       );
     }
 
@@ -58,26 +81,25 @@ export async function POST(request: NextRequest) {
         questions = JSON.parse(responseText);
       }
     } catch {
-      // If parsing fails, return the raw text for debugging
       return NextResponse.json(
-        { success: false, error: 'فشل في تحليل استجابة الذكاء الاصطناعي', raw: responseText },
-        { status: 500 }
+        { success: false, error: 'فشل في تحليل استجابة الذكاء الاصطناعي' },
+        { status: 500, headers: rateLimitHeaders }
       );
     }
 
     if (!Array.isArray(questions)) {
       return NextResponse.json(
         { success: false, error: 'تنسيق الأسئلة غير صحيح' },
-        { status: 500 }
+        { status: 500, headers: rateLimitHeaders }
       );
     }
 
-    return NextResponse.json({ success: true, data: { questions } });
+    return NextResponse.json(
+      { success: true, data: { questions } },
+      { headers: rateLimitHeaders }
+    );
   } catch (error) {
     console.error('Quiz generation error:', error);
-    return NextResponse.json(
-      { success: false, error: 'حدث خطأ أثناء إنشاء الاختبار' },
-      { status: 500 }
-    );
+    return safeErrorResponse('حدث خطأ أثناء إنشاء الاختبار');
   }
 }

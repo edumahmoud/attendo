@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
   Mail,
@@ -28,7 +28,30 @@ import { useAppStore } from '@/stores/app-store';
 import { toast } from 'sonner';
 import type { UserRole } from '@/lib/types';
 
-export default function RegisterForm() {
+interface RegisterFormProps {
+  onSwitchToLogin?: () => void;
+}
+
+/** Password strength calculator */
+function getPasswordStrength(password: string): {
+  score: number;
+  label: string;
+  color: string;
+} {
+  let score = 0;
+  if (password.length >= 6) score++;
+  if (password.length >= 8) score++;
+  if (/[A-Z]/.test(password)) score++;
+  if (/[0-9]/.test(password)) score++;
+  if (/[^A-Za-z0-9]/.test(password)) score++;
+
+  if (score <= 1) return { score, label: 'ضعيفة', color: 'bg-red-500' };
+  if (score <= 2) return { score, label: 'متوسطة', color: 'bg-yellow-500' };
+  if (score <= 3) return { score, label: 'جيدة', color: 'bg-blue-500' };
+  return { score, label: 'قوية', color: 'bg-emerald-500' };
+}
+
+export default function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -41,6 +64,8 @@ export default function RegisterForm() {
 
   const { signUpWithEmail, signInWithGoogle } = useAuthStore();
   const { setCurrentPage } = useAppStore();
+
+  const passwordStrength = useMemo(() => getPasswordStrength(password), [password]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,17 +97,21 @@ export default function RegisterForm() {
 
     setIsLoading(true);
     try {
-      const { error } = await signUpWithEmail(email, password, name, role);
+      const { error, needsConfirmation } = await signUpWithEmail(email, password, name, role);
       if (error) {
         toast.error(error);
         return;
       }
 
-      toast.success('تم إنشاء الحساب بنجاح');
-      if (role === 'teacher') {
-        setCurrentPage('teacher-dashboard');
+      if (needsConfirmation) {
+        toast.success('تم إرسال رابط التأكيد إلى بريدك الإلكتروني. يرجى التحقق من بريدك والمتابعة.');
       } else {
-        setCurrentPage('student-dashboard');
+        toast.success('تم إنشاء الحساب بنجاح');
+        if (role === 'teacher') {
+          setCurrentPage('teacher-dashboard');
+        } else {
+          setCurrentPage('student-dashboard');
+        }
       }
     } catch {
       toast.error('حدث خطأ غير متوقع');
@@ -98,10 +127,18 @@ export default function RegisterForm() {
       if (error) {
         toast.error(error);
       }
+      // Google OAuth redirects away - the auth state change listener
+      // in the auth store will handle navigation after redirect back
     } catch {
       toast.error('حدث خطأ غير متوقع');
     } finally {
       setIsGoogleLoading(false);
+    }
+  };
+
+  const handleSwitchToLogin = () => {
+    if (onSwitchToLogin) {
+      onSwitchToLogin();
     }
   };
 
@@ -151,6 +188,7 @@ export default function RegisterForm() {
                     onChange={(e) => setName(e.target.value)}
                     className="pr-10 h-11 bg-gray-50/50 border-gray-200 focus:border-emerald-500 focus:ring-emerald-500/20 text-right"
                     disabled={isLoading}
+                    maxLength={100}
                   />
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 </div>
@@ -176,12 +214,13 @@ export default function RegisterForm() {
                     className="pr-10 h-11 bg-gray-50/50 border-gray-200 focus:border-emerald-500 focus:ring-emerald-500/20 text-right"
                     disabled={isLoading}
                     dir="ltr"
+                    maxLength={254}
                   />
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 </div>
               </motion.div>
 
-              {/* Password Field */}
+              {/* Password Field with Strength Indicator */}
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -216,6 +255,31 @@ export default function RegisterForm() {
                     )}
                   </button>
                 </div>
+                {/* Password Strength Indicator */}
+                {password.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map((level) => (
+                        <div
+                          key={level}
+                          className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
+                            level <= passwordStrength.score
+                              ? passwordStrength.color
+                              : 'bg-gray-200'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    <p className={`text-xs font-medium ${
+                      passwordStrength.score <= 1 ? 'text-red-500' :
+                      passwordStrength.score <= 2 ? 'text-yellow-600' :
+                      passwordStrength.score <= 3 ? 'text-blue-600' :
+                      'text-emerald-600'
+                    }`}>
+                      قوة كلمة المرور: {passwordStrength.label}
+                    </p>
+                  </div>
+                )}
               </motion.div>
 
               {/* Confirm Password Field */}
@@ -460,24 +524,26 @@ export default function RegisterForm() {
               </Button>
             </motion.div>
 
-            {/* Login Link */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.7 }}
-              className="mt-6 text-center"
-            >
-              <p className="text-sm text-gray-500">
-                لديك حساب بالفعل؟{' '}
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage('role-selection')}
-                  className="font-semibold text-emerald-600 hover:text-emerald-700 transition-colors hover:underline"
-                >
-                  سجّل دخولك
-                </button>
-              </p>
-            </motion.div>
+            {/* Login Link - uses onSwitchToLogin prop */}
+            {onSwitchToLogin && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.7 }}
+                className="mt-6 text-center"
+              >
+                <p className="text-sm text-gray-500">
+                  لديك حساب بالفعل؟{' '}
+                  <button
+                    type="button"
+                    onClick={handleSwitchToLogin}
+                    className="font-semibold text-emerald-600 hover:text-emerald-700 transition-colors hover:underline"
+                  >
+                    سجّل دخولك
+                  </button>
+                </p>
+              </motion.div>
+            )}
           </CardContent>
         </Card>
       </motion.div>
