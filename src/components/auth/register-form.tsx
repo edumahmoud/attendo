@@ -104,7 +104,9 @@ export default function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
       }
 
       if (needsConfirmation) {
-        toast.success('تم إرسال رابط التأكيد إلى بريدك الإلكتروني. يرجى التحقق من بريدك والمتابعة.');
+        toast.success('تم إرسال رابط التأكيد إلى بريدك الإلكتروني. يرجى التحقق من بريدك (تحقق من مجلد البريد المزعج أيضاً).', {
+          duration: 8000,
+        });
       } else {
         toast.success('تم إنشاء الحساب بنجاح');
         if (role === 'teacher') {
