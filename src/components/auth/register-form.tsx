@@ -59,6 +59,7 @@ export default function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [role, setRole] = useState<UserRole | null>(null);
+  const [gender, setGender] = useState<'male' | 'female' | ''>('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
@@ -94,10 +95,14 @@ export default function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
       toast.error('يرجى اختيار نوع الحساب');
       return;
     }
+    if (!gender) {
+      toast.error('يرجى اختيار الجنس');
+      return;
+    }
 
     setIsLoading(true);
     try {
-      const { error, needsConfirmation } = await signUpWithEmail(email, password, name, role);
+      const { error, needsConfirmation } = await signUpWithEmail(email, password, name, role, gender as 'male' | 'female');
       if (error) {
         toast.error(error);
         return;
@@ -449,11 +454,86 @@ export default function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
                 </div>
               </motion.div>
 
+              {/* Gender Selection */}
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.48 }}
+                className="space-y-3"
+              >
+                <Label className="text-gray-700 font-medium">الجنس</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Male */}
+                  <button
+                    type="button"
+                    onClick={() => setGender('male')}
+                    className={`relative group rounded-xl border-2 p-4 text-center transition-all duration-300 ${
+                      gender === 'male'
+                        ? 'border-emerald-500 bg-emerald-50 shadow-md shadow-emerald-500/10'
+                        : 'border-gray-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/50'
+                    }`}
+                  >
+                    <div className="flex flex-col items-center gap-2">
+                      <div
+                        className={`flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-300 ${
+                          gender === 'male'
+                            ? 'bg-emerald-500 text-white shadow-lg'
+                            : 'bg-gray-100 text-gray-500 group-hover:bg-emerald-100 group-hover:text-emerald-600'
+                        }`}
+                      >
+                        <span className="text-lg font-bold">♂</span>
+                      </div>
+                      <span
+                        className={`text-sm font-semibold transition-colors ${
+                          gender === 'male'
+                            ? 'text-emerald-700'
+                            : 'text-gray-600'
+                        }`}
+                      >
+                        ذكر
+                      </span>
+                    </div>
+                  </button>
+
+                  {/* Female */}
+                  <button
+                    type="button"
+                    onClick={() => setGender('female')}
+                    className={`relative group rounded-xl border-2 p-4 text-center transition-all duration-300 ${
+                      gender === 'female'
+                        ? 'border-emerald-500 bg-emerald-50 shadow-md shadow-emerald-500/10'
+                        : 'border-gray-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/50'
+                    }`}
+                  >
+                    <div className="flex flex-col items-center gap-2">
+                      <div
+                        className={`flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-300 ${
+                          gender === 'female'
+                            ? 'bg-emerald-500 text-white shadow-lg'
+                            : 'bg-gray-100 text-gray-500 group-hover:bg-emerald-100 group-hover:text-emerald-600'
+                        }`}
+                      >
+                        <span className="text-lg font-bold">♀</span>
+                      </div>
+                      <span
+                        className={`text-sm font-semibold transition-colors ${
+                          gender === 'female'
+                            ? 'text-emerald-700'
+                            : 'text-gray-600'
+                        }`}
+                      >
+                        أنثى
+                      </span>
+                    </div>
+                  </button>
+                </div>
+              </motion.div>
+
               {/* Submit Button */}
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 }}
+                transition={{ delay: 0.55 }}
               >
                 <Button
                   type="submit"

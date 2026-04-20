@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowRight,
   CheckCircle2,
   XCircle,
   ChevronLeft,
+  ChevronRight,
   RotateCcw,
   Eye,
   Home,
@@ -78,6 +79,27 @@ const staggerContainer = {
 };
 
 // -------------------------------------------------------
+// Shuffle utility (Fisher-Yates)
+// -------------------------------------------------------
+function shuffleArray<T>(array: T[]): T[] {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+// -------------------------------------------------------
+// Stored answer type (raw, unevaluated)
+// -------------------------------------------------------
+interface StoredAnswer {
+  selectedOption?: string | null;
+  completionInput?: string;
+  matchedPairs?: Record<string, string>;
+}
+
+// -------------------------------------------------------
 // Main Component
 // -------------------------------------------------------
 export default function QuizView({ quizId, onBack, profile, reviewScoreId }: QuizViewProps) {
@@ -96,18 +118,15 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
 
   // ─── Quiz taking state ───
   const [currentIdx, setCurrentIdx] = useState(0);
-  const [userAnswers, setUserAnswers] = useState<UserAnswer[]>([]);
+  const [storedAnswers, setStoredAnswers] = useState<Record<number, StoredAnswer>>({});
   const [answered, setAnswered] = useState(false);
-  const [isCorrect, setIsCorrect] = useState(false);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [completionInput, setCompletionInput] = useState('');
-  const [evaluatingCompletion, setEvaluatingCompletion] = useState(false);
 
   // ─── Matching state ───
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [selectedValue, setSelectedValue] = useState<string | null>(null);
   const [matchedPairs, setMatchedPairs] = useState<Record<string, string>>({});
-  const [matchingFeedback, setMatchingFeedback] = useState<'correct' | 'incorrect' | null>(null);
 
   // ─── Results state ───
   const [showResults, setShowResults] = useState(false);
@@ -115,6 +134,10 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
   const [savingScore, setSavingScore] = useState(false);
   const [quizStarted, setQuizStarted] = useState(false);
   const [resultsBlocked, setResultsBlocked] = useState(false);
+  const [evaluatedAnswers, setEvaluatedAnswers] = useState<UserAnswer[]>([]);
+
+  // ─── Shuffled matching values (memoized per question) ───
+  const shuffledValuesMap = useRef<Record<number, string[]>>({});
 
   // -------------------------------------------------------
   // Fetch quiz
@@ -196,92 +219,97 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
   const progressPct = totalQuestions > 0 ? ((currentIdx + 1) / totalQuestions) * 100 : 0;
 
   // -------------------------------------------------------
-  // Reset question state
+  // Get shuffled values for a matching question
   // -------------------------------------------------------
-  const resetQuestionState = useCallback(() => {
-    setAnswered(false);
-    setIsCorrect(false);
-    setSelectedOption(null);
-    setCompletionInput('');
-    setEvaluatingCompletion(false);
-    setSelectedKey(null);
-    setSelectedValue(null);
-    setMatchedPairs({});
-    setMatchingFeedback(null);
+  const getShuffledValues = useCallback((qIdx: number, pairs: { key: string; value: string }[] | undefined): string[] => {
+    if (!pairs) return [];
+    if (shuffledValuesMap.current[qIdx]) {
+      return shuffledValuesMap.current[qIdx];
+    }
+    const values = pairs.map(p => p.value);
+    const shuffled = shuffleArray(values);
+    shuffledValuesMap.current[qIdx] = shuffled;
+    return shuffled;
   }, []);
 
   // -------------------------------------------------------
-  // Handle MCQ answer
+  // Save current question's answer to storedAnswers
+  // -------------------------------------------------------
+  const saveCurrentAnswer = useCallback(() => {
+    if (!currentQuestion) return;
+    const stored: StoredAnswer = {};
+    if (currentQuestion.type === 'mcq' || currentQuestion.type === 'boolean') {
+      stored.selectedOption = selectedOption;
+    } else if (currentQuestion.type === 'completion') {
+      stored.completionInput = completionInput;
+    } else if (currentQuestion.type === 'matching') {
+      stored.matchedPairs = { ...matchedPairs };
+    }
+    setStoredAnswers(prev => ({ ...prev, [currentIdx]: stored }));
+  }, [currentQuestion, currentIdx, selectedOption, completionInput, matchedPairs]);
+
+  // -------------------------------------------------------
+  // Load a question's stored answer into state
+  // -------------------------------------------------------
+  const loadQuestionState = useCallback((idx: number) => {
+    const q = quiz?.questions?.[idx];
+    const stored = storedAnswers[idx];
+    setSelectedOption(stored?.selectedOption ?? null);
+    setCompletionInput(stored?.completionInput ?? '');
+    setMatchedPairs(stored?.matchedPairs ?? {});
+    setSelectedKey(null);
+    setSelectedValue(null);
+    // Mark as answered if there's a stored answer
+    if (stored) {
+      if (q?.type === 'mcq' || q?.type === 'boolean') {
+        setAnswered(!!stored.selectedOption);
+      } else if (q?.type === 'completion') {
+        setAnswered(!!stored.completionInput?.trim());
+      } else if (q?.type === 'matching') {
+        const totalPairs = q.pairs?.length || 0;
+        setAnswered(Object.keys(stored.matchedPairs || {}).length >= totalPairs);
+      } else {
+        setAnswered(false);
+      }
+    } else {
+      setAnswered(false);
+    }
+  }, [quiz, storedAnswers]);
+
+  // -------------------------------------------------------
+  // Handle MCQ answer (no immediate evaluation)
   // -------------------------------------------------------
   const handleMCQAnswer = (option: string) => {
     if (answered) return;
     setSelectedOption(option);
-    const correct = option === currentQuestion?.correctAnswer;
-    setIsCorrect(correct);
     setAnswered(true);
+    // Save immediately
+    setStoredAnswers(prev => ({ ...prev, [currentIdx]: { selectedOption: option } }));
   };
 
   // -------------------------------------------------------
-  // Handle Boolean answer
+  // Handle Boolean answer (no immediate evaluation)
   // -------------------------------------------------------
   const handleBooleanAnswer = (answer: string) => {
     if (answered) return;
     setSelectedOption(answer);
-    const correct = answer === currentQuestion?.correctAnswer;
-    setIsCorrect(correct);
     setAnswered(true);
+    // Save immediately
+    setStoredAnswers(prev => ({ ...prev, [currentIdx]: { selectedOption: answer } }));
   };
 
   // -------------------------------------------------------
-  // Handle Completion answer
+  // Handle Completion answer (no immediate evaluation)
   // -------------------------------------------------------
-  const handleCompletionCheck = async () => {
+  const handleCompletionSave = () => {
     if (answered || !completionInput.trim()) {
       if (!completionInput.trim()) {
         toast.error('يرجى إدخال إجابة');
       }
       return;
     }
-
-    setEvaluatingCompletion(true);
-
-    try {
-      // First check exact match
-      const studentAnswer = completionInput.trim();
-      const correctAnswer = currentQuestion?.correctAnswer?.trim() || '';
-
-      if (studentAnswer.toLowerCase() === correctAnswer.toLowerCase()) {
-        setIsCorrect(true);
-        setAnswered(true);
-        setEvaluatingCompletion(false);
-        return;
-      }
-
-      // Call API for semantic evaluation
-      const res = await fetch('/api/gemini/evaluate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question: currentQuestion?.question,
-          correctAnswer: currentQuestion?.correctAnswer,
-          studentAnswer,
-        }),
-      });
-
-      const data = await res.json();
-      if (data.success && data.data) {
-        setIsCorrect(data.data.isCorrect);
-      } else {
-        setIsCorrect(false);
-      }
-      setAnswered(true);
-    } catch {
-      toast.error('حدث خطأ أثناء تقييم الإجابة');
-      setIsCorrect(false);
-      setAnswered(true);
-    } finally {
-      setEvaluatingCompletion(false);
-    }
+    setAnswered(true);
+    setStoredAnswers(prev => ({ ...prev, [currentIdx]: { completionInput: completionInput.trim() } }));
   };
 
   // -------------------------------------------------------
@@ -296,6 +324,7 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
         const newPairs = { ...matchedPairs };
         delete newPairs[item];
         setMatchedPairs(newPairs);
+        setStoredAnswers(prev => ({ ...prev, [currentIdx]: { matchedPairs: newPairs } }));
         return;
       }
       setSelectedKey(item);
@@ -307,96 +336,188 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
   // When both key and value selected, create pair
   useEffect(() => {
     if (selectedKey && selectedValue) {
-      setMatchedPairs((prev) => ({ ...prev, [selectedKey]: selectedValue }));
+      const newPairs = { ...matchedPairs, [selectedKey]: selectedValue };
+      setMatchedPairs(newPairs);
       setSelectedKey(null);
       setSelectedValue(null);
+      // Check if all pairs matched now
+      if (currentQuestion?.pairs) {
+        const totalPairs = currentQuestion.pairs.length;
+        const allMatched = Object.keys(newPairs).length >= totalPairs;
+        if (allMatched) {
+          setAnswered(true);
+        }
+        setStoredAnswers(prev => ({ ...prev, [currentIdx]: { matchedPairs: newPairs } }));
+      }
     }
   }, [selectedKey, selectedValue]);
-
-  const handleMatchingCheck = () => {
-    if (answered) return;
-
-    if (!currentQuestion?.pairs) return;
-
-    // Check if all pairs are matched
-    const totalPairs = currentQuestion.pairs.length;
-    if (Object.keys(matchedPairs).length < totalPairs) {
-      toast.error('يرجى توصيل جميع العناصر أولاً');
-      return;
-    }
-
-    // All-or-nothing: check all pairs
-    const allCorrect = currentQuestion.pairs.every(
-      (pair) => matchedPairs[pair.key] === pair.value
-    );
-
-    setIsCorrect(allCorrect);
-    setMatchingFeedback(allCorrect ? 'correct' : 'incorrect');
-    setAnswered(true);
-  };
 
   const removeMatchedPair = (key: string) => {
     if (answered) return;
     const newPairs = { ...matchedPairs };
     delete newPairs[key];
     setMatchedPairs(newPairs);
+    setAnswered(false);
+    setStoredAnswers(prev => ({ ...prev, [currentIdx]: { matchedPairs: newPairs } }));
   };
 
   // -------------------------------------------------------
-  // Next question / Finish
+  // Navigate to a question
+  // -------------------------------------------------------
+  const navigateToQuestion = useCallback((idx: number) => {
+    if (idx < 0 || idx >= totalQuestions) return;
+    saveCurrentAnswer();
+    setCurrentIdx(idx);
+    loadQuestionState(idx);
+  }, [saveCurrentAnswer, loadQuestionState, totalQuestions]);
+
+  // -------------------------------------------------------
+  // Next question
   // -------------------------------------------------------
   const handleNext = () => {
-    if (!currentQuestion) return;
-
-    // Save answer
-    let answerValue: string | Record<string, string> = '';
-    if (currentQuestion.type === 'matching') {
-      answerValue = matchedPairs;
-    } else if (currentQuestion.type === 'completion') {
-      answerValue = completionInput.trim();
-    } else {
-      answerValue = selectedOption || '';
-    }
-
-    const newAnswer: UserAnswer = {
-      questionIndex: currentIdx,
-      type: currentQuestion.type,
-      answer: answerValue,
-      isCorrect,
-    };
-
-    setUserAnswers((prev) => [...prev, newAnswer]);
-
-    // Next question or finish
+    saveCurrentAnswer();
     if (currentIdx < totalQuestions - 1) {
-      resetQuestionState();
-      setCurrentIdx((prev) => prev + 1);
-    } else {
-      // Calculate final score and submit all answers
-      const finalAnswers = [...userAnswers, newAnswer];
-      const finalScore = finalAnswers.filter((a) => a.isCorrect).length;
-      saveScore(finalScore, finalAnswers);
-
-      // Check if results are visible to students
-      if (quiz.results_visible === false) {
-        setShowResults(true);
-        setResultsBlocked(true);
-        return;
-      }
-
-      setShowResults(true);
+      const nextIdx = currentIdx + 1;
+      setCurrentIdx(nextIdx);
+      loadQuestionState(nextIdx);
     }
   };
 
   // -------------------------------------------------------
-  // Save score to supabase
+  // Previous question
   // -------------------------------------------------------
-  const saveScore = async (finalScore: number, finalAnswers: UserAnswer[]) => {
+  const handlePrevious = () => {
+    saveCurrentAnswer();
+    if (currentIdx > 0) {
+      const prevIdx = currentIdx - 1;
+      setCurrentIdx(prevIdx);
+      loadQuestionState(prevIdx);
+    }
+  };
+
+  // -------------------------------------------------------
+  // Final submit: evaluate all answers and save
+  // -------------------------------------------------------
+  const handleFinalSubmit = async () => {
     if (!quiz) return;
 
+    saveCurrentAnswer();
+
+    // Get the final stored answers (including current)
+    const finalStored = { ...storedAnswers };
+    // Save current question's answer if not already saved
+    if (currentQuestion) {
+      const stored: StoredAnswer = {};
+      if (currentQuestion.type === 'mcq' || currentQuestion.type === 'boolean') {
+        stored.selectedOption = selectedOption;
+      } else if (currentQuestion.type === 'completion') {
+        stored.completionInput = completionInput.trim();
+      } else if (currentQuestion.type === 'matching') {
+        stored.matchedPairs = { ...matchedPairs };
+      }
+      finalStored[currentIdx] = stored;
+    }
+
     setSavingScore(true);
+
     try {
-      // Save score
+      // Evaluate all answers
+      const evaluated: UserAnswer[] = [];
+      let completionEvaluations: { idx: number; question: string; correctAnswer: string; studentAnswer: string }[] = [];
+
+      for (let i = 0; i < totalQuestions; i++) {
+        const q = quiz.questions[i];
+        const ans = finalStored[i];
+        let answerValue: string | Record<string, string> = '';
+        let isCorrect = false;
+
+        if (q.type === 'mcq') {
+          answerValue = ans?.selectedOption || '';
+          isCorrect = ans?.selectedOption === q.correctAnswer;
+        } else if (q.type === 'boolean') {
+          answerValue = ans?.selectedOption || '';
+          isCorrect = ans?.selectedOption === q.correctAnswer;
+        } else if (q.type === 'completion') {
+          answerValue = ans?.completionInput || '';
+          // Check exact match first
+          if (answerValue.toLowerCase().trim() === (q.correctAnswer || '').toLowerCase().trim()) {
+            isCorrect = true;
+          } else {
+            // Queue for API evaluation
+            completionEvaluations.push({
+              idx: i,
+              question: q.question,
+              correctAnswer: q.correctAnswer || '',
+              studentAnswer: answerValue,
+            });
+          }
+        } else if (q.type === 'matching') {
+          answerValue = ans?.matchedPairs || {};
+          // Check all pairs
+          isCorrect = q.pairs ? q.pairs.every(pair => ans?.matchedPairs?.[pair.key] === pair.value) : false;
+        }
+
+        evaluated.push({
+          questionIndex: i,
+          type: q.type,
+          answer: answerValue,
+          isCorrect,
+        });
+      }
+
+      // Evaluate completion answers via API
+      if (completionEvaluations.length > 0) {
+        try {
+          const res = await fetch('/api/gemini/evaluate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              questions: completionEvaluations,
+            }),
+          });
+          const data = await res.json();
+          if (data.success && data.data?.results) {
+            for (const result of data.data.results) {
+              const evIdx = evaluated.findIndex(e => e.questionIndex === result.idx);
+              if (evIdx >= 0) {
+                evaluated[evIdx].isCorrect = result.isCorrect;
+              }
+            }
+          }
+        } catch {
+          // If API fails, leave completion answers as incorrect
+          console.error('Failed to evaluate completion answers via API');
+        }
+
+        // Fallback: try evaluating one by one
+        for (const ce of completionEvaluations) {
+          const evIdx = evaluated.findIndex(e => e.questionIndex === ce.idx);
+          if (evIdx >= 0 && !evaluated[evIdx].isCorrect) {
+            try {
+              const res = await fetch('/api/gemini/evaluate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  question: ce.question,
+                  correctAnswer: ce.correctAnswer,
+                  studentAnswer: ce.studentAnswer,
+                }),
+              });
+              const data = await res.json();
+              if (data.success && data.data) {
+                evaluated[evIdx].isCorrect = data.data.isCorrect;
+              }
+            } catch {
+              // Leave as incorrect
+            }
+          }
+        }
+      }
+
+      const finalScore = evaluated.filter(a => a.isCorrect).length;
+      setEvaluatedAnswers(evaluated);
+
+      // Save score to supabase
       const { error: scoreError } = await supabase.from('scores').insert({
         student_id: profile.id,
         teacher_id: quiz.user_id,
@@ -404,7 +525,7 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
         quiz_title: quiz.title,
         score: finalScore,
         total: totalQuestions,
-        user_answers: finalAnswers,
+        user_answers: evaluated,
       });
 
       if (scoreError) {
@@ -427,8 +548,17 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
           });
         }
       }
+
+      // Check if results are visible to students
+      if (quiz.results_visible === false) {
+        setShowResults(true);
+        setResultsBlocked(true);
+      } else {
+        setShowResults(true);
+      }
     } catch (err) {
-      console.error('Error saving score:', err);
+      console.error('Error during final submission:', err);
+      toast.error('حدث خطأ أثناء تسليم الاختبار');
     } finally {
       setSavingScore(false);
     }
@@ -438,11 +568,19 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
   // Retry quiz
   // -------------------------------------------------------
   const handleRetry = () => {
-    resetQuestionState();
     setCurrentIdx(0);
-    setUserAnswers([]);
+    setStoredAnswers({});
+    setAnswered(false);
+    setSelectedOption(null);
+    setCompletionInput('');
+    setMatchedPairs({});
+    setSelectedKey(null);
+    setSelectedValue(null);
     setShowResults(false);
     setShowReview(false);
+    setEvaluatedAnswers([]);
+    setResultsBlocked(false);
+    shuffledValuesMap.current = {};
   };
 
   // -------------------------------------------------------
@@ -575,7 +713,7 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
   // Results screen
   // -------------------------------------------------------
   if (showResults) {
-    const answersToReview = reviewMode ? savedAnswers : userAnswers;
+    const answersToReview = reviewMode ? savedAnswers : evaluatedAnswers;
     const finalScore = answersToReview.filter((a) => a.isCorrect).length;
     const percentage = totalQuestions > 0 ? Math.round((finalScore / totalQuestions) * 100) : 0;
     const scoreColor =
@@ -809,6 +947,17 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
   // -------------------------------------------------------
   // Quiz taking screen
   // -------------------------------------------------------
+  // Check if all questions have been answered
+  const allAnswered = totalQuestions > 0 && Object.keys(storedAnswers).length >= totalQuestions &&
+    quiz?.questions.every((q, i) => {
+      const ans = storedAnswers[i];
+      if (!ans) return false;
+      if (q.type === 'mcq' || q.type === 'boolean') return !!ans.selectedOption;
+      if (q.type === 'completion') return !!ans.completionInput?.trim();
+      if (q.type === 'matching') return Object.keys(ans.matchedPairs || {}).length >= (q.pairs?.length || 0);
+      return false;
+    });
+
   return (
     <motion.div
       initial="hidden"
@@ -883,7 +1032,6 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
                   <MCQQuestion
                     question={currentQuestion}
                     answered={answered}
-                    isCorrect={isCorrect}
                     selectedOption={selectedOption}
                     onAnswer={handleMCQAnswer}
                   />
@@ -893,7 +1041,6 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
                   <BooleanQuestion
                     question={currentQuestion}
                     answered={answered}
-                    isCorrect={isCorrect}
                     selectedOption={selectedOption}
                     onAnswer={handleBooleanAnswer}
                   />
@@ -903,11 +1050,9 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
                   <CompletionQuestion
                     question={currentQuestion}
                     answered={answered}
-                    isCorrect={isCorrect}
                     inputValue={completionInput}
                     onInputChange={setCompletionInput}
-                    onCheck={handleCompletionCheck}
-                    evaluating={evaluatingCompletion}
+                    onSave={handleCompletionSave}
                   />
                 )}
 
@@ -915,18 +1060,16 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
                   <MatchingQuestion
                     question={currentQuestion}
                     answered={answered}
-                    isCorrect={isCorrect}
                     matchedPairs={matchedPairs}
                     selectedKey={selectedKey}
                     selectedValue={selectedValue}
                     onSelect={handleMatchingSelect}
                     onRemovePair={removeMatchedPair}
-                    onCheck={handleMatchingCheck}
-                    feedback={matchingFeedback}
+                    shuffledValues={getShuffledValues(currentIdx, currentQuestion.pairs)}
                   />
                 )}
 
-                {/* Answered indicator - only show that answer was saved, not correctness */}
+                {/* Answered indicator - only show that answer was recorded, NOT correctness */}
                 {answered && (
                   <motion.div
                     initial={{ opacity: 0, y: 8 }}
@@ -938,18 +1081,36 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
                   </motion.div>
                 )}
 
-                {/* Next / Finish button */}
-                {answered && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex justify-start"
-                  >
+                {/* Navigation buttons */}
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center gap-3"
+                >
+                  {/* Previous button */}
+                  {currentIdx > 0 && (
                     <Button
-                      onClick={handleNext}
+                      onClick={handlePrevious}
+                      variant="outline"
+                      className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                      السؤال السابق
+                    </Button>
+                  )}
+
+                  <div className="flex-1" />
+
+                  {/* Next / Finish button */}
+                  {answered && (
+                    <Button
+                      onClick={currentIdx < totalQuestions - 1 ? handleNext : handleFinalSubmit}
+                      disabled={savingScore}
                       className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
                     >
-                      {currentIdx < totalQuestions - 1 ? (
+                      {savingScore ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : currentIdx < totalQuestions - 1 ? (
                         <>
                           السؤال التالي
                           <ArrowRight className="h-4 w-4" />
@@ -961,8 +1122,8 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
                         </>
                       )}
                     </Button>
-                  </motion.div>
-                )}
+                  )}
+                </motion.div>
               </CardContent>
             </Card>
           )}
@@ -982,13 +1143,13 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
 interface MCQQuestionProps {
   question: QuizQuestion;
   answered: boolean;
-  isCorrect: boolean;
   selectedOption: string | null;
   onAnswer: (option: string) => void;
   showCorrectAnswer?: boolean;
+  isCorrect?: boolean;
 }
 
-function MCQQuestion({ question, answered, isCorrect, selectedOption, onAnswer, showCorrectAnswer = false }: MCQQuestionProps) {
+function MCQQuestion({ question, answered, selectedOption, onAnswer, showCorrectAnswer = false, isCorrect }: MCQQuestionProps) {
   if (!question.options) return null;
 
   return (
@@ -1069,19 +1230,19 @@ function MCQQuestion({ question, answered, isCorrect, selectedOption, onAnswer, 
 interface BooleanQuestionProps {
   question: QuizQuestion;
   answered: boolean;
-  isCorrect: boolean;
   selectedOption: string | null;
   onAnswer: (answer: string) => void;
   showCorrectAnswer?: boolean;
+  isCorrect?: boolean;
 }
 
 function BooleanQuestion({
   question,
   answered,
-  isCorrect,
   selectedOption,
   onAnswer,
   showCorrectAnswer = false,
+  isCorrect,
 }: BooleanQuestionProps) {
   const options = [
     { label: 'صح', value: 'صح', icon: <CheckCircle2 className="h-5 w-5" /> },
@@ -1099,7 +1260,7 @@ function BooleanQuestion({
 
         if (answered) {
           if (showCorrectAnswer) {
-            // Review mode: show correct/incorrect
+            // Review mode
             if (isCorrectOption) {
               btnClass += ' border-emerald-500 bg-emerald-50 text-emerald-700';
             } else if (isSelected && !isCorrect) {
@@ -1108,7 +1269,7 @@ function BooleanQuestion({
               btnClass += ' border-border bg-muted/30 text-muted-foreground';
             }
           } else {
-            // Quiz mode: just show selected state without revealing correctness
+            // Quiz mode: just show selected state
             if (isSelected) {
               btnClass += ' border-teal-500 bg-teal-50 text-teal-700';
             } else {
@@ -1150,21 +1311,21 @@ function BooleanQuestion({
 interface CompletionQuestionProps {
   question: QuizQuestion;
   answered: boolean;
-  isCorrect: boolean;
   inputValue: string;
   onInputChange: (value: string) => void;
-  onCheck: () => void;
-  evaluating: boolean;
+  onSave: () => void;
+  showCorrectAnswer?: boolean;
+  isCorrect?: boolean;
 }
 
 function CompletionQuestion({
   question,
   answered,
-  isCorrect,
   inputValue,
   onInputChange,
-  onCheck,
-  evaluating,
+  onSave,
+  showCorrectAnswer = false,
+  isCorrect,
 }: CompletionQuestionProps) {
   return (
     <div className="space-y-3">
@@ -1173,34 +1334,32 @@ function CompletionQuestion({
           value={inputValue}
           onChange={(e) => onInputChange(e.target.value)}
           placeholder="اكتب إجابتك هنا..."
-          disabled={answered || evaluating}
-          className="h-12 text-base border-emerald-200 focus:border-emerald-500 focus:ring-emerald-500/20"
+          disabled={answered}
+          className="text-base pr-4 border-emerald-200 focus:border-emerald-400"
           dir="rtl"
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !answered && !evaluating) {
-              onCheck();
+            if (e.key === 'Enter' && !answered && inputValue.trim()) {
+              onSave();
             }
           }}
         />
       </div>
       {!answered && (
         <Button
-          onClick={onCheck}
-          disabled={evaluating || !inputValue.trim()}
+          onClick={onSave}
+          disabled={!inputValue.trim()}
           className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
         >
-          {evaluating ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              جاري التحقق...
-            </>
-          ) : (
-            <>
-              <CheckCircle2 className="h-4 w-4" />
-              تحقق من الإجابة
-            </>
-          )}
+          تسجيل الإجابة
         </Button>
+      )}
+      {showCorrectAnswer && answered && (
+        <div className={`rounded-lg p-3 text-sm ${isCorrect ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+          <p className="font-medium">{isCorrect ? '✓ إجابة صحيحة' : '✗ إجابة خاطئة'}</p>
+          {!isCorrect && question.correctAnswer && (
+            <p className="mt-1">الإجابة الصحيحة: {question.correctAnswer}</p>
+          )}
+        </div>
       )}
     </div>
   );
@@ -1212,141 +1371,91 @@ function CompletionQuestion({
 interface MatchingQuestionProps {
   question: QuizQuestion;
   answered: boolean;
-  isCorrect: boolean;
   matchedPairs: Record<string, string>;
   selectedKey: string | null;
   selectedValue: string | null;
   onSelect: (side: 'key' | 'value', item: string) => void;
   onRemovePair: (key: string) => void;
-  onCheck: () => void;
-  feedback: 'correct' | 'incorrect' | null;
+  shuffledValues: string[];
   showCorrectAnswer?: boolean;
+  isCorrect?: boolean;
 }
 
 function MatchingQuestion({
   question,
   answered,
-  isCorrect,
   matchedPairs,
   selectedKey,
   selectedValue,
   onSelect,
   onRemovePair,
-  onCheck,
-  feedback,
+  shuffledValues,
   showCorrectAnswer = false,
+  isCorrect,
 }: MatchingQuestionProps) {
   if (!question.pairs) return null;
 
-  const keys = question.pairs.map((p) => p.key);
-  const values = question.pairs.map((p) => p.value);
-
-  // Track which values are already matched
-  const matchedValuesSet = new Set(Object.values(matchedPairs));
-  const matchedKeysSet = new Set(Object.keys(matchedPairs));
+  const keys = question.pairs.map(p => p.key);
 
   return (
     <div className="space-y-4">
-      {/* Two columns */}
       <div className="grid grid-cols-2 gap-4">
         {/* Keys column */}
         <div className="space-y-2">
-          <p className="text-xs font-semibold text-emerald-700 text-center mb-2">القائمة أ</p>
+          <p className="text-xs font-medium text-muted-foreground mb-2">العناصر</p>
           {keys.map((key) => {
-            const isMatched = matchedKeysSet.has(key);
+            const isMatched = key in matchedPairs;
             const isSelected = selectedKey === key;
-
-            let btnClass =
-              'w-full rounded-lg border-2 p-3 text-sm font-medium transition-all text-center';
-
-            if (answered) {
-              if (showCorrectAnswer) {
-                const correctValue = question.pairs?.find((p) => p.key === key)?.value;
-                const userValue = matchedPairs[key];
-                if (userValue === correctValue) {
-                  btnClass += ' border-emerald-500 bg-emerald-50 text-emerald-700';
-                } else {
-                  btnClass += ' border-rose-500 bg-rose-50 text-rose-700';
-                }
-              } else {
-                const isUserMatched = matchedKeysSet.has(key);
-                if (isUserMatched) {
-                  btnClass += ' border-teal-500 bg-teal-50 text-teal-700';
-                } else {
-                  btnClass += ' border-border bg-muted/30 text-muted-foreground';
-                }
-              }
-            } else if (isMatched) {
-              btnClass += ' border-teal-400 bg-teal-50 text-teal-700';
-            } else if (isSelected) {
-              btnClass += ' border-emerald-500 bg-emerald-100 text-emerald-700 ring-2 ring-emerald-300';
-            } else {
-              btnClass +=
-                ' border-emerald-200 bg-white text-foreground hover:border-emerald-400 cursor-pointer';
-            }
 
             return (
               <motion.button
                 key={key}
-                whileHover={!answered && !isMatched ? { scale: 1.02 } : undefined}
-                whileTap={!answered && !isMatched ? { scale: 0.98 } : undefined}
+                whileHover={!answered ? { scale: 1.02 } : undefined}
+                whileTap={!answered ? { scale: 0.98 } : undefined}
                 onClick={() => onSelect('key', key)}
                 disabled={answered}
-                className={btnClass}
+                className={`w-full rounded-lg border-2 p-3 text-sm font-medium transition-all text-right ${
+                  isMatched
+                    ? 'border-teal-400 bg-teal-50 text-teal-700'
+                    : isSelected
+                      ? 'border-emerald-400 bg-emerald-50 text-emerald-700 ring-2 ring-emerald-300'
+                      : 'border-emerald-200 bg-white text-foreground hover:border-emerald-300'
+                }`}
               >
-                {key}
+                <span>{key}</span>
+                {isMatched && (
+                  <span className="block text-xs text-teal-500 mt-1">
+                    ← {matchedPairs[key]}
+                  </span>
+                )}
               </motion.button>
             );
           })}
         </div>
 
-        {/* Values column */}
+        {/* Values column (shuffled) */}
         <div className="space-y-2">
-          <p className="text-xs font-semibold text-teal-700 text-center mb-2">القائمة ب</p>
-          {values.map((value) => {
-            const isMatched = matchedValuesSet.has(value);
+          <p className="text-xs font-medium text-muted-foreground mb-2">التوصيلات</p>
+          {shuffledValues.map((value) => {
+            const isUsed = Object.values(matchedPairs).includes(value);
             const isSelected = selectedValue === value;
-
-            let btnClass =
-              'w-full rounded-lg border-2 p-3 text-sm font-medium transition-all text-center';
-
-            if (answered) {
-              if (showCorrectAnswer) {
-                // Find which key matches this value correctly
-                const correctKey = question.pairs?.find((p) => p.value === value)?.key;
-                const userKey = Object.entries(matchedPairs).find(
-                  ([, v]) => v === value
-                )?.[0];
-                if (userKey === correctKey) {
-                  btnClass += ' border-emerald-500 bg-emerald-50 text-emerald-700';
-                } else {
-                  btnClass += ' border-rose-500 bg-rose-50 text-rose-700';
-                }
-              } else {
-                const isUserMatched = matchedValuesSet.has(value);
-                if (isUserMatched) {
-                  btnClass += ' border-teal-500 bg-teal-50 text-teal-700';
-                } else {
-                  btnClass += ' border-border bg-muted/30 text-muted-foreground';
-                }
-              }
-            } else if (isMatched) {
-              btnClass += ' border-teal-400 bg-teal-50 text-teal-700';
-            } else if (isSelected) {
-              btnClass += ' border-teal-500 bg-teal-100 text-teal-700 ring-2 ring-teal-300';
-            } else {
-              btnClass +=
-                ' border-teal-200 bg-white text-foreground hover:border-teal-400 cursor-pointer';
-            }
 
             return (
               <motion.button
                 key={value}
-                whileHover={!answered && !isMatched ? { scale: 1.02 } : undefined}
-                whileTap={!answered && !isMatched ? { scale: 0.98 } : undefined}
-                onClick={() => onSelect('value', value)}
-                disabled={answered}
-                className={btnClass}
+                whileHover={!answered && !isUsed ? { scale: 1.02 } : undefined}
+                whileTap={!answered && !isUsed ? { scale: 0.98 } : undefined}
+                onClick={() => {
+                  if (!isUsed) onSelect('value', value);
+                }}
+                disabled={answered || isUsed}
+                className={`w-full rounded-lg border-2 p-3 text-sm font-medium transition-all text-right ${
+                  isUsed
+                    ? 'border-muted bg-muted/30 text-muted-foreground opacity-50'
+                    : isSelected
+                      ? 'border-emerald-400 bg-emerald-50 text-emerald-700 ring-2 ring-emerald-300'
+                      : 'border-amber-200 bg-white text-foreground hover:border-amber-300'
+                }`}
               >
                 {value}
               </motion.button>
@@ -1357,66 +1466,33 @@ function MatchingQuestion({
 
       {/* Matched pairs display */}
       {Object.keys(matchedPairs).length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs font-semibold text-muted-foreground">التوصيلات:</p>
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(matchedPairs).map(([key, value]) => (
-              <motion.div
-                key={key}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-xs font-medium text-emerald-700"
-              >
-                <span>{key}</span>
-                <Link2 className="h-3 w-3" />
-                <span>{value}</span>
-                {!answered && (
-                  <button
-                    onClick={() => onRemovePair(key)}
-                    className="mr-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-200 hover:bg-rose-200 text-emerald-700 hover:text-rose-700 transition-colors"
-                  >
-                    <XCircle className="h-3 w-3" />
-                  </button>
-                )}
-              </motion.div>
-            ))}
-          </div>
+        <div className="space-y-2 pt-2 border-t">
+          <p className="text-xs font-medium text-muted-foreground">التوصيلات المُنجزة:</p>
+          {Object.entries(matchedPairs).map(([key, value]) => (
+            <div key={key} className="flex items-center gap-2 text-sm">
+              <span className="font-medium text-teal-700">{key}</span>
+              <Link2 className="h-3 w-3 text-muted-foreground" />
+              <span className="font-medium text-amber-700">{value}</span>
+              {!answered && (
+                <button
+                  onClick={() => onRemovePair(key)}
+                  className="mr-auto text-rose-500 hover:text-rose-700 text-xs"
+                >
+                  إلغاء
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Check button */}
-      {!answered && (
-        <Button
-          onClick={onCheck}
-          disabled={Object.keys(matchedPairs).length < (question.pairs?.length || 0)}
-          className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
-        >
-          <ArrowLeftRight className="h-4 w-4" />
-          تحقق من التوصيل
-        </Button>
-      )}
-
-      {/* Show correct pairs on wrong answer - only in review mode */}
-      {answered && !isCorrect && question.pairs && showCorrectAnswer && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-lg border border-emerald-200 bg-emerald-50 p-3"
-        >
-          <p className="text-xs font-semibold text-emerald-700 mb-2">التوصيل الصحيح:</p>
-          <div className="flex flex-wrap gap-2">
-            {question.pairs.map((pair) => (
-              <span
-                key={pair.key}
-                className="flex items-center gap-1 rounded-full bg-white border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700"
-              >
-                {pair.key}
-                <Link2 className="h-3 w-3" />
-                {pair.value}
-              </span>
-            ))}
-          </div>
-        </motion.div>
+      {showCorrectAnswer && answered && (
+        <div className={`rounded-lg p-3 text-sm ${isCorrect ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+          <p className="font-medium">{isCorrect ? '✓ جميع التوصيلات صحيحة' : '✗ بعض التوصيلات خاطئة'}</p>
+          {!isCorrect && question.pairs.map((pair, idx) => (
+            <p key={idx} className="mt-1">{pair.key} → {pair.value}</p>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -1432,72 +1508,87 @@ interface ReviewQuestionCardProps {
 }
 
 function ReviewQuestionCard({ question, index, userAnswer }: ReviewQuestionCardProps) {
+  const isCorrect = userAnswer?.isCorrect ?? false;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05 }}
-      className="rounded-xl border bg-card p-4 mb-3 shadow-sm"
+      className="mb-4"
     >
-      <div className="flex items-start gap-3">
-        <div
-          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-            userAnswer?.isCorrect
-              ? 'bg-emerald-100 text-emerald-700'
-              : 'bg-rose-100 text-rose-700'
-          }`}
-        >
-          {userAnswer?.isCorrect ? (
-            <CheckCircle2 className="h-4 w-4" />
-          ) : (
-            <XCircle className="h-4 w-4" />
-          )}
-        </div>
-        <div className="min-w-0 flex-1 space-y-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-muted-foreground">سؤال {index + 1}</span>
-            <Badge variant="outline" className="text-[10px] border-emerald-300 bg-emerald-50 text-emerald-700">
-              {typeLabels[question.type]}
-            </Badge>
+      <Card className={`border-2 ${isCorrect ? 'border-emerald-200' : 'border-rose-200'}`}>
+        <CardContent className="p-4 space-y-3">
+          {/* Header */}
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="gap-1 text-xs">
+                {typeIcons[question.type]}
+                {typeLabels[question.type]}
+              </Badge>
+              <span className="text-xs text-muted-foreground">سؤال {index + 1}</span>
+            </div>
+            {isCorrect ? (
+              <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+            ) : (
+              <XCircle className="h-5 w-5 text-rose-600 shrink-0" />
+            )}
           </div>
-          <p className="text-sm font-medium text-foreground">{question.question}</p>
 
-          {/* Show answer details based on type */}
-          {question.type === 'matching' && question.pairs ? (
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">
-                إجابتك:
-                {Object.entries((userAnswer?.answer as Record<string, string>) || {}).map(
-                  ([k, v]) => (
-                    <span key={k} className="inline-flex items-center gap-1 mx-1 text-xs">
-                      {k} <Link2 className="h-2.5 w-2.5" /> {v}
-                    </span>
-                  )
-                )}
-              </p>
-              <p className="text-xs text-emerald-700">
-                الصحيح:
-                {question.pairs.map((p) => (
-                  <span key={p.key} className="inline-flex items-center gap-1 mx-1">
-                    {p.key} <Link2 className="h-2.5 w-2.5" /> {p.value}
-                  </span>
-                ))}
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">
-                إجابتك: <span className="font-medium">{String(userAnswer?.answer || '—')}</span>
-              </p>
-              {question.correctAnswer && (
-                <p className="text-xs text-emerald-700">
-                  الإجابة الصحيحة: <span className="font-medium">{question.correctAnswer}</span>
-                </p>
-              )}
-            </div>
+          {/* Question text */}
+          <p className="font-medium text-foreground">{question.question}</p>
+
+          {/* Answer details based on type */}
+          {question.type === 'mcq' && (
+            <MCQQuestion
+              question={question}
+              answered={true}
+              selectedOption={typeof userAnswer?.answer === 'string' ? userAnswer.answer : null}
+              onAnswer={() => {}}
+              showCorrectAnswer={true}
+              isCorrect={isCorrect}
+            />
           )}
-        </div>
-      </div>
+
+          {question.type === 'boolean' && (
+            <BooleanQuestion
+              question={question}
+              answered={true}
+              selectedOption={typeof userAnswer?.answer === 'string' ? userAnswer.answer : null}
+              onAnswer={() => {}}
+              showCorrectAnswer={true}
+              isCorrect={isCorrect}
+            />
+          )}
+
+          {question.type === 'completion' && (
+            <CompletionQuestion
+              question={question}
+              answered={true}
+              inputValue={typeof userAnswer?.answer === 'string' ? userAnswer.answer : ''}
+              onInputChange={() => {}}
+              onSave={() => {}}
+              showCorrectAnswer={true}
+              isCorrect={isCorrect}
+            />
+          )}
+
+          {question.type === 'matching' && (
+            <MatchingQuestion
+              question={question}
+              answered={true}
+              matchedPairs={typeof userAnswer?.answer === 'object' && userAnswer.answer ? userAnswer.answer as Record<string, string> : {}}
+              selectedKey={null}
+              selectedValue={null}
+              onSelect={() => {}}
+              onRemovePair={() => {}}
+              shuffledValues={question.pairs?.map(p => p.value) || []}
+              showCorrectAnswer={true}
+              isCorrect={isCorrect}
+            />
+          )}
+        </CardContent>
+      </Card>
     </motion.div>
   );
 }

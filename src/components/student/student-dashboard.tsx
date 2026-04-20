@@ -26,6 +26,7 @@ import {
   Type,
   Video,
   BarChart3,
+  Clock,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import AppSidebar from '@/components/shared/app-sidebar';
@@ -1428,170 +1429,267 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
   // -------------------------------------------------------
   // Render: Quizzes Section
   // -------------------------------------------------------
-  const renderQuizzes = () => (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
-      {/* Header */}
-      <motion.div variants={itemVariants}>
-        <h2 className="text-2xl font-bold text-foreground">الاختبارات</h2>
-        <p className="text-muted-foreground mt-1">اختباراتك واختبارات المعلمين</p>
-      </motion.div>
+  const [studentQuizTab, setStudentQuizTab] = useState<'open' | 'completed'>('open');
 
-      {/* Quizzes grid */}
-      {quizzes.length === 0 ? (
-        <motion.div
-          variants={itemVariants}
-          className="flex flex-col items-center justify-center rounded-xl border border-dashed border-teal-300 bg-teal-50/30 py-16"
-        >
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-teal-100 mb-4">
-            <ClipboardList className="h-8 w-8 text-teal-600" />
+  const renderQuizzes = () => {
+    // Only show quizzes that belong to subjects the student is enrolled in
+    const enrolledSubjectIds = new Set(enrolledSubjects.map(s => s.id));
+    const enrolledQuizzes = quizzes.filter(q => !q.subject_id || enrolledSubjectIds.has(q.subject_id));
+
+    // Separate into open and completed
+    const openStudentQuizzes = enrolledQuizzes.filter(q => !completedQuizIds.has(q.id));
+    const completedStudentQuizzes = enrolledQuizzes.filter(q => completedQuizIds.has(q.id));
+
+    const displayedQuizzes = studentQuizTab === 'open' ? openStudentQuizzes : completedStudentQuizzes;
+
+    // Group by subject
+    const quizzesBySubject = new Map<string, Quiz[]>();
+    const noSubjectQuizzes: Quiz[] = [];
+
+    displayedQuizzes.forEach(q => {
+      if (q.subject_id && q.subject_name) {
+        const existing = quizzesBySubject.get(q.subject_id) || [];
+        existing.push(q);
+        quizzesBySubject.set(q.subject_id, existing);
+      } else if (q.subject_id) {
+        const subj = enrolledSubjects.find(s => s.id === q.subject_id);
+        if (subj) {
+          const existing = quizzesBySubject.get(q.subject_id) || [];
+          existing.push(q);
+          quizzesBySubject.set(q.subject_id, existing);
+        } else {
+          noSubjectQuizzes.push(q);
+        }
+      } else {
+        noSubjectQuizzes.push(q);
+      }
+    });
+
+    const renderQuizCard = (quiz: Quiz) => {
+      const isCompleted = completedQuizIds.has(quiz.id);
+      const score = scores.find((s) => s.quiz_id === quiz.id);
+      const pct = score ? scorePercentage(score.score, score.total) : null;
+
+      const isScheduledFuture = (() => {
+        if (!quiz.scheduled_date) return false;
+        try {
+          const scheduledDateTime = quiz.scheduled_time
+            ? new Date(`${quiz.scheduled_date}T${quiz.scheduled_time}`)
+            : new Date(quiz.scheduled_date);
+          return scheduledDateTime.getTime() > Date.now();
+        } catch { return false; }
+      })();
+
+      const formattedSchedule = (() => {
+        if (!quiz.scheduled_date) return null;
+        try {
+          const scheduledDateTime = quiz.scheduled_time
+            ? new Date(`${quiz.scheduled_date}T${quiz.scheduled_time}`)
+            : new Date(quiz.scheduled_date);
+          return scheduledDateTime.toLocaleDateString('ar-SA', {
+            weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+            ...(quiz.scheduled_time ? { hour: '2-digit', minute: '2-digit' } : {}),
+          });
+        } catch { return `${quiz.scheduled_date}${quiz.scheduled_time ? ` ${quiz.scheduled_time}` : ''}`; }
+      })();
+
+      return (
+        <motion.div key={quiz.id} variants={itemVariants} {...cardHover}>
+          <div className="group rounded-xl border bg-card p-5 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-teal-100 transition-transform group-hover:scale-110">
+                <ClipboardList className="h-5 w-5 text-teal-600" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-semibold text-foreground truncate">{quiz.title}</h3>
+                <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
+                  <span className="flex items-center gap-1">
+                    <Hash className="h-3 w-3" />
+                    {quiz.questions?.length || 0} أسئلة
+                  </span>
+                  {quiz.duration && (
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {quiz.duration} دقيقة
+                    </span>
+                  )}
+                  {formattedSchedule && (
+                    <span className={`flex items-center gap-1 ${isScheduledFuture ? 'text-amber-600' : ''}`}>
+                      <Calendar className="h-3 w-3" />
+                      {formattedSchedule}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Status badge */}
+              {isCompleted && pct !== null && (
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${
+                  pct >= 80 ? 'text-emerald-700 bg-emerald-100'
+                    : pct >= 60 ? 'text-amber-700 bg-amber-100'
+                    : 'text-rose-700 bg-rose-100'
+                }`}>
+                  {pct}%
+                </span>
+              )}
+              {isScheduledFuture && !isCompleted && (
+                <span className="shrink-0 rounded-full px-2.5 py-1 text-xs font-bold text-amber-700 bg-amber-100">
+                  لم يبدأ بعد
+                </span>
+              )}
+            </div>
+
+            <div className="mt-4 flex items-center gap-2">
+              {isCompleted ? (
+                <button
+                  onClick={() => { setViewingQuizId(quiz.id); setReviewScoreId(score?.id || null); setCurrentPage('quiz'); }}
+                  className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  عرض النتائج
+                </button>
+              ) : isScheduledFuture ? (
+                <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
+                  <Calendar className="h-3.5 w-3.5" />
+                  سيبدأ في الموعد المحدد
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setViewingQuizId(quiz.id); setReviewScoreId(null); setCurrentPage('quiz'); }}
+                  className="flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-teal-700"
+                >
+                  <Play className="h-3.5 w-3.5" />
+                  ابدأ الاختبار
+                </button>
+              )}
+            </div>
           </div>
-          <p className="text-lg font-semibold text-foreground mb-1">لا توجد اختبارات</p>
-          <p className="text-sm text-muted-foreground mb-4">
-            أنشئ ملخصاً أولاً وسيتم توليد اختبار تلقائياً
-          </p>
-          <button
-            onClick={() => setActiveSection('summaries')}
-            className="flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-teal-700"
-          >
-            <FileText className="h-4 w-4" />
-            إنشاء ملخص
-          </button>
         </motion.div>
-      ) : (
-        <motion.div variants={containerVariants} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {quizzes.map((quiz) => {
-            const isCompleted = completedQuizIds.has(quiz.id);
-            const score = scores.find((s) => s.quiz_id === quiz.id);
-            const pct = score ? scorePercentage(score.score, score.total) : null;
-            
-            // Check if quiz is scheduled for the future
-            const isScheduledFuture = (() => {
-              if (!quiz.scheduled_date) return false;
-              try {
-                const scheduledDateTime = quiz.scheduled_time
-                  ? new Date(`${quiz.scheduled_date}T${quiz.scheduled_time}`)
-                  : new Date(quiz.scheduled_date);
-                return scheduledDateTime.getTime() > Date.now();
-              } catch {
-                return false;
-              }
-            })();
-            
-            // Format scheduled date/time nicely
-            const formattedSchedule = (() => {
-              if (!quiz.scheduled_date) return null;
-              try {
-                const scheduledDateTime = quiz.scheduled_time
-                  ? new Date(`${quiz.scheduled_date}T${quiz.scheduled_time}`)
-                  : new Date(quiz.scheduled_date);
-                return scheduledDateTime.toLocaleDateString('ar-SA', {
-                  weekday: 'short',
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric',
-                  ...(quiz.scheduled_time ? { hour: '2-digit', minute: '2-digit' } : {}),
-                });
-              } catch {
-                return `${quiz.scheduled_date}${quiz.scheduled_time ? ` ${quiz.scheduled_time}` : ''}`;
-              }
-            })();
+      );
+    };
 
-            return (
-              <motion.div key={quiz.id} variants={itemVariants} {...cardHover}>
-                <div className="group rounded-xl border bg-card p-5 shadow-sm hover:shadow-md transition-shadow">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-teal-100 transition-transform group-hover:scale-110">
-                      <ClipboardList className="h-5 w-5 text-teal-600" />
+    return (
+      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+        {/* Header */}
+        <motion.div variants={itemVariants}>
+          <h2 className="text-2xl font-bold text-foreground">الاختبارات</h2>
+          <p className="text-muted-foreground mt-1">اختبارات المقررات المسجل بها</p>
+        </motion.div>
+
+        {/* Tabs */}
+        <motion.div variants={itemVariants}>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setStudentQuizTab('open')}
+              className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
+                studentQuizTab === 'open'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'border text-muted-foreground hover:bg-muted/50'
+              }`}
+            >
+              <Play className="h-4 w-4" />
+              اختبارات مفتوحة
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                studentQuizTab === 'open' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-700'
+              }`}>
+                {openStudentQuizzes.length}
+              </span>
+            </button>
+            <button
+              onClick={() => setStudentQuizTab('completed')}
+              className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
+                studentQuizTab === 'completed'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'border text-muted-foreground hover:bg-muted/50'
+              }`}
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              اختبارات مكتملة
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                studentQuizTab === 'completed' ? 'bg-white/20 text-white' : 'bg-teal-100 text-teal-700'
+              }`}>
+                {completedStudentQuizzes.length}
+              </span>
+            </button>
+          </div>
+        </motion.div>
+
+        {/* Content */}
+        {enrolledQuizzes.length === 0 ? (
+          <motion.div
+            variants={itemVariants}
+            className="flex flex-col items-center justify-center rounded-xl border border-dashed border-teal-300 bg-teal-50/30 py-16"
+          >
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-teal-100 mb-4">
+              <ClipboardList className="h-8 w-8 text-teal-600" />
+            </div>
+            <p className="text-lg font-semibold text-foreground mb-1">لا توجد اختبارات</p>
+            <p className="text-sm text-muted-foreground mb-4">
+              ستجد اختباراتك هنا عند تسجيلك في مقررات دراسية
+            </p>
+          </motion.div>
+        ) : displayedQuizzes.length === 0 ? (
+          <motion.div
+            variants={itemVariants}
+            className="flex flex-col items-center justify-center rounded-xl border border-dashed border-teal-300 bg-teal-50/30 py-12"
+          >
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-teal-100 mb-3">
+              {studentQuizTab === 'open' ? <Play className="h-6 w-6 text-teal-600" /> : <CheckCircle2 className="h-6 w-6 text-teal-600" />}
+            </div>
+            <p className="text-sm font-medium text-foreground">
+              {studentQuizTab === 'open' ? 'لا توجد اختبارات مفتوحة' : 'لا توجد اختبارات مكتملة'}
+            </p>
+          </motion.div>
+        ) : (
+          <div className="space-y-8">
+            {/* Quizzes grouped by subject */}
+            {Array.from(quizzesBySubject.entries()).map(([subjectId, subjectQuizList]) => {
+              const subj = enrolledSubjects.find(s => s.id === subjectId);
+              if (!subj) return null;
+              const subjectName = subj.name;
+              const subjectColor = subj.color || '#10b981';
+
+              return (
+                <motion.div key={subjectId} variants={itemVariants}>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-white text-sm font-bold"
+                      style={{ backgroundColor: subjectColor }}
+                    >
+                      {subjectName.charAt(0)}
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-foreground truncate">{quiz.title}</h3>
-                      {quiz.subject_name && (
-                        <div className="flex items-center gap-1 mt-1">
-                          <BookOpen className="h-3 w-3 text-emerald-600" />
-                          <span className="text-[11px] text-emerald-600 font-medium">{quiz.subject_name}</span>
-                        </div>
-                      )}
-                      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
-                        <span className="flex items-center gap-1">
-                          <Hash className="h-3 w-3" />
-                          {quiz.questions?.length || 0} أسئلة
-                        </span>
-                        {quiz.duration && (
-                          <span className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            {quiz.duration} دقيقة
-                          </span>
-                        )}
-                        {formattedSchedule && (
-                          <span className={`flex items-center gap-1 ${isScheduledFuture ? 'text-amber-600' : ''}`}>
-                            <Calendar className="h-3 w-3" />
-                            {formattedSchedule}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Status badge */}
-                    {isCompleted && pct !== null && (
-                      <span
-                        className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${
-                          pct >= 80
-                            ? 'text-emerald-700 bg-emerald-100'
-                            : pct >= 60
-                              ? 'text-amber-700 bg-amber-100'
-                              : 'text-rose-700 bg-rose-100'
-                        }`}
-                      >
-                        {pct}%
-                      </span>
-                    )}
-                    {isScheduledFuture && !isCompleted && (
-                      <span className="shrink-0 rounded-full px-2.5 py-1 text-xs font-bold text-amber-700 bg-amber-100">
-                        لم يبدأ بعد
-                      </span>
-                    )}
+                    <h3 className="text-lg font-bold text-foreground">{subjectName}</h3>
+                    <Badge variant="outline" className="text-xs" style={{ color: subjectColor, borderColor: subjectColor + '40' }}>
+                      {subjectQuizList.length} اختبار
+                    </Badge>
                   </div>
-
-                  <div className="mt-4 flex items-center gap-2">
-                    {isCompleted ? (
-                      <button
-                        onClick={() => {
-                          setViewingQuizId(quiz.id);
-                          setReviewScoreId(score?.id || null);
-                          setCurrentPage('quiz');
-                        }}
-                        className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                        عرض النتائج
-                      </button>
-                    ) : isScheduledFuture ? (
-                      <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
-                        <Calendar className="h-3.5 w-3.5" />
-                        سيبدأ في الموعد المحدد
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          setViewingQuizId(quiz.id);
-                          setReviewScoreId(null);
-                          setCurrentPage('quiz');
-                        }}
-                        className="flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-teal-700"
-                      >
-                        <Play className="h-3.5 w-3.5" />
-                        ابدأ الاختبار
-                      </button>
-                    )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {subjectQuizList.map(renderQuizCard)}
                   </div>
+                </motion.div>
+              );
+            })}
+
+            {/* Quizzes without subject */}
+            {noSubjectQuizzes.length > 0 && (
+              <motion.div variants={itemVariants}>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-200 text-slate-600 text-sm font-bold">
+                    <ClipboardList className="h-4 w-4" />
+                  </div>
+                  <h3 className="text-lg font-bold text-foreground">اختبارات عامة</h3>
+                  <Badge variant="outline" className="text-xs">{noSubjectQuizzes.length} اختبار</Badge>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {noSubjectQuizzes.map(renderQuizCard)}
                 </div>
               </motion.div>
-            );
-          })}
-        </motion.div>
-      )}
-    </motion.div>
-  );
+            )}
+          </div>
+        )}
+      </motion.div>
+    );
+  };
 
   // -------------------------------------------------------
   // Render: Teachers Section

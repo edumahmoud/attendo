@@ -12,6 +12,7 @@ export interface UserProfile {
   name: string;
   role: UserRole;
   title_id?: string;
+  gender?: 'male' | 'female';
   is_admin?: boolean;
   fcm_token?: string;
   teacher_code?: string;

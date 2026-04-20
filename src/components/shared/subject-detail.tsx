@@ -96,6 +96,7 @@ interface SubjectDetailProps {
   subjectId: string;
   profile: UserProfile;
   onBack: () => void;
+  onCreateQuiz?: (subjectId: string) => void;
 }
 
 // =====================================================
@@ -209,7 +210,7 @@ const studentTabs: TabConfig[] = [
 // =====================================================
 // Main Component
 // =====================================================
-export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDetailProps) {
+export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz }: SubjectDetailProps) {
   const isTeacher = profile.role === 'teacher';
   const tabs = isTeacher ? teacherTabs : studentTabs;
 
@@ -354,18 +355,51 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
   }, [subjectId]);
 
   const fetchFiles = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('subject_files')
-      .select('*')
-      .eq('subject_id', subjectId)
-      .order('created_at', { ascending: false });
+    if (isTeacher) {
+      // Teachers see all files in the subject
+      const { data, error } = await supabase
+        .from('subject_files')
+        .select('*')
+        .eq('subject_id', subjectId)
+        .order('created_at', { ascending: false });
 
-    if (error) {
-      console.error('Error fetching files:', error);
+      if (error) {
+        console.error('Error fetching files:', error);
+      } else {
+        setFiles((data as SubjectFile[]) || []);
+      }
     } else {
-      setFiles((data as SubjectFile[]) || []);
+      // Students: use API endpoint which filters public + own private files
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          setFiles([]);
+          return;
+        }
+        const response = await fetch(`/api/subjects/${subjectId}/files`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const result = await response.json();
+        if (result.success && result.data) {
+          setFiles(result.data as SubjectFile[]);
+        } else {
+          setFiles([]);
+        }
+      } catch {
+        // Fallback to direct query with filter
+        const { data, error } = await supabase
+          .from('subject_files')
+          .select('*')
+          .eq('subject_id', subjectId)
+          .or(`visibility.eq.public,visibility.is.null,uploaded_by.eq.${profile.id}`)
+          .order('created_at', { ascending: false });
+
+        if (!error) {
+          setFiles((data as SubjectFile[]) || []);
+        }
+      }
     }
-  }, [subjectId]);
+  }, [subjectId, isTeacher, profile.id]);
 
   const fetchNotes = useCallback(async () => {
     const { data, error } = await supabase
@@ -840,7 +874,7 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
   // Handlers
   // =====================================================
 
-  // ─── File upload ───
+  // ─── File upload (works for both teacher and student) ───
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -859,12 +893,21 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
         return;
       }
 
-      // Use the API route for file upload (server-side with service key)
-      // This avoids client-side storage RLS issues
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('name', file.name);
 
-      const response = await fetch(`/api/subjects/${subjectId}/files`, {
+      // Use the appropriate upload endpoint based on role
+      // Teachers use the main files endpoint, students use the /upload endpoint
+      let uploadUrl: string;
+      if (isTeacher) {
+        uploadUrl = `/api/subjects/${subjectId}/files`;
+      } else {
+        uploadUrl = `/api/subjects/${subjectId}/files/upload`;
+        formData.append('visibility', 'private');
+      }
+
+      const response = await fetch(uploadUrl, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -1000,6 +1043,15 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
 
   // ─── Delete lecture ───
   const handleDeleteLecture = async (lectureId: string) => {
+    // Check if lecture is active
+    const lecture = lectures.find(l => l.id === lectureId);
+    if (lecture?.is_active) {
+      toast.error('لا يمكن حذف محاضرة نشطة. يرجى إيقاف المحاضرة أولاً');
+      setDeleteLectureDialogOpen(false);
+      setDeleteLectureId(null);
+      return;
+    }
+
     // Delete attendance first (cascade should handle this, but be safe)
     await supabase.from('lecture_attendance').delete().eq('lecture_id', lectureId);
     const { error } = await supabase.from('lectures').delete().eq('id', lectureId);
@@ -1511,29 +1563,27 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
           <h3 className="text-xl font-bold text-foreground">ملفات المادة</h3>
           <p className="text-muted-foreground text-sm mt-1">جميع الملفات المرفوعة لهذه المادة</p>
         </div>
-        {isTeacher && (
-          <div>
-            <input
-              ref={(el) => { (fileInputRef as React.MutableRefObject<HTMLInputElement | null>).current = el; }}
-              type="file"
-              onChange={handleFileUpload}
-              className="hidden"
-              disabled={uploadingFile}
-            />
-            <Button
-              onClick={() => (fileInputRef as React.MutableRefObject<HTMLInputElement | null>).current?.click()}
-              disabled={uploadingFile}
-              className="gap-2 bg-emerald-600 hover:bg-emerald-700"
-            >
-              {uploadingFile ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Upload className="h-4 w-4" />
-              )}
-              {uploadingFile ? 'جاري الرفع...' : 'رفع ملف'}
-            </Button>
-          </div>
-        )}
+        <div>
+          <input
+            ref={(el) => { (fileInputRef as React.MutableRefObject<HTMLInputElement | null>).current = el; }}
+            type="file"
+            onChange={handleFileUpload}
+            className="hidden"
+            disabled={uploadingFile}
+          />
+          <Button
+            onClick={() => (fileInputRef as React.MutableRefObject<HTMLInputElement | null>).current?.click()}
+            disabled={uploadingFile}
+            className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+          >
+            {uploadingFile ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="h-4 w-4" />
+            )}
+            {uploadingFile ? 'جاري الرفع...' : 'رفع ملف'}
+          </Button>
+        </div>
       </motion.div>
 
       {/* Files grid */}
@@ -1578,7 +1628,7 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
                       <Download className="h-3.5 w-3.5" />
                       تحميل
                     </Button>
-                    {isTeacher && (
+                    {(isTeacher || file.uploaded_by === profile.id) && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1923,6 +1973,15 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
             <h3 className="text-xl font-bold text-foreground">اختبارات المادة</h3>
             <p className="text-muted-foreground text-sm mt-1">جميع الاختبارات المتاحة لهذه المادة</p>
           </div>
+          {isTeacher && onCreateQuiz && (
+            <button
+              onClick={() => onCreateQuiz(subjectId)}
+              className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700"
+            >
+              <Plus className="h-4 w-4" />
+              إنشاء اختبار
+            </button>
+          )}
         </motion.div>
 
         {/* Quizzes grid */}

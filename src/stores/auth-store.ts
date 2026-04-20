@@ -102,7 +102,7 @@ interface AuthState {
   setUser: (user: UserProfile | null) => void;
   initialize: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUpWithEmail: (email: string, password: string, name: string, role: 'student' | 'teacher') => Promise<{ error: string | null; needsConfirmation?: boolean }>;
+  signUpWithEmail: (email: string, password: string, name: string, role: 'student' | 'teacher', gender?: 'male' | 'female') => Promise<{ error: string | null; needsConfirmation?: boolean }>;
   signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<{ error: string | null }>;
@@ -258,7 +258,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
   
-  signUpWithEmail: async (email, password, name, role) => {
+  signUpWithEmail: async (email, password, name, role, gender) => {
     try {
       // Input validation & sanitization
       const sanitizedEmail = sanitizeInput(email).toLowerCase();
@@ -278,7 +278,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         email: sanitizedEmail, 
         password,
         options: {
-          data: { name: sanitizedName, role }
+          data: { name: sanitizedName, role, ...(gender ? { gender } : {}) }
         }
       });
       
@@ -320,6 +320,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           email: sanitizedEmail,
           name: sanitizedName,
           role,
+          ...(gender ? { gender } : {}),
         });
       
       if (profileError) {

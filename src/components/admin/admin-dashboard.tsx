@@ -193,6 +193,10 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
 
   // ─── Quizzes section ───
   const [deleteQuizConfirm, setDeleteQuizConfirm] = useState<Quiz | null>(null);
+  const [viewingQuizResults, setViewingQuizResults] = useState<Quiz | null>(null);
+  const [quizResultsScores, setQuizResultsScores] = useState<Score[]>([]);
+  const [quizResultsStudents, setQuizResultsStudents] = useState<Record<string, UserProfile>>({});
+  const [loadingResults, setLoadingResults] = useState(false);
 
   // ─── Settings section ───
   const [announcementTitle, setAnnouncementTitle] = useState('');
@@ -543,23 +547,33 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
       await supabase.from('scores').delete().eq('teacher_id', user.id);
       await supabase.from('teacher_student_links').delete().eq('student_id', user.id);
       await supabase.from('teacher_student_links').delete().eq('teacher_id', user.id);
+      await supabase.from('subject_students').delete().eq('student_id', user.id);
+      await supabase.from('notifications').delete().eq('user_id', user.id);
       await supabase.from('quizzes').delete().eq('user_id', user.id);
       await supabase.from('summaries').delete().eq('user_id', user.id);
 
       // Delete auth user via API to prevent re-creation on login
-      await fetch('/api/admin/delete-user', {
+      const deleteResponse = await fetch('/api/admin/delete-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id }),
       });
+      const deleteData = await deleteResponse.json();
+
+      if (!deleteData.success) {
+        toast.error(deleteData.error || 'فشل في حذف حساب المصادقة');
+        return;
+      }
 
       const { error } = await supabase.from('users').delete().eq('id', user.id);
 
       if (error) {
-        toast.error('حدث خطأ أثناء حذف المستخدم');
+        toast.error('حدث خطأ أثناء حذف بيانات المستخدم');
       } else {
         toast.success(`تم حذف المستخدم ${user.name} بنجاح`);
         fetchUsers();
+        fetchQuizzes();
+        fetchScores();
       }
     } catch {
       toast.error('حدث خطأ غير متوقع');
@@ -644,6 +658,39 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
     } finally {
       setActionLoading(null);
       setDeleteQuizConfirm(null);
+    }
+  };
+
+  const handleViewQuizResults = async (quiz: Quiz) => {
+    setViewingQuizResults(quiz);
+    setLoadingResults(true);
+    try {
+      const { data: quizScores, error } = await supabase
+        .from('scores')
+        .select('*')
+        .eq('quiz_id', quiz.id)
+        .order('completed_at', { ascending: false });
+      if (!error && quizScores) {
+        setQuizResultsScores(quizScores as Score[]);
+        const studentIds = [...new Set((quizScores as Score[]).map(s => s.student_id))];
+        if (studentIds.length > 0) {
+          const { data: studentProfiles } = await supabase
+            .from('users')
+            .select('*')
+            .in('id', studentIds);
+          if (studentProfiles) {
+            const map: Record<string, UserProfile> = {};
+            (studentProfiles as UserProfile[]).forEach(p => { map[p.id] = p; });
+            setQuizResultsStudents(map);
+          }
+        } else {
+          setQuizResultsStudents({});
+        }
+      }
+    } catch {
+      // silently ignore
+    } finally {
+      setLoadingResults(false);
     }
   };
 
@@ -1000,6 +1047,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                     <th className="text-right font-medium p-3">الاسم</th>
                     <th className="text-right font-medium p-3 hidden sm:table-cell">البريد الإلكتروني</th>
                     <th className="text-right font-medium p-3">الدور</th>
+                    <th className="text-right font-medium p-3 hidden md:table-cell">الجنس</th>
                     <th className="text-right font-medium p-3 hidden md:table-cell">تاريخ التسجيل</th>
                     <th className="text-right font-medium p-3">إجراءات</th>
                   </tr>
@@ -1039,6 +1087,11 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                           <Badge className={`text-[10px] ${roleColors[user.role] || ''}`}>
                             {roleLabels[user.role] || user.role}
                           </Badge>
+                        </td>
+                        <td className="p-3 hidden md:table-cell">
+                          <span className="text-xs text-muted-foreground">
+                            {user.gender === 'male' ? '♂ ذكر' : user.gender === 'female' ? '♀ أنثى' : '—'}
+                          </span>
                         </td>
                         <td className="p-3 hidden md:table-cell">
                           <span className="text-xs text-muted-foreground">

@@ -123,6 +123,7 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
   // ─── Profile state ──────────────────────────────────
   const [name, setName] = useState(profile.name);
   const [selectedTitleId, setSelectedTitleId] = useState<string>(profile.title_id || '');
+  const [selectedGender, setSelectedGender] = useState<string>(profile.gender || '');
   const [userTitles, setUserTitles] = useState<UserTitle[]>([]);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [titlesLoading, setTitlesLoading] = useState(true);
@@ -227,7 +228,8 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
   useEffect(() => {
     setName(profile.name);
     setSelectedTitleId(profile.title_id || '');
-  }, [profile.name, profile.title_id]);
+    setSelectedGender(profile.gender || '');
+  }, [profile.name, profile.title_id, profile.gender]);
 
   // ─── Estimate cache size ────────────────────────────
   useEffect(() => {
@@ -313,6 +315,9 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
       const updates: Partial<UserProfile> = { name: trimmed };
       if (selectedTitleId !== profile.title_id) {
         updates.title_id = selectedTitleId === '__none__' ? null : selectedTitleId || null;
+      }
+      if (selectedGender !== (profile.gender || '')) {
+        updates.gender = (selectedGender as 'male' | 'female') || undefined;
       }
 
       const result = await updateProfile(updates);
@@ -661,7 +666,7 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
 
                 <div className="flex-1 space-y-1 text-center sm:text-right">
                   <p className="text-lg font-semibold text-foreground">
-                    {getSelectedTitleText() && (
+                    {(profile.role === 'teacher' || profile.role === 'admin') && getSelectedTitleText() && (
                       <span className="ml-1 text-emerald-600">{getSelectedTitleText()}</span>
                     )}
                     {profile.name}
@@ -680,26 +685,48 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
 
               <Separator />
 
-              {/* Title selector */}
+              {/* Title selector - only for teachers and admins */}
+              {(profile.role === 'teacher' || profile.role === 'admin') && (
+                <div className="space-y-2">
+                  <Label htmlFor="title-select" className="text-sm font-medium text-muted-foreground">
+                    اللقب العلمي
+                  </Label>
+                  <Select
+                    value={selectedTitleId || '__none__'}
+                    onValueChange={setSelectedTitleId}
+                    disabled={titlesLoading}
+                  >
+                    <SelectTrigger id="title-select" className="w-full">
+                      <SelectValue placeholder={titlesLoading ? 'جاري التحميل...' : 'اختر اللقب'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">بدون لقب</SelectItem>
+                      {userTitles.map((title) => (
+                        <SelectItem key={title.id} value={title.id}>
+                          {title.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Gender selector */}
               <div className="space-y-2">
-                <Label htmlFor="title-select" className="text-sm font-medium text-muted-foreground">
-                  اللقب العلمي
+                <Label htmlFor="gender-select" className="text-sm font-medium text-muted-foreground">
+                  الجنس
                 </Label>
                 <Select
-                  value={selectedTitleId || '__none__'}
-                  onValueChange={setSelectedTitleId}
-                  disabled={titlesLoading}
+                  value={selectedGender || '__none__'}
+                  onValueChange={setSelectedGender}
                 >
-                  <SelectTrigger id="title-select" className="w-full">
-                    <SelectValue placeholder={titlesLoading ? 'جاري التحميل...' : 'اختر اللقب'} />
+                  <SelectTrigger id="gender-select" className="w-full">
+                    <SelectValue placeholder="اختر الجنس" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">بدون لقب</SelectItem>
-                    {userTitles.map((title) => (
-                      <SelectItem key={title.id} value={title.id}>
-                        {title.title}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="__none__">غير محدد</SelectItem>
+                    <SelectItem value="male">ذكر</SelectItem>
+                    <SelectItem value="female">أنثى</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -783,7 +810,7 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
                   onClick={handleSaveProfile}
                   disabled={
                     isSavingProfile ||
-                    (name === profile.name && (selectedTitleId || '__none__') === (profile.title_id || '__none__'))
+                    (name === profile.name && (selectedTitleId || '__none__') === (profile.title_id || '__none__') && (selectedGender || '__none__') === (profile.gender || '__none__'))
                   }
                   className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 min-w-[140px]"
                 >

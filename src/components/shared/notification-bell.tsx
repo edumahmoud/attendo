@@ -90,6 +90,7 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
   const initialLoadDone = useRef(false);
   const subscriptionRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const notificationsRef = useRef<Notification[]>([]);
+  const toastedIdsRef = useRef<Set<string>>(new Set());
   const { setStudentSection, setTeacherSection, setViewingSubjectId, setSubjectSection } = useAppStore();
 
   // Fetch notifications using direct Supabase query (fastest)
@@ -152,16 +153,32 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
         },
         (payload) => {
           const newNotification = payload.new as Notification;
-          setNotifications((prev) => [newNotification, ...prev].slice(0, 20));
-          notificationsRef.current = [newNotification, ...notificationsRef.current].slice(0, 20);
-          if (!newNotification.is_read) {
-            setUnreadCount((prev) => prev + 1);
+
+          // Prevent duplicate: check if notification already exists in the list
+          setNotifications((prev) => {
+            if (prev.some((n) => n.id === newNotification.id)) return prev;
+            return [newNotification, ...prev].slice(0, 20);
+          });
+
+          // Update ref only if not already present
+          if (!notificationsRef.current.some((n) => n.id === newNotification.id)) {
+            notificationsRef.current = [newNotification, ...notificationsRef.current].slice(0, 20);
+            if (!newNotification.is_read) {
+              setUnreadCount((prev) => prev + 1);
+            }
           }
 
-          // Show toast
-          toast(newNotification.title, {
-            description: newNotification.content,
-          });
+          // Show toast with deduplication: only toast once per notification ID
+          if (!toastedIdsRef.current.has(newNotification.id)) {
+            toastedIdsRef.current.add(newNotification.id);
+            toast(newNotification.title, {
+              description: newNotification.content,
+            });
+            // Clean up toasted ID after 30 seconds to prevent unbounded Set growth
+            setTimeout(() => {
+              toastedIdsRef.current.delete(newNotification.id);
+            }, 30000);
+          }
         },
       )
       .on(
@@ -307,11 +324,13 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
         case 'note': {
           const { data } = await supabase.from('subject_notes').select('subject_id').eq('id', reference_id).single();
           if (data?.subject_id) { targetSubjectId = data.subject_id; targetSection = 'notes'; }
+          else { if (isTeacher) setTeacherSection('subjects'); else setStudentSection('subjects'); }
           break;
         }
         case 'lecture': {
           const { data } = await supabase.from('lectures').select('subject_id').eq('id', reference_id).single();
           if (data?.subject_id) { targetSubjectId = data.subject_id; targetSection = 'lectures'; }
+          else { if (isTeacher) setTeacherSection('subjects'); else setStudentSection('subjects'); }
           break;
         }
         case 'message': {
@@ -344,7 +363,11 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
         if (targetSection) setSubjectSection(targetSection as SubjectSection);
         if (isTeacher) setTeacherSection('subjects');
         else setStudentSection('subjects');
-      }, 50);
+      }, 150);
+    } else if (type !== 'quiz' && type !== 'message') {
+      // For note/lecture types that didn't resolve to a subject, navigate to subjects list
+      if (isTeacher) setTeacherSection('subjects');
+      else setStudentSection('subjects');
     }
   };
 

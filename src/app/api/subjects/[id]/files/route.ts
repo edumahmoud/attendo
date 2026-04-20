@@ -414,14 +414,18 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Verify the user is the teacher who uploaded this file
+    // Verify the user has permission to delete this file
+    // Teacher of the subject OR the user who uploaded the file
     const { data: subject } = await supabaseServer
       .from('subjects')
       .select('teacher_id')
       .eq('id', subjectId)
       .single();
 
-    if (!subject || subject.teacher_id !== user.id) {
+    const isTeacher = subject && subject.teacher_id === user.id;
+    const isUploader = fileRecord.uploaded_by === user.id;
+
+    if (!isTeacher && !isUploader) {
       return NextResponse.json(
         { success: false, error: 'غير مصرح بحذف هذا الملف' },
         { status: 403, headers: rateLimitHeaders }

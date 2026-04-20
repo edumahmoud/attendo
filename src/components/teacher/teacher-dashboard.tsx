@@ -858,6 +858,33 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
   };
 
   // -------------------------------------------------------
+  // Toggle allow retake
+  // -------------------------------------------------------
+  const handleToggleRetake = async (quizId: string, currentValue: boolean) => {
+    try {
+      const response = await fetch('/api/quizzes/update', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quizId, updates: { allow_retake: !currentValue } }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success(!currentValue ? 'تم تفعيل إعادة الاختبار' : 'تم تعطيل إعادة الاختبار');
+        fetchQuizzes();
+      } else {
+        // If allow_retake column doesn't exist, show helpful error
+        if (data.error?.includes('allow_retake') || data.error?.includes('column')) {
+          toast.error('عمود السماح بالإعادة غير موجود في قاعدة البيانات. يرجى تحديث قاعدة البيانات.');
+        } else {
+          toast.error('حدث خطأ أثناء تحديث الإعداد');
+        }
+      }
+    } catch {
+      toast.error('حدث خطأ أثناء تحديث الإعداد');
+    }
+  };
+
+  // -------------------------------------------------------
   // Delete quiz
   // -------------------------------------------------------
   const handleDeleteQuiz = async (quizId: string) => {
@@ -1861,6 +1888,27 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                     </div>
 
                     <div className="p-5 space-y-5">
+                      {/* Student info header */}
+                      <div className="flex items-center gap-3 rounded-xl border p-4 bg-muted/30">
+                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold text-lg">
+                          {performanceStudent.name.charAt(0)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-foreground">{performanceStudent.name}</p>
+                          <p className="text-xs text-muted-foreground">{performanceStudent.email}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            {performanceStudent.gender && (
+                              <Badge variant="outline" className="text-xs">
+                                {performanceStudent.gender === 'male' ? '♂ ذكر' : '♀ أنثى'}
+                              </Badge>
+                            )}
+                            <Badge variant="outline" className="text-xs">
+                              {formatDate(performanceStudent.created_at)}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Performance overview cards */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         <div className="rounded-xl border p-4 text-center">
@@ -1965,6 +2013,42 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                           )}
                         </div>
                       </div>
+
+                      {/* Enrolled Subjects */}
+                      <div className="rounded-xl border overflow-hidden">
+                        <div className="border-b p-4">
+                          <h4 className="font-semibold text-foreground flex items-center gap-2">
+                            <BookOpen className="h-4 w-4 text-emerald-600" />
+                            المقررات المسجل بها
+                          </h4>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                          {(() => {
+                            const studentSubjects = teacherSubjects.filter(s => 
+                              students.some(st => st.id === performanceStudent.id)
+                            );
+                            return studentSubjects.length === 0 ? (
+                              <div className="p-4 text-center text-muted-foreground text-sm">
+                                لا توجد مقررات مسجل بها هذا الطالب
+                              </div>
+                            ) : (
+                              <div className="divide-y">
+                                {studentSubjects.map(s => (
+                                  <div key={s.id} className="flex items-center gap-3 p-3 hover:bg-muted/30 transition-colors">
+                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: s.color + '20' }}>
+                                      <BookOpen className="h-4 w-4" style={{ color: s.color }} />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium text-foreground">{s.name}</p>
+                                      {s.subject_code && <p className="text-xs text-muted-foreground">{s.subject_code}</p>}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
                     </div>
                   </>
                 );
@@ -1979,21 +2063,88 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
   // -------------------------------------------------------
   // Render: Quizzes Section
   // -------------------------------------------------------
-  const renderQuizzes = () => (
+  // ─── Quizzes tab state ───
+  const [quizTab, setQuizTab] = useState<'open' | 'closed'>('open');
+
+  // ─── Classify quizzes as open/closed ───
+  const openQuizzes = quizzes.filter((q) => {
+    if (q.results_visible !== false) return true;
+    if (q.scheduled_date) {
+      try {
+        const scheduledDateTime = q.scheduled_time
+          ? new Date(`${q.scheduled_date}T${q.scheduled_time}`)
+          : new Date(q.scheduled_date);
+        return scheduledDateTime.getTime() > Date.now();
+      } catch { return false; }
+    }
+    return false;
+  });
+
+  const closedQuizzes = quizzes.filter((q) => {
+    return q.results_visible === false && (() => {
+      if (q.scheduled_date) {
+        try {
+          const scheduledDateTime = q.scheduled_time
+            ? new Date(`${q.scheduled_date}T${q.scheduled_time}`)
+            : new Date(q.scheduled_date);
+          return scheduledDateTime.getTime() <= Date.now();
+        } catch { return true; }
+      }
+      return true;
+    })();
+  });
+
+  const renderQuizzes = () => {
+    const displayedQuizzes = quizTab === 'open' ? openQuizzes : closedQuizzes;
+
+    return (
     <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
       {/* Header */}
-      <motion.div variants={itemVariants} className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground">الاختبارات</h2>
-          <p className="text-muted-foreground mt-1">إنشاء وإدارة الاختبارات</p>
+      <motion.div variants={itemVariants}>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">الاختبارات</h2>
+            <p className="text-muted-foreground mt-1">عرض وإدارة الاختبارات - أنشئ اختبارات من داخل المقررات</p>
+          </div>
         </div>
-        <button
-          onClick={() => handleOpenCreateQuiz()}
-          className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700"
-        >
-          <Plus className="h-4 w-4" />
-          إنشاء اختبار يدوي
-        </button>
+      </motion.div>
+
+      {/* Tabs */}
+      <motion.div variants={itemVariants}>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setQuizTab('open')}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
+              quizTab === 'open'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'border text-muted-foreground hover:bg-muted/50'
+            }`}
+          >
+            <Eye className="h-4 w-4" />
+            اختبارات مفتوحة
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+              quizTab === 'open' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-700'
+            }`}>
+              {openQuizzes.length}
+            </span>
+          </button>
+          <button
+            onClick={() => setQuizTab('closed')}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
+              quizTab === 'closed'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'border text-muted-foreground hover:bg-muted/50'
+            }`}
+          >
+            <Lock className="h-4 w-4" />
+            اختبارات مغلقة
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+              quizTab === 'closed' ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-700'
+            }`}>
+              {closedQuizzes.length}
+            </span>
+          </button>
+        </div>
       </motion.div>
 
       {/* Quiz cards */}
@@ -2006,18 +2157,30 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
             <ClipboardList className="h-8 w-8 text-teal-600" />
           </div>
           <p className="text-lg font-semibold text-foreground mb-1">لا توجد اختبارات</p>
-          <p className="text-sm text-muted-foreground mb-4">ابدأ بإنشاء اختبار جديد لطلابك</p>
+          <p className="text-sm text-muted-foreground mb-4">أنشئ اختبارات من داخل المقررات الدراسية</p>
           <button
-            onClick={() => setCreateQuizOpen(true)}
+            onClick={() => { setActiveSection('subjects'); }}
             className="flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-teal-700"
           >
-            <Plus className="h-4 w-4" />
-            إنشاء اختبار
+            <BookOpen className="h-4 w-4" />
+            الذهاب للمقررات
           </button>
+        </motion.div>
+      ) : displayedQuizzes.length === 0 ? (
+        <motion.div
+          variants={itemVariants}
+          className="flex flex-col items-center justify-center rounded-xl border border-dashed border-teal-300 bg-teal-50/30 py-12"
+        >
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-teal-100 mb-3">
+            {quizTab === 'open' ? <Eye className="h-6 w-6 text-teal-600" /> : <Lock className="h-6 w-6 text-teal-600" />}
+          </div>
+          <p className="text-sm font-medium text-foreground">
+            {quizTab === 'open' ? 'لا توجد اختبارات مفتوحة' : 'لا توجد اختبارات مغلقة'}
+          </p>
         </motion.div>
       ) : (
         <motion.div variants={containerVariants} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {quizzes.map((quiz) => {
+          {displayedQuizzes.map((quiz) => {
             // Format scheduled date/time nicely
             const formattedSchedule = (() => {
               if (!quiz.scheduled_date) return null;
@@ -2090,19 +2253,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                   </div>
                   <button
                     type="button"
-                    onClick={async () => {
-                      const newRetakeValue = !quiz.allow_retake;
-                      const { error } = await supabase
-                        .from('quizzes')
-                        .update({ allow_retake: newRetakeValue })
-                        .eq('id', quiz.id);
-                      if (error) {
-                        toast.error('حدث خطأ أثناء تحديث الإعداد');
-                      } else {
-                        toast.success(newRetakeValue ? 'تم تفعيل إعادة الاختبار' : 'تم تعطيل إعادة الاختبار');
-                        fetchQuizzes();
-                      }
-                    }}
+                    onClick={() => handleToggleRetake(quiz.id, quiz.allow_retake || false)}
                     className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500/30 ${
                       quiz.allow_retake ? 'bg-emerald-600' : 'bg-muted-foreground/30'
                     }`}
@@ -2228,21 +2379,33 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                   />
                 </div>
 
-                {/* Subject selector */}
+                {/* Subject selector - locked if pre-selected */}
                 <div>
-                  <label className="text-sm font-medium text-foreground mb-1.5 block">المقرر <span className="text-rose-500">*</span></label>
-                  <select
-                    value={quizSubjectId}
-                    onChange={(e) => setQuizSubjectId(e.target.value)}
-                    className="w-full rounded-lg border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-colors"
-                    disabled={creatingQuiz}
-                    dir="rtl"
-                  >
-                    <option value="">اختر المقرر</option>
-                    {teacherSubjects.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">
+                    المقرر <span className="text-rose-500">*</span>
+                    {editingQuiz && editingQuiz.subject_id && (
+                      <span className="text-xs text-muted-foreground font-normal mr-1">(لا يمكن تغيير المقرر)</span>
+                    )}
+                  </label>
+                  {editingQuiz && editingQuiz.subject_id ? (
+                    <div className="w-full rounded-lg border bg-muted/50 px-3 py-2.5 text-sm text-foreground flex items-center gap-2">
+                      <BookOpen className="h-4 w-4 text-emerald-600" />
+                      {teacherSubjects.find(s => s.id === editingQuiz.subject_id)?.name || 'المقرر'}
+                    </div>
+                  ) : (
+                    <select
+                      value={quizSubjectId}
+                      onChange={(e) => setQuizSubjectId(e.target.value)}
+                      className="w-full rounded-lg border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-colors"
+                      disabled={creatingQuiz || !!editingQuiz}
+                      dir="rtl"
+                    >
+                      <option value="">{editingQuiz ? 'اختر المقرر' : '⚠ يرجى اختيار المقرر من صفحة المقرر'}</option>
+                      {teacherSubjects.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 {/* Duration & date/time */}
@@ -2760,6 +2923,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
       </AnimatePresence>
     </motion.div>
   );
+  };
 
   // -------------------------------------------------------
   // Render: Analytics Section
@@ -3252,7 +3416,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                 {activeSection === 'analytics' && renderAnalytics()}
                 {activeSection === 'subjects' && (
                   viewingSubjectId
-                    ? <SubjectDetail subjectId={viewingSubjectId} profile={profile} onBack={() => setViewingSubjectId(null)} />
+                    ? <SubjectDetail subjectId={viewingSubjectId} profile={profile} onBack={() => setViewingSubjectId(null)} onCreateQuiz={(subjectId) => { setQuizSubjectId(subjectId); handleOpenCreateQuiz(); }} />
                     : <SubjectsSection profile={profile} role="teacher" />
                 )}
                 {activeSection === 'chat' && (
