@@ -619,7 +619,7 @@ CREATE POLICY "Users can read relevant attendance" ON public.lecture_attendance
   );
 
 DROP POLICY IF EXISTS "Students can update own attendance" ON public.lecture_attendance;
-CREATE POLICY IF NOT EXISTS "Students can update own attendance" ON public.lecture_attendance
+CREATE POLICY "Students can update own attendance" ON public.lecture_attendance
   FOR UPDATE USING (student_id = auth.uid());
 
 -- ===== LECTURE_NOTES POLICIES =====
