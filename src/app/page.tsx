@@ -10,6 +10,7 @@ import RegisterForm from '@/components/auth/register-form';
 import RoleSelection from '@/components/auth/role-selection';
 import StudentDashboard from '@/components/student/student-dashboard';
 import TeacherDashboard from '@/components/teacher/teacher-dashboard';
+import AdminDashboard from '@/components/admin/admin-dashboard';
 import QuizView from '@/components/shared/quiz-view';
 import SummaryView from '@/components/shared/summary-view';
 
@@ -17,7 +18,7 @@ type AuthMode = 'login' | 'register';
 
 export default function Home() {
   const { user, loading, initialized, initialize, signOut } = useAuthStore();
-  const { currentPage, viewingQuizId, viewingSummaryId, setCurrentPage } = useAppStore();
+  const { currentPage, viewingQuizId, viewingSummaryId, setCurrentPage, reviewScoreId } = useAppStore();
   const [authMode, setAuthMode] = useState<AuthMode>('login');
 
   // Initialize auth on mount
@@ -30,13 +31,18 @@ export default function Home() {
     if (!initialized) return;
     
     if (user) {
-      if (currentPage === 'auth') {
-        setCurrentPage(user.role === 'teacher' ? 'teacher-dashboard' : 'student-dashboard');
+      if (user.role === 'pending') {
+        // User hasn't selected a role yet - show role selection
+        setCurrentPage('role-selection');
+      } else if (currentPage === 'auth' || currentPage === 'role-selection') {
+        const targetPage = user.role === 'admin' ? 'admin-dashboard' : user.role === 'teacher' ? 'teacher-dashboard' : 'student-dashboard';
+        setCurrentPage(targetPage);
       }
     } else {
+      // No user = always go to auth
       setCurrentPage('auth');
     }
-  }, [user, initialized, currentPage, setCurrentPage]);
+  }, [user, initialized, setCurrentPage]);
 
   // Loading state
   if (loading || !initialized) {
@@ -139,14 +145,22 @@ export default function Home() {
     );
   }
 
+  // Helper: get dashboard page for current user role
+  const getDashboardPage = () => {
+    if (user.role === 'admin') return 'admin-dashboard';
+    if (user.role === 'teacher') return 'teacher-dashboard';
+    return 'student-dashboard';
+  };
+
   // Quiz view
   if (currentPage === 'quiz' && viewingQuizId) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-teal-50" dir="rtl">
         <QuizView
           quizId={viewingQuizId}
-          onBack={() => setCurrentPage(user.role === 'teacher' ? 'teacher-dashboard' : 'student-dashboard')}
+          onBack={() => setCurrentPage(getDashboardPage())}
           profile={user}
+          reviewScoreId={reviewScoreId || undefined}
         />
       </div>
     );
@@ -158,7 +172,22 @@ export default function Home() {
       <div className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-teal-50" dir="rtl">
         <SummaryView
           summaryId={viewingSummaryId}
-          onBack={() => setCurrentPage(user.role === 'teacher' ? 'teacher-dashboard' : 'student-dashboard')}
+          onBack={() => setCurrentPage(getDashboardPage())}
+        />
+      </div>
+    );
+  }
+
+  // Admin dashboard
+  if (user.role === 'admin' || currentPage === 'admin-dashboard') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-50/30 to-slate-100" dir="rtl">
+        <AdminDashboard
+          profile={user}
+          onSignOut={async () => {
+            await signOut();
+            setCurrentPage('auth');
+          }}
         />
       </div>
     );

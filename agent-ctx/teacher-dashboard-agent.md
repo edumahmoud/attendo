@@ -3,7 +3,7 @@
 ## Task ID: teacher-dashboard
 
 ## Summary
-Created the comprehensive Teacher Dashboard component for the Arabic RTL educational app EduAI (Examy).
+Created the comprehensive Teacher Dashboard component for the Arabic RTL educational app Examy.
 
 ## File Created
 - `/home/z/my-project/src/components/teacher/teacher-dashboard.tsx`

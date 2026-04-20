@@ -4,7 +4,7 @@
 ## Agent: main
 
 ## Summary
-Created the comprehensive StudentDashboard component for the Arabic RTL educational app EduAI (Examy).
+Created the comprehensive StudentDashboard component for the Arabic RTL educational app Examy.
 
 ## Files Created/Modified
 1. **Created**: `/home/z/my-project/src/components/student/student-dashboard.tsx` - The main Student Dashboard component

@@ -130,7 +130,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // If profile doesn't exist, try to create it from auth metadata
         if (!profile) {
           const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'مستخدم';
-          const userRole = session.user.user_metadata?.role || 'student';
+          const userRole = session.user.user_metadata?.role || 'pending';
           
           await supabase.from('users').insert({
             id: session.user.id,
@@ -173,7 +173,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // If profile doesn't exist, try to create it from auth metadata
         if (!profile) {
           const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'مستخدم';
-          const userRole = session.user.user_metadata?.role || 'student';
+          const userRole = session.user.user_metadata?.role || 'pending';
           
           await supabase.from('users').insert({
             id: session.user.id,
@@ -240,7 +240,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Profile doesn't exist yet - try to create it
       // This handles users who signed up but profile wasn't created (e.g. email confirmation flow)
       const userName = authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'مستخدم';
-      const userRole = authUser.user_metadata?.role || 'student';
+      const userRole = authUser.user_metadata?.role || 'pending';
       
       const { error: createError } = await supabase
         .from('users')
@@ -406,7 +406,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
   
   signOut: async () => {
-    await supabase.auth.signOut();
+    try {
+      // Clean up all active Supabase channels before signing out
+      // to prevent realtime events from re-triggering state updates
+      supabase.removeAllChannels();
+      
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('[Auth] signOut error:', error);
+        // Still clear local state even if server signOut fails
+      }
+    } catch (err) {
+      console.error('[Auth] signOut exception:', err);
+    }
+    // Always clear local state
     set({ user: null, loading: false });
   },
   

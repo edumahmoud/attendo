@@ -24,15 +24,26 @@ import {
   Trash2,
   FileUp,
   Type,
+  Video,
+  BarChart3,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import AppSidebar from '@/components/shared/app-sidebar';
-import SettingsModal from '@/components/shared/settings-modal';
+import SubjectsSection from '@/components/shared/subjects-section';
+import SubjectDetail from '@/components/shared/subject-detail';
+import SettingsPage from '@/components/shared/settings-page';
+import ChatPanel from '@/components/shared/chat-panel';
+import NotificationBell from '@/components/shared/notification-bell';
+import NotificationsPanel from '@/components/shared/notifications-panel';
 import StatCard from '@/components/shared/stat-card';
+import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/stores/app-store';
 import { useAuthStore } from '@/stores/auth-store';
+import { useAutoRefresh, useDebouncedCallback, useRealtimeStatus } from '@/hooks/use-auto-refresh';
+import { useIsMobile } from '@/hooks/use-mobile';
+import RealtimeStatus from '@/components/shared/realtime-status';
 import { toast } from 'sonner';
-import type { UserProfile, Summary, Quiz, Score, StudentSection } from '@/lib/types';
+import type { UserProfile, Summary, Quiz, Score, StudentSection, Subject } from '@/lib/types';
 
 // -------------------------------------------------------
 // PDF.js worker setup - lazy loaded to avoid server-side DOMMatrix error
@@ -97,8 +108,9 @@ function formatDate(dateStr: string): string {
 // Helper: calculate score percentage
 // -------------------------------------------------------
 function scorePercentage(score: number, total: number): number {
-  if (total === 0) return 0;
-  return Math.round((score / total) * 100);
+  if (!total || total === 0 || !score && score !== 0) return 0;
+  const pct = Math.round((score / total) * 100);
+  return Number.isNaN(pct) ? 0 : pct;
 }
 
 // -------------------------------------------------------
@@ -106,11 +118,29 @@ function scorePercentage(score: number, total: number): number {
 // -------------------------------------------------------
 export default function StudentDashboard({ profile, onSignOut }: StudentDashboardProps) {
   // ─── Navigation ───
-  const [activeSection, setActiveSection] = useState<StudentSection>('dashboard');
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const { studentSection, setStudentSection: storeSetStudentSection, setViewingQuizId, setViewingSummaryId, viewingSubjectId, setViewingSubjectId, setCurrentPage, setReviewScoreId } = useAppStore();
+  const isMobile = useIsMobile();
+  const [activeSection, setActiveSectionLocal] = useState<StudentSection>(studentSection || 'dashboard');
 
-  // ─── App store ───
-  const { setViewingQuizId, setViewingSummaryId } = useAppStore();
+  // Sync with store
+  const setActiveSection = useCallback((section: StudentSection) => {
+    setActiveSectionLocal(section);
+    storeSetStudentSection(section);
+  }, [storeSetStudentSection]);
+
+  // Listen for store changes (e.g. from notifications navigation)
+  useEffect(() => {
+    if (studentSection && studentSection !== activeSection) {
+      setActiveSectionLocal(studentSection);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studentSection]);
+
+  // ─── Unread notifications count ───
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  // ─── Unread messages count ───
+  const [unreadMessages, setUnreadMessages] = useState(0);
 
   // ─── Auth store ───
   const { updateProfile: authUpdateProfile, signOut: authSignOut } = useAuthStore();
@@ -137,170 +167,348 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
   const [teacherCode, setTeacherCode] = useState('');
   const [linkingTeacher, setLinkingTeacher] = useState(false);
 
+  // ─── Expanded teacher card ───
+  const [expandedTeacherId, setExpandedTeacherId] = useState<string | null>(null);
+
   // ─── Deleting summary state ───
   const [deletingSummaryId, setDeletingSummaryId] = useState<string | null>(null);
 
   // ─── Deleting teacher link ───
   const [deletingLinkId, setDeletingLinkId] = useState<string | null>(null);
 
+  // ─── Teacher subjects (for teacher cards) ───
+  const [teacherSubjects, setTeacherSubjects] = useState<Record<string, Subject[]>>({});
+
+  // ─── Subjects count (for dashboard) ───
+  const [subjectsCount, setSubjectsCount] = useState(0);
+
   // -------------------------------------------------------
   // Data fetching
   // -------------------------------------------------------
   const fetchSummaries = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('summaries')
-      .select('*')
-      .eq('user_id', profile.id)
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('summaries')
+        .select('*')
+        .eq('user_id', profile.id)
+        .order('created_at', { ascending: false });
 
-    if (error) {
-      console.error('Error fetching summaries:', error);
-    } else {
-      setSummaries((data as Summary[]) || []);
+      if (error) {
+        console.error('Error fetching summaries:', error);
+      } else {
+        setSummaries((data as Summary[]) || []);
+      }
+    } catch {
+      // silently ignore - prevents unhandled rejection
     }
   }, [profile.id]);
 
   const fetchQuizzes = useCallback(async () => {
-    // Own quizzes
-    const { data: ownQuizzes, error: ownError } = await supabase
-      .from('quizzes')
-      .select('*')
-      .eq('user_id', profile.id)
-      .order('created_at', { ascending: false });
-
-    if (ownError) {
-      console.error('Error fetching own quizzes:', ownError);
-    }
-
-    // Teacher-linked quizzes
-    const { data: links } = await supabase
-      .from('teacher_student_links')
-      .select('teacher_id')
-      .eq('student_id', profile.id);
-
-    let teacherQuizzes: Quiz[] = [];
-    if (links && links.length > 0) {
-      const teacherIds = links.map((l) => l.teacher_id);
-      const { data: tQuizzes, error: tError } = await supabase
+    try {
+      // Own quizzes
+      const { data: ownQuizzes, error: ownError } = await supabase
         .from('quizzes')
         .select('*')
-        .in('user_id', teacherIds)
+        .eq('user_id', profile.id)
         .order('created_at', { ascending: false });
 
-      if (tError) {
-        console.error('Error fetching teacher quizzes:', tError);
-      } else {
-        teacherQuizzes = (tQuizzes as Quiz[]) || [];
+      if (ownError) {
+        console.error('Error fetching own quizzes:', ownError);
       }
-    }
 
-    // Merge and deduplicate
-    const allQuizzes = [...(ownQuizzes as Quiz[] || []), ...teacherQuizzes];
-    const uniqueMap = new Map<string, Quiz>();
-    allQuizzes.forEach((q) => uniqueMap.set(q.id, q));
-    setQuizzes(Array.from(uniqueMap.values()));
+      // Teacher-linked quizzes
+      const { data: links } = await supabase
+        .from('teacher_student_links')
+        .select('teacher_id')
+        .eq('student_id', profile.id);
+
+      let teacherQuizzes: Quiz[] = [];
+      if (links && links.length > 0) {
+        const teacherIds = links.map((l) => l.teacher_id);
+        const { data: tQuizzes, error: tError } = await supabase
+          .from('quizzes')
+          .select('*')
+          .in('user_id', teacherIds)
+          .order('created_at', { ascending: false });
+
+        if (tError) {
+          console.error('Error fetching teacher quizzes:', tError);
+        } else {
+          teacherQuizzes = (tQuizzes as Quiz[]) || [];
+        }
+      }
+
+      // Merge and deduplicate
+      const allQuizzes = [...(ownQuizzes as Quiz[] || []), ...teacherQuizzes];
+      const uniqueMap = new Map<string, Quiz>();
+      allQuizzes.forEach((q) => uniqueMap.set(q.id, q));
+      const finalQuizzes = Array.from(uniqueMap.values());
+
+      // Enrich with subject names
+      const quizzesWithSubjects = finalQuizzes.filter(q => q.subject_id);
+      if (quizzesWithSubjects.length > 0) {
+        const subjectIds = [...new Set(quizzesWithSubjects.map(q => q.subject_id).filter(Boolean))];
+        if (subjectIds.length > 0) {
+          const { data: subjectsData } = await supabase
+            .from('subjects')
+            .select('id, name')
+            .in('id', subjectIds);
+          if (subjectsData) {
+            const subjectMap: Record<string, string> = {};
+            (subjectsData as { id: string; name: string }[]).forEach(s => {
+              subjectMap[s.id] = s.name;
+            });
+            finalQuizzes.forEach(q => {
+              if (q.subject_id) {
+                q.subject_name = subjectMap[q.subject_id] || '';
+              }
+            });
+          }
+        }
+      }
+
+      setQuizzes(finalQuizzes);
+    } catch {
+      // silently ignore - prevents unhandled rejection
+    }
   }, [profile.id]);
 
   const fetchScores = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('scores')
-      .select('*')
-      .eq('student_id', profile.id)
-      .order('completed_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('scores')
+        .select('*')
+        .eq('student_id', profile.id)
+        .order('completed_at', { ascending: false });
 
-    if (error) {
-      console.error('Error fetching scores:', error);
-    } else {
-      setScores((data as Score[]) || []);
+      if (error) {
+        console.error('Error fetching scores:', error);
+      } else {
+        setScores((data as Score[]) || []);
+      }
+    } catch {
+      // silently ignore - prevents unhandled rejection
     }
   }, [profile.id]);
 
   const fetchLinkedTeachers = useCallback(async () => {
-    const { data: links, error: linksError } = await supabase
-      .from('teacher_student_links')
-      .select('teacher_id')
-      .eq('student_id', profile.id);
+    try {
+      const { data: links, error: linksError } = await supabase
+        .from('teacher_student_links')
+        .select('teacher_id')
+        .eq('student_id', profile.id);
 
-    if (linksError) {
-      console.error('Error fetching teacher links:', linksError);
+      if (linksError) {
+        console.error('Error fetching teacher links:', linksError);
+        return;
+      }
+
+      if (links && links.length > 0) {
+        const teacherIds = links.map((l) => l.teacher_id);
+        const { data: teachers, error: teachersError } = await supabase
+          .from('users')
+          .select('*')
+          .in('id', teacherIds);
+
+        if (teachersError) {
+          console.error('Error fetching teacher profiles:', teachersError);
+        } else {
+          setLinkedTeachers((teachers as UserProfile[]) || []);
+        }
+      } else {
+        setLinkedTeachers([]);
+      }
+    } catch {
+      // silently ignore - prevents unhandled rejection
+    }
+  }, [profile.id]);
+
+  // ─── Fetch subjects for each linked teacher ───
+  const fetchTeacherSubjects = useCallback(async () => {
+    if (linkedTeachers.length === 0) {
+      setTeacherSubjects({});
       return;
     }
 
-    if (links && links.length > 0) {
-      const teacherIds = links.map((l) => l.teacher_id);
-      const { data: teachers, error: teachersError } = await supabase
-        .from('users')
-        .select('*')
-        .in('id', teacherIds);
+    try {
+      // Get all enrolled subjects for this student
+      const { data: enrollments } = await supabase
+        .from('subject_students')
+        .select('subject_id')
+        .eq('student_id', profile.id);
 
-      if (teachersError) {
-        console.error('Error fetching teacher profiles:', teachersError);
-      } else {
-        setLinkedTeachers((teachers as UserProfile[]) || []);
+      if (!enrollments || enrollments.length === 0) {
+        setTeacherSubjects({});
+        return;
       }
-    } else {
-      setLinkedTeachers([]);
+
+      const enrolledSubjectIds = enrollments.map((e: { subject_id: string }) => e.subject_id);
+
+      // Fetch subjects details
+      const { data: subjectsData } = await supabase
+        .from('subjects')
+        .select('*')
+        .in('id', enrolledSubjectIds);
+
+      if (!subjectsData) {
+        setTeacherSubjects({});
+        return;
+      }
+
+      // Group by teacher_id
+      const grouped: Record<string, Subject[]> = {};
+      (subjectsData as Subject[]).forEach((s) => {
+        if (!grouped[s.teacher_id]) grouped[s.teacher_id] = [];
+        grouped[s.teacher_id].push(s);
+      });
+
+      setTeacherSubjects(grouped);
+    } catch {
+      // silently ignore
+    }
+  }, [profile.id, linkedTeachers.length]);
+
+  // ─── Fetch subjects count for dashboard ───
+  const fetchSubjectsCount = useCallback(async () => {
+    try {
+      const { count, error } = await supabase
+        .from('subject_students')
+        .select('*', { count: 'exact', head: true })
+        .eq('student_id', profile.id);
+
+      if (!error && count !== null) {
+        setSubjectsCount(count);
+      }
+    } catch {
+      // silently ignore
     }
   }, [profile.id]);
 
   // Load all data
-  const fetchAllData = useCallback(async () => {
-    setLoadingData(true);
-    await Promise.all([fetchSummaries(), fetchQuizzes(), fetchScores(), fetchLinkedTeachers()]);
+  const initialLoadDone = useRef(false);
+  const fetchAllData = useCallback(async (showLoading = false) => {
+    if (showLoading || !initialLoadDone.current) setLoadingData(true);
+    await Promise.allSettled([fetchSummaries(), fetchQuizzes(), fetchScores(), fetchLinkedTeachers(), fetchSubjectsCount()]);
     setLoadingData(false);
-  }, [fetchSummaries, fetchQuizzes, fetchScores, fetchLinkedTeachers]);
+    initialLoadDone.current = true;
+  }, [fetchSummaries, fetchQuizzes, fetchScores, fetchLinkedTeachers, fetchSubjectsCount]);
 
   useEffect(() => {
-    fetchAllData();
+    fetchAllData(true);
   }, [fetchAllData]);
 
+  // Fetch teacher subjects when linked teachers change
+  useEffect(() => {
+    fetchTeacherSubjects();
+  }, [fetchTeacherSubjects]);
+
   // -------------------------------------------------------
-  // Realtime subscriptions
+  // Realtime status & auto-refresh
+  // -------------------------------------------------------
+  const { status: rtStatusValue, lastUpdated: rtLastUpdated, markConnected, markDisconnected, markConnecting, markUpdated } = useRealtimeStatus();
+
+  // Debounced versions of fetch functions to prevent rapid re-fetches
+  const debouncedFetchSummaries = useDebouncedCallback(() => fetchSummaries(), 500);
+  const debouncedFetchQuizzes = useDebouncedCallback(() => fetchQuizzes(), 500);
+  const debouncedFetchScores = useDebouncedCallback(() => fetchScores(), 500);
+  const debouncedFetchLinkedTeachers = useDebouncedCallback(() => fetchLinkedTeachers(), 500);
+  const debouncedFetchSubjectsCount = useDebouncedCallback(() => fetchSubjectsCount(), 500);
+
+  // Full data refresh for polling fallback
+  const refreshAllData = useCallback(async () => {
+    await Promise.allSettled([fetchSummaries(), fetchQuizzes(), fetchScores(), fetchLinkedTeachers(), fetchSubjectsCount()]);
+    markUpdated();
+  }, [fetchSummaries, fetchQuizzes, fetchScores, fetchLinkedTeachers, fetchSubjectsCount, markUpdated]);
+
+  // Auto-refresh every 60 seconds as fallback
+  useAutoRefresh(refreshAllData, 60000);
+
+  // -------------------------------------------------------
+  // Realtime subscriptions (with debounce + missing subscriptions)
   // -------------------------------------------------------
   useEffect(() => {
+    markConnecting();
+
     const summariesChannel = supabase
       .channel('summaries-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'summaries', filter: `user_id=eq.${profile.id}` },
-        () => { fetchSummaries(); }
+        () => { debouncedFetchSummaries(); markConnected(); markUpdated(); }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') markConnected();
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') markDisconnected();
+      });
 
     const quizzesChannel = supabase
       .channel('quizzes-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'quizzes' },
-        () => { fetchQuizzes(); }
+        () => { debouncedFetchQuizzes(); markUpdated(); }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') markConnected();
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') markDisconnected();
+      });
 
     const scoresChannel = supabase
       .channel('scores-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'scores', filter: `student_id=eq.${profile.id}` },
-        () => { fetchScores(); }
+        () => { debouncedFetchScores(); markUpdated(); }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') markConnected();
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') markDisconnected();
+      });
+
+    // Missing: teacher_student_links changes
+    const linksChannel = supabase
+      .channel('student-links-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'teacher_student_links', filter: `student_id=eq.${profile.id}` },
+        () => { debouncedFetchLinkedTeachers(); debouncedFetchQuizzes(); markUpdated(); }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') markConnected();
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') markDisconnected();
+      });
+
+    // Missing: subject_students changes (for subjects count)
+    const subjectStudentsChannel = supabase
+      .channel('student-subject-students-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'subject_students', filter: `student_id=eq.${profile.id}` },
+        () => { debouncedFetchSubjectsCount(); markUpdated(); }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') markConnected();
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') markDisconnected();
+      });
 
     return () => {
       supabase.removeChannel(summariesChannel);
       supabase.removeChannel(quizzesChannel);
       supabase.removeChannel(scoresChannel);
+      supabase.removeChannel(linksChannel);
+      supabase.removeChannel(subjectStudentsChannel);
     };
-  }, [profile.id, fetchSummaries, fetchQuizzes, fetchScores]);
+  }, [profile.id, debouncedFetchSummaries, debouncedFetchQuizzes, debouncedFetchScores, debouncedFetchLinkedTeachers, debouncedFetchSubjectsCount, markConnecting, markUpdated, markConnected, markDisconnected]);
 
   // -------------------------------------------------------
   // Section change handler
   // -------------------------------------------------------
   const handleSectionChange = (section: string) => {
-    if (section === 'settings') {
-      setSettingsOpen(true);
-      return;
-    }
     setActiveSection(section as StudentSection);
+    // Reset subject detail when navigating away
+    if (section !== 'subjects') {
+      setViewingSubjectId(null);
+    }
   };
 
   // -------------------------------------------------------
@@ -547,15 +755,120 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
   };
 
   // -------------------------------------------------------
-  // Settings handlers
+  // Fetch unread notifications count
   // -------------------------------------------------------
-  const handleUpdateProfile = async (updates: Partial<UserProfile>) => {
-    return authUpdateProfile(updates);
-  };
+  const fetchUnreadNotifications = useCallback(async () => {
+    try {
+      const { count, error } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', profile.id)
+        .eq('is_read', false);
 
-  const handleDeleteAccount = async () => {
-    await authSignOut();
-  };
+      if (!error && count !== null) {
+        setUnreadNotifications(count);
+      }
+    } catch {
+      // silently ignore
+    }
+  }, [profile.id]);
+
+  useEffect(() => {
+    fetchUnreadNotifications();
+
+    // Subscribe to notification changes to update badge
+    const channel = supabase
+      .channel('notifications-count')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${profile.id}` },
+        () => { fetchUnreadNotifications(); markUpdated(); }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile.id, fetchUnreadNotifications, markUpdated]);
+
+  // -------------------------------------------------------
+  // Fetch unread messages count
+  // -------------------------------------------------------
+  const fetchUnreadMessages = useCallback(async () => {
+    try {
+      // Count messages sent to this user (private) that they haven't read
+      // + Count messages in their enrolled subjects that are not from them
+      let totalCount = 0;
+
+      // 1. Private messages (receiver_id = me, not sent by me)
+      const { count: privateCount, error: privateError } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('receiver_id', profile.id)
+        .neq('sender_id', profile.id);
+
+      if (!privateError && privateCount !== null) {
+        totalCount += privateCount;
+      }
+
+      // 2. Subject messages from enrolled subjects (not sent by me)
+      const { data: enrollments } = await supabase
+        .from('subject_students')
+        .select('subject_id')
+        .eq('student_id', profile.id);
+
+      if (enrollments && enrollments.length > 0) {
+        const subjectIds = enrollments.map(e => e.subject_id);
+        const { count: subjectCount, error: subjectError } = await supabase
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+          .in('subject_id', subjectIds)
+          .neq('sender_id', profile.id)
+          .is('receiver_id', null);
+
+        if (!subjectError && subjectCount !== null) {
+          totalCount += subjectCount;
+        }
+      }
+
+      // 3. General chat messages (no subject, no receiver) - not from me
+      const { count: generalCount, error: generalError } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .is('subject_id', null)
+        .is('receiver_id', null)
+        .neq('sender_id', profile.id);
+
+      if (!generalError && generalCount !== null) {
+        totalCount += generalCount;
+      }
+
+      setUnreadMessages(totalCount);
+    } catch {
+      // silently ignore
+    }
+  }, [profile.id]);
+
+  useEffect(() => {
+    fetchUnreadMessages();
+
+    // Poll every 15 seconds as a fallback + subscribe to realtime changes
+    const interval = setInterval(fetchUnreadMessages, 15000);
+
+    const channel = supabase
+      .channel('student-unread-messages')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        () => { fetchUnreadMessages(); }
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
+  }, [profile.id, fetchUnreadMessages]);
 
   // -------------------------------------------------------
   // Computed: check which quizzes are completed
@@ -568,30 +881,43 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
   const renderDashboard = () => (
     <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
       {/* Header */}
-      <motion.div variants={itemVariants}>
-        <h2 className="text-2xl font-bold text-foreground">لوحة التحكم</h2>
-        <p className="text-muted-foreground mt-1">مرحباً بك في منصة إكسامي التعليمية</p>
+      <motion.div variants={itemVariants} className="flex items-start justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-foreground">لوحة التحكم</h2>
+          <p className="text-muted-foreground mt-1">مرحباً بك في منصة إكسامي التعليمية</p>
+        </div>
+        <RealtimeStatus
+          status={rtStatusValue}
+          lastUpdated={rtLastUpdated}
+          onRefresh={refreshAllData}
+        />
       </motion.div>
 
       {/* Stats row */}
-      <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <motion.div variants={itemVariants} className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <StatCard
+          icon={<BookOpen className="h-6 w-6" />}
+          label="المقررات"
+          value={subjectsCount}
+          color="emerald"
+        />
         <StatCard
           icon={<FileText className="h-6 w-6" />}
           label="ملخصات"
           value={summaries.length}
-          color="emerald"
+          color="teal"
         />
         <StatCard
           icon={<ClipboardList className="h-6 w-6" />}
           label="اختبارات"
           value={quizzes.length}
-          color="teal"
+          color="amber"
         />
         <StatCard
           icon={<Award className="h-6 w-6" />}
           label="اختبارات منجزة"
           value={scores.length}
-          color="amber"
+          color="rose"
         />
       </motion.div>
 
@@ -633,7 +959,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-foreground truncate">{summary.title}</p>
                         <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
-                          {summary.summary_content.slice(0, 80)}...
+                          {summary.summary_content?.slice(0, 80) || ''}...
                         </p>
                         <p className="text-xs text-muted-foreground/60 mt-1">{formatDate(summary.created_at)}</p>
                       </div>
@@ -766,7 +1092,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
                     <h3 className="font-semibold text-foreground truncate">{summary.title}</h3>
                   </div>
                   <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
-                    {summary.summary_content.slice(0, 120)}...
+                    {summary.summary_content?.slice(0, 120) || ''}...
                   </p>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground/70">
                     <Calendar className="h-3 w-3" />
@@ -1011,6 +1337,38 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
             const isCompleted = completedQuizIds.has(quiz.id);
             const score = scores.find((s) => s.quiz_id === quiz.id);
             const pct = score ? scorePercentage(score.score, score.total) : null;
+            
+            // Check if quiz is scheduled for the future
+            const isScheduledFuture = (() => {
+              if (!quiz.scheduled_date) return false;
+              try {
+                const scheduledDateTime = quiz.scheduled_time
+                  ? new Date(`${quiz.scheduled_date}T${quiz.scheduled_time}`)
+                  : new Date(quiz.scheduled_date);
+                return scheduledDateTime.getTime() > Date.now();
+              } catch {
+                return false;
+              }
+            })();
+            
+            // Format scheduled date/time nicely
+            const formattedSchedule = (() => {
+              if (!quiz.scheduled_date) return null;
+              try {
+                const scheduledDateTime = quiz.scheduled_time
+                  ? new Date(`${quiz.scheduled_date}T${quiz.scheduled_time}`)
+                  : new Date(quiz.scheduled_date);
+                return scheduledDateTime.toLocaleDateString('ar-SA', {
+                  weekday: 'short',
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                  ...(quiz.scheduled_time ? { hour: '2-digit', minute: '2-digit' } : {}),
+                });
+              } catch {
+                return `${quiz.scheduled_date}${quiz.scheduled_time ? ` ${quiz.scheduled_time}` : ''}`;
+              }
+            })();
 
             return (
               <motion.div key={quiz.id} variants={itemVariants} {...cardHover}>
@@ -1021,7 +1379,13 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
                     </div>
                     <div className="min-w-0 flex-1">
                       <h3 className="font-semibold text-foreground truncate">{quiz.title}</h3>
-                      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                      {quiz.subject_name && (
+                        <div className="flex items-center gap-1 mt-1">
+                          <BookOpen className="h-3 w-3 text-emerald-600" />
+                          <span className="text-[11px] text-emerald-600 font-medium">{quiz.subject_name}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
                         <span className="flex items-center gap-1">
                           <Hash className="h-3 w-3" />
                           {quiz.questions?.length || 0} أسئلة
@@ -1030,6 +1394,12 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
                           <span className="flex items-center gap-1">
                             <Calendar className="h-3 w-3" />
                             {quiz.duration} دقيقة
+                          </span>
+                        )}
+                        {formattedSchedule && (
+                          <span className={`flex items-center gap-1 ${isScheduledFuture ? 'text-amber-600' : ''}`}>
+                            <Calendar className="h-3 w-3" />
+                            {formattedSchedule}
                           </span>
                         )}
                       </div>
@@ -1049,20 +1419,38 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
                         {pct}%
                       </span>
                     )}
+                    {isScheduledFuture && !isCompleted && (
+                      <span className="shrink-0 rounded-full px-2.5 py-1 text-xs font-bold text-amber-700 bg-amber-100">
+                        لم يبدأ بعد
+                      </span>
+                    )}
                   </div>
 
                   <div className="mt-4 flex items-center gap-2">
                     {isCompleted ? (
                       <button
-                        onClick={() => setViewingQuizId(quiz.id)}
+                        onClick={() => {
+                          setViewingQuizId(quiz.id);
+                          setReviewScoreId(score?.id || null);
+                          setCurrentPage('quiz');
+                        }}
                         className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
                       >
                         <Eye className="h-3.5 w-3.5" />
                         عرض النتائج
                       </button>
+                    ) : isScheduledFuture ? (
+                      <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
+                        <Calendar className="h-3.5 w-3.5" />
+                        سيبدأ في الموعد المحدد
+                      </div>
                     ) : (
                       <button
-                        onClick={() => setViewingQuizId(quiz.id)}
+                        onClick={() => {
+                          setViewingQuizId(quiz.id);
+                          setReviewScoreId(null);
+                          setCurrentPage('quiz');
+                        }}
                         className="flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-teal-700"
                       >
                         <Play className="h-3.5 w-3.5" />
@@ -1121,39 +1509,113 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
           </button>
         </motion.div>
       ) : (
-        <motion.div variants={containerVariants} className="space-y-3">
+        <motion.div variants={containerVariants} className="space-y-4">
           {linkedTeachers.map((teacher) => {
             const initials = teacher.name
               .split(' ')
               .map((n) => n[0])
               .join('')
               .slice(0, 2);
+            const subjects = teacherSubjects[teacher.id] || [];
+            const isExpanded = expandedTeacherId === teacher.id;
             return (
               <motion.div key={teacher.id} variants={itemVariants}>
-                <div className="group flex items-center justify-between rounded-xl border bg-card p-4 shadow-sm hover:shadow-md transition-shadow">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold text-sm">
-                      {initials || 'م'}
+                <div className="group rounded-xl border bg-card shadow-sm hover:shadow-md transition-shadow overflow-hidden">
+                  {/* Teacher header - clickable to expand */}
+                  <div
+                    className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+                    onClick={() => setExpandedTeacherId(isExpanded ? null : teacher.id)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold text-sm">
+                        {initials || 'م'}
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-foreground">{teacher.name}</h3>
+                        <p className="text-xs text-muted-foreground">{teacher.email}</p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-foreground">{teacher.name}</h3>
-                      <p className="text-xs text-muted-foreground">{teacher.email}</p>
+                    <div className="flex items-center gap-2">
+                      {subjects.length > 0 && (
+                        <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">
+                          {subjects.length} مقرر
+                        </Badge>
+                      )}
+                      <ChevronLeft className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${isExpanded ? '-rotate-90' : ''}`} />
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleUnlinkTeacher(teacher.id)}
-                    disabled={deletingLinkId === teacher.id}
-                    className="flex h-8 items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-3 text-xs font-medium text-rose-600 opacity-0 group-hover:opacity-100 transition-all hover:bg-rose-100 disabled:opacity-100"
-                  >
-                    {deletingLinkId === teacher.id ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <>
-                        <X className="h-3.5 w-3.5" />
-                        إلغاء الربط
-                      </>
+
+                  {/* Expanded: Teacher's subjects + unlink */}
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="border-t bg-muted/10 px-4 py-3 space-y-3">
+                          {/* Subjects list */}
+                          {subjects.length > 0 ? (
+                            <div>
+                              <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+                                <BookOpen className="h-3.5 w-3.5" />
+                                المقررات المسجلة
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {subjects.map((subject) => {
+                                  const color = subject.color || '#10B981';
+                                  return (
+                                    <button
+                                      key={subject.id}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveSection('subjects');
+                                        setViewingSubjectId(subject.id);
+                                      }}
+                                      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all hover:shadow-sm"
+                                      style={{
+                                        backgroundColor: color + '15',
+                                        color: color,
+                                        border: `1px solid ${color}30`,
+                                      }}
+                                    >
+                                      <BookOpen className="h-3 w-3" />
+                                      <span className="truncate max-w-[120px]">{subject.name}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted-foreground text-center py-2">لا توجد مقررات مسجلة مع هذا المعلم</p>
+                          )}
+
+                          {/* Unlink button */}
+                          <div className="pt-2 border-t">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUnlinkTeacher(teacher.id);
+                              }}
+                              disabled={deletingLinkId === teacher.id}
+                              className="flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-600 transition-all hover:bg-rose-100 disabled:opacity-60"
+                            >
+                              {deletingLinkId === teacher.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <>
+                                  <X className="h-3.5 w-3.5" />
+                                  إلغاء الربط مع المعلم
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
                     )}
-                  </button>
+                  </AnimatePresence>
                 </div>
               </motion.div>
             );
@@ -1261,6 +1723,167 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
   );
 
   // -------------------------------------------------------
+  // Render: Lectures Section (placeholder)
+  // -------------------------------------------------------
+  const renderLectures = () => (
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+      <motion.div variants={itemVariants}>
+        <h2 className="text-2xl font-bold text-foreground">المحاضرات</h2>
+        <p className="text-muted-foreground mt-1">محاضراتك المسجلة والبث المباشر</p>
+      </motion.div>
+
+      <motion.div
+        variants={itemVariants}
+        className="flex flex-col items-center justify-center rounded-xl border border-dashed border-emerald-300 bg-emerald-50/30 py-20"
+      >
+        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 mb-5">
+          <Video className="h-10 w-10 text-emerald-600" />
+        </div>
+        <p className="text-xl font-semibold text-foreground mb-2">سيتم إضافة المحاضرات قريباً</p>
+        <p className="text-sm text-muted-foreground max-w-sm text-center">
+          نعمل على إضافة ميزة المحاضرات المسجلة والبث المباشر. ترقب التحديثات القادمة!
+        </p>
+      </motion.div>
+    </motion.div>
+  );
+
+  // -------------------------------------------------------
+  // Render: Analytics Section
+  // -------------------------------------------------------
+  const renderAnalytics = () => {
+    // Calculate average score
+    const avgScore = scores.length > 0
+      ? Math.round(scores.reduce((sum, s) => sum + scorePercentage(s.score, s.total), 0) / scores.length)
+      : null;
+
+    // Group scores by category (using quiz_title prefix before colon as category)
+    const categoryMap: Record<string, { total: number; count: number }> = {};
+    scores.forEach((s) => {
+      const category = s.quiz_title?.split(':')[0]?.trim() || 'أخرى';
+      if (!categoryMap[category]) {
+        categoryMap[category] = { total: 0, count: 0 };
+      }
+      categoryMap[category].total += scorePercentage(s.score, s.total);
+      categoryMap[category].count += 1;
+    });
+
+    const categories = Object.entries(categoryMap).map(([name, data]) => ({
+      name,
+      avg: Math.round(data.total / data.count),
+      count: data.count,
+    }));
+
+    return (
+      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+        {/* Header */}
+        <motion.div variants={itemVariants}>
+          <h2 className="text-2xl font-bold text-foreground">تحليل الأداء</h2>
+          <p className="text-muted-foreground mt-1">رؤى مفصلة حول أدائك الدراسي</p>
+        </motion.div>
+
+        {scores.length === 0 ? (
+          <motion.div
+            variants={itemVariants}
+            className="flex flex-col items-center justify-center rounded-xl border border-dashed border-emerald-300 bg-emerald-50/30 py-20"
+          >
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 mb-5">
+              <BarChart3 className="h-10 w-10 text-emerald-600" />
+            </div>
+            <p className="text-xl font-semibold text-foreground mb-2">تحليل نقاط الضعف والقوة سيظهر هنا بعد إكمال اختبارات كافية</p>
+            <p className="text-sm text-muted-foreground max-w-sm text-center">
+              أكمل الاختبارات لتحصل على تحليل مفصل لأدائك الدراسي
+            </p>
+          </motion.div>
+        ) : (
+          <>
+            {/* Overview cards */}
+            <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="rounded-xl border bg-card p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100">
+                    <BarChart3 className="h-5 w-5 text-emerald-600" />
+                  </div>
+                  <span className="text-sm font-medium text-muted-foreground">متوسط النتائج</span>
+                </div>
+                <p className="text-3xl font-bold text-foreground">{avgScore}%</p>
+              </div>
+              <div className="rounded-xl border bg-card p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-100">
+                    <ClipboardList className="h-5 w-5 text-teal-600" />
+                  </div>
+                  <span className="text-sm font-medium text-muted-foreground">اختبارات منجزة</span>
+                </div>
+                <p className="text-3xl font-bold text-foreground">{scores.length}</p>
+              </div>
+              <div className="rounded-xl border bg-card p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100">
+                    <Award className="h-5 w-5 text-amber-600" />
+                  </div>
+                  <span className="text-sm font-medium text-muted-foreground">أعلى نتيجة</span>
+                </div>
+                <p className="text-3xl font-bold text-foreground">
+                  {scores.length > 0 ? Math.max(...scores.map((s) => scorePercentage(s.score, s.total))) : 0}%
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Category breakdown */}
+            {categories.length > 0 && (
+              <motion.div variants={itemVariants}>
+                <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+                  <div className="border-b p-4">
+                    <h3 className="font-semibold text-foreground flex items-center gap-2">
+                      <BarChart3 className="h-4 w-4 text-emerald-600" />
+                      تحليل حسب المقرر
+                    </h3>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    {categories.map((cat) => (
+                      <div key={cat.name} className="flex items-center gap-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-sm font-medium text-foreground truncate">{cat.name}</span>
+                            <span className="text-xs text-muted-foreground">{cat.count} اختبار</span>
+                          </div>
+                          <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                cat.avg >= 80
+                                  ? 'bg-emerald-500'
+                                  : cat.avg >= 60
+                                    ? 'bg-amber-500'
+                                    : 'bg-rose-500'
+                              }`}
+                              style={{ width: `${cat.avg}%` }}
+                            />
+                          </div>
+                        </div>
+                        <span
+                          className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
+                            cat.avg >= 80
+                              ? 'text-emerald-700 bg-emerald-100'
+                              : cat.avg >= 60
+                                ? 'text-amber-700 bg-amber-100'
+                                : 'text-rose-700 bg-rose-100'
+                          }`}
+                        >
+                          {cat.avg}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </>
+        )}
+      </motion.div>
+    );
+  };
+
+  // -------------------------------------------------------
   // Render: Section content
   // -------------------------------------------------------
   const renderSection = () => {
@@ -1282,6 +1905,25 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
         return renderQuizzes();
       case 'teachers':
         return renderTeachers();
+      case 'subjects':
+        if (viewingSubjectId) {
+          return <SubjectDetail subjectId={viewingSubjectId} profile={profile} onBack={() => setViewingSubjectId(null)} />;
+        }
+        return <SubjectsSection profile={profile} role="student" />;
+      case 'chat':
+        return (
+          <div className="h-[calc(100vh-8rem)] sm:h-[calc(100vh-7rem)] overflow-hidden rounded-xl border bg-card shadow-sm">
+            <ChatPanel profile={profile} />
+          </div>
+        );
+      case 'lectures':
+        return renderLectures();
+      case 'notifications':
+        return <NotificationsPanel profile={profile} onBack={() => setActiveSection('dashboard')} />;
+      case 'analytics':
+        return renderAnalytics();
+      case 'settings':
+        return <SettingsPage profile={profile} onBack={() => setActiveSection('dashboard')} />;
       default:
         return null;
     }
@@ -1298,10 +1940,29 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
         onSectionChange={handleSectionChange}
         userName={profile.name}
         onSignOut={onSignOut}
+        unreadNotifications={unreadNotifications}
+        unreadMessages={unreadMessages}
+        notificationBellSlot={
+          isMobile ? (
+            <NotificationBell
+              profile={profile}
+              onOpenPanel={() => setActiveSection('notifications')}
+            />
+          ) : undefined
+        }
       />
 
       {/* Main Content - offset for desktop sidebar */}
       <main className="md:mr-72">
+        {/* Desktop: sticky top bar with notification bell */}
+        {!isMobile && (
+          <div className="sticky top-0 z-20 flex items-center justify-end gap-3 border-b bg-background/95 backdrop-blur-sm px-6 py-2">
+            <NotificationBell
+              profile={profile}
+              onOpenPanel={() => setActiveSection('notifications')}
+            />
+          </div>
+        )}
         <div className="p-4 sm:p-6 lg:p-8">
           <AnimatePresence mode="wait">
             <motion.div
@@ -1316,15 +1977,6 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
           </AnimatePresence>
         </div>
       </main>
-
-      {/* Settings Modal */}
-      <SettingsModal
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        profile={profile}
-        onUpdateProfile={handleUpdateProfile}
-        onDeleteAccount={handleDeleteAccount}
-      />
 
       {/* Custom scrollbar styles */}
       <style jsx global>{`

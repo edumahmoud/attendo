@@ -1,14 +1,19 @@
 // =====================================================
-// Examy (EduAI) - TypeScript Type Definitions
+// Examy - TypeScript Type Definitions
 // =====================================================
 
-export type UserRole = 'student' | 'teacher';
+// New role type - add 'admin'
+export type UserRole = 'student' | 'teacher' | 'admin' | 'pending';
 
+// Update UserProfile to include new fields
 export interface UserProfile {
   id: string;
   email: string;
   name: string;
   role: UserRole;
+  title_id?: string;
+  is_admin?: boolean;
+  fcm_token?: string;
   teacher_code?: string;
   avatar_url?: string;
   created_at: string;
@@ -47,8 +52,12 @@ export interface Quiz {
   scheduled_date?: string;
   scheduled_time?: string;
   summary_id?: string;
+  subject_id?: string;
   questions: QuizQuestion[];
+  allow_retake?: boolean;
   created_at: string;
+  // Joined data
+  subject_name?: string;
 }
 
 export interface UserAnswer {
@@ -70,17 +79,151 @@ export interface Score {
   completed_at: string;
 }
 
-// App navigation state
+// New types for subjects
+export interface UserTitle {
+  id: string;
+  title: string;
+  is_active: boolean;
+}
+
+export interface Subject {
+  id: string;
+  teacher_id: string;
+  name: string;
+  description?: string;
+  color: string;
+  icon?: string;
+  subject_code?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  // Joined data (not in DB)
+  teacher_name?: string;
+  student_count?: number;
+  _enrolled_at?: string;
+}
+
+export interface SubjectStudent {
+  id: string;
+  subject_id: string;
+  student_id: string;
+  enrolled_at: string;
+  // Joined data
+  student_name?: string;
+  student_email?: string;
+}
+
+export interface SubjectFile {
+  id: string;
+  subject_id: string;
+  uploaded_by: string;
+  file_name: string;
+  file_url: string;
+  file_type?: string;
+  file_size?: number;
+  created_at: string;
+}
+
+export interface SubjectNote {
+  id: string;
+  subject_id: string;
+  teacher_id: string;
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  // Joined data
+  view_count?: number;
+}
+
+export interface NoteView {
+  id: string;
+  note_id: string;
+  user_id: string;
+  viewed_at: string;
+}
+
+export interface Lecture {
+  id: string;
+  subject_id: string;
+  teacher_id: string;
+  title: string;
+  description?: string;
+  qr_code?: string;
+  latitude?: number;
+  longitude?: number;
+  is_active: boolean;
+  max_distance_meters: number;
+  started_at?: string;
+  ended_at?: string;
+  created_at: string;
+  // Joined data
+  subject_name?: string;
+  attendance_count?: number;
+  in_range_count?: number;
+}
+
+export interface LectureAttendance {
+  id: string;
+  lecture_id: string;
+  student_id: string;
+  student_latitude?: number;
+  student_longitude?: number;
+  distance_meters?: number;
+  is_within_range?: boolean;
+  attended_at: string;
+  // Joined data
+  student_name?: string;
+  student_email?: string;
+}
+
+export interface Message {
+  id: string;
+  subject_id?: string;
+  sender_id: string;
+  receiver_id?: string;
+  content: string;
+  message_type: string;
+  created_at: string;
+  // Joined data
+  sender_name?: string;
+  sender_email?: string;
+}
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  title: string;
+  content: string;
+  type: 'quiz' | 'note' | 'message' | 'lecture' | 'system';
+  reference_id?: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+// Update AppPage type to include new pages
 export type AppPage = 
   | 'auth' 
   | 'role-selection' 
   | 'student-dashboard' 
   | 'teacher-dashboard'
-  | 'quiz'
-  | 'summary';
+  | 'admin-dashboard'
+  | 'quiz' 
+  | 'summary'
+  | 'subject-detail';
 
-export type StudentSection = 'dashboard' | 'summaries' | 'quizzes' | 'teachers' | 'settings';
-export type TeacherSection = 'dashboard' | 'students' | 'quizzes' | 'analytics' | 'settings';
+// Update section types
+export type StudentSection = 'dashboard' | 'subjects' | 'summaries' | 'quizzes' | 'teachers' | 'chat' | 'analytics' | 'lectures' | 'notifications' | 'settings';
+export type TeacherSection = 'dashboard' | 'subjects' | 'students' | 'quizzes' | 'analytics' | 'chat' | 'lectures' | 'notifications' | 'settings';
+
+// Helper to check if user has a valid (non-pending) role
+export function isActiveRole(role: UserRole): role is 'student' | 'teacher' | 'admin' {
+  return role === 'student' || role === 'teacher' || role === 'admin';
+}
+export type AdminSection = 'dashboard' | 'users' | 'subjects' | 'quizzes' | 'settings';
+
+// Subject detail sub-sections
+export type SubjectSection = 'overview' | 'files' | 'notes' | 'quizzes' | 'lectures' | 'chat' | 'students';
 
 // API response types
 export interface ApiResponse<T = unknown> {

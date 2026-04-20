@@ -10,7 +10,7 @@ interface StatCardProps {
   icon: React.ReactNode;
   label: string;
   value: string | number;
-  color: 'emerald' | 'amber' | 'rose' | 'teal';
+  color: 'emerald' | 'amber' | 'rose' | 'teal' | 'purple';
 }
 
 // -------------------------------------------------------
@@ -56,6 +56,16 @@ const colorMap = {
     hoverBorder: 'hover:border-teal-300',
     shadow: 'hover:shadow-teal-100',
     glow: 'group-hover:ring-teal-200',
+  },
+  purple: {
+    bg: 'bg-purple-50',
+    iconBg: 'bg-purple-100',
+    iconText: 'text-purple-600',
+    valueText: 'text-purple-700',
+    border: 'border-purple-200',
+    hoverBorder: 'hover:border-purple-300',
+    shadow: 'hover:shadow-purple-100',
+    glow: 'group-hover:ring-purple-200',
   },
 } as const;
 

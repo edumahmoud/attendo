@@ -12,6 +12,12 @@ import {
   TrendingUp,
   LogOut,
   Menu,
+  BookOpen,
+  Shield,
+  MessageCircle,
+  Video,
+  Bell,
+  BarChart3,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -31,35 +37,56 @@ import { useIsMobile } from '@/hooks/use-mobile';
 // Types
 // -------------------------------------------------------
 interface AppSidebarProps {
-  role: 'student' | 'teacher';
+  role: 'student' | 'teacher' | 'admin';
   activeSection: string;
   onSectionChange: (section: string) => void;
   userName: string;
   onSignOut: () => void;
+  unreadNotifications?: number;
+  unreadMessages?: number;
+  notificationBellSlot?: React.ReactNode;
 }
 
 interface NavItem {
   id: string;
   label: string;
   icon: React.ReactNode;
+  badge?: number;
 }
 
 // -------------------------------------------------------
-// Navigation items per role
+// Navigation items per role (updated with all new sections)
 // -------------------------------------------------------
 const studentNavItems: NavItem[] = [
   { id: 'dashboard', label: 'لوحة التحكم', icon: <LayoutDashboard className="h-5 w-5" /> },
+  { id: 'subjects', label: 'المقررات', icon: <BookOpen className="h-5 w-5" /> },
+  { id: 'teachers', label: 'المعلمون', icon: <Users className="h-5 w-5" /> },
   { id: 'summaries', label: 'الملخصات', icon: <FileText className="h-5 w-5" /> },
   { id: 'quizzes', label: 'الاختبارات', icon: <ClipboardList className="h-5 w-5" /> },
-  { id: 'teachers', label: 'المعلمون', icon: <Users className="h-5 w-5" /> },
+  { id: 'lectures', label: 'المحاضرات', icon: <Video className="h-5 w-5" /> },
+  { id: 'chat', label: 'المحادثات', icon: <MessageCircle className="h-5 w-5" /> },
+  { id: 'analytics', label: 'تحليل الأداء', icon: <BarChart3 className="h-5 w-5" /> },
+  { id: 'notifications', label: 'الإشعارات', icon: <Bell className="h-5 w-5" /> },
   { id: 'settings', label: 'الإعدادات', icon: <Settings className="h-5 w-5" /> },
 ];
 
 const teacherNavItems: NavItem[] = [
   { id: 'dashboard', label: 'لوحة التحكم', icon: <LayoutDashboard className="h-5 w-5" /> },
+  { id: 'subjects', label: 'المقررات', icon: <BookOpen className="h-5 w-5" /> },
   { id: 'students', label: 'الطلاب', icon: <Users className="h-5 w-5" /> },
   { id: 'quizzes', label: 'الاختبارات', icon: <ClipboardList className="h-5 w-5" /> },
+  { id: 'lectures', label: 'المحاضرات', icon: <Video className="h-5 w-5" /> },
+  { id: 'chat', label: 'المحادثات', icon: <MessageCircle className="h-5 w-5" /> },
   { id: 'analytics', label: 'التقارير', icon: <TrendingUp className="h-5 w-5" /> },
+  { id: 'notifications', label: 'الإشعارات', icon: <Bell className="h-5 w-5" /> },
+  { id: 'settings', label: 'الإعدادات', icon: <Settings className="h-5 w-5" /> },
+];
+
+const adminNavItems: NavItem[] = [
+  { id: 'dashboard', label: 'لوحة التحكم', icon: <LayoutDashboard className="h-5 w-5" /> },
+  { id: 'users', label: 'المستخدمون', icon: <Users className="h-5 w-5" /> },
+  { id: 'subjects', label: 'المواد', icon: <BookOpen className="h-5 w-5" /> },
+  { id: 'quizzes', label: 'الاختبارات', icon: <ClipboardList className="h-5 w-5" /> },
   { id: 'settings', label: 'الإعدادات', icon: <Settings className="h-5 w-5" /> },
 ];
 
@@ -73,9 +100,12 @@ function SidebarContent({
   userName,
   onSignOut,
   onNavClick,
+  unreadNotifications = 0,
+  unreadMessages = 0,
+  notificationBellSlot,
 }: AppSidebarProps & { onNavClick?: () => void }) {
-  const navItems = role === 'student' ? studentNavItems : teacherNavItems;
-  const roleLabel = role === 'student' ? 'طالب' : 'معلم';
+  const navItems = role === 'student' ? studentNavItems : role === 'teacher' ? teacherNavItems : adminNavItems;
+  const roleLabel = role === 'student' ? 'طالب' : role === 'teacher' ? 'معلم' : 'مشرف';
   const initials = userName
     .split(' ')
     .map((n) => n[0])
@@ -86,18 +116,18 @@ function SidebarContent({
     <div className="flex h-full flex-col" dir="rtl">
       {/* ── Logo ── */}
       <div className="flex items-center gap-3 px-6 py-6">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 shadow-md">
+        <div className={`flex h-10 w-10 items-center justify-center rounded-xl shadow-md ${role === 'admin' ? 'bg-gradient-to-br from-emerald-600 to-slate-700' : 'bg-emerald-600'}`}>
           <GraduationCap className="h-6 w-6 text-white" />
         </div>
-        <h1 className="text-xl font-bold text-emerald-600">EduAI</h1>
+        <h1 className={`text-xl font-bold ${role === 'admin' ? 'bg-gradient-to-l from-emerald-600 to-slate-700 bg-clip-text text-transparent' : 'text-emerald-600'}`}>Examy</h1>
       </div>
 
       <Separator />
 
       {/* ── User info ── */}
       <div className="flex items-center gap-3 px-6 py-4">
-        <Avatar className="h-10 w-10 border-2 border-emerald-200">
-          <AvatarFallback className="bg-emerald-100 text-emerald-700 font-semibold text-sm">
+        <Avatar className={`h-10 w-10 border-2 ${role === 'admin' ? 'border-emerald-300' : 'border-emerald-200'}`}>
+          <AvatarFallback className={`${role === 'admin' ? 'bg-gradient-to-br from-emerald-100 to-slate-100 text-emerald-700' : 'bg-emerald-100 text-emerald-700'} font-semibold text-sm`}>
             {initials || 'م'}
           </AvatarFallback>
         </Avatar>
@@ -105,8 +135,9 @@ function SidebarContent({
           <span className="text-sm font-semibold text-foreground">{userName}</span>
           <Badge
             variant="secondary"
-            className="w-fit bg-emerald-100 text-emerald-700 border-emerald-200 text-xs"
+            className={`w-fit text-xs ${role === 'admin' ? 'bg-gradient-to-r from-emerald-100 to-slate-100 text-emerald-700 border-emerald-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200'}`}
           >
+            {role === 'admin' && <Shield className="h-3 w-3 ml-1" />}
             {roleLabel}
           </Badge>
         </div>
@@ -115,11 +146,16 @@ function SidebarContent({
       <Separator />
 
       {/* ── Navigation ── */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0 overflow-hidden">
         <nav className="px-3 py-4">
           <ul className="space-y-1">
             {navItems.map((item) => {
               const isActive = activeSection === item.id;
+              const badgeCount =
+                item.id === 'notifications' ? unreadNotifications :
+                item.id === 'chat' ? unreadMessages :
+                0;
+              const showBadge = badgeCount > 0;
               return (
                 <li key={item.id}>
                   <motion.button
@@ -143,7 +179,16 @@ function SidebarContent({
                       {item.icon}
                     </span>
                     <span>{item.label}</span>
-                    {isActive && (
+                    {showBadge && (
+                      <span
+                        className={`mr-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold text-white ${
+                          item.id === 'chat' ? 'bg-emerald-500' : 'bg-rose-500'
+                        }`}
+                      >
+                        {badgeCount > 99 ? '99+' : badgeCount}
+                      </span>
+                    )}
+                    {isActive && !showBadge && (
                       <motion.div
                         layoutId="activeIndicator"
                         className="mr-auto h-2 w-2 rounded-full bg-emerald-500"
@@ -184,6 +229,9 @@ export default function AppSidebar({
   onSectionChange,
   userName,
   onSignOut,
+  unreadNotifications = 0,
+  unreadMessages = 0,
+  notificationBellSlot,
 }: AppSidebarProps) {
   const isMobile = useIsMobile();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -195,13 +243,15 @@ export default function AppSidebar({
         {/* Sticky top bar */}
         <div className="fixed top-0 right-0 left-0 z-40 flex h-14 items-center justify-between border-b bg-background/95 backdrop-blur-sm px-4">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600">
+            <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${role === 'admin' ? 'bg-gradient-to-br from-emerald-600 to-slate-700' : 'bg-emerald-600'}`}>
               <GraduationCap className="h-4 w-4 text-white" />
             </div>
-            <span className="font-bold text-emerald-600">EduAI</span>
+            <span className={`font-bold ${role === 'admin' ? 'bg-gradient-to-l from-emerald-600 to-slate-700 bg-clip-text text-transparent' : 'text-emerald-600'}`}>Examy</span>
           </div>
 
-          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+          <div className="flex items-center gap-1">
+            {notificationBellSlot}
+            <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="text-foreground">
                 <Menu className="h-5 w-5" />
@@ -223,9 +273,12 @@ export default function AppSidebar({
                   onSignOut();
                 }}
                 onNavClick={() => setMobileOpen(false)}
+                unreadNotifications={unreadNotifications}
+                unreadMessages={unreadMessages}
               />
             </SheetContent>
           </Sheet>
+          </div>
         </div>
 
         {/* Spacer for the fixed top bar */}
@@ -243,6 +296,8 @@ export default function AppSidebar({
         onSectionChange={onSectionChange}
         userName={userName}
         onSignOut={onSignOut}
+        unreadNotifications={unreadNotifications}
+        unreadMessages={unreadMessages}
       />
     </aside>
   );

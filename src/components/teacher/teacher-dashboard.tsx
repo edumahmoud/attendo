@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
 import {
@@ -40,15 +40,29 @@ import {
   AlertTriangle,
   GripVertical,
   Minus,
+  Video,
+  BookOpen,
+  BarChart3,
+  Pencil,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import AppSidebar from '@/components/shared/app-sidebar';
 import SettingsModal from '@/components/shared/settings-modal';
+import SubjectsSection from '@/components/shared/subjects-section';
+import SubjectDetail from '@/components/shared/subject-detail';
+import SettingsPage from '@/components/shared/settings-page';
+import ChatPanel from '@/components/shared/chat-panel';
+import NotificationBell from '@/components/shared/notification-bell';
+import NotificationsPanel from '@/components/shared/notifications-panel';
 import StatCard from '@/components/shared/stat-card';
 import { useAppStore } from '@/stores/app-store';
 import { useAuthStore } from '@/stores/auth-store';
+import { useAutoRefresh, useDebouncedCallback, useRealtimeStatus } from '@/hooks/use-auto-refresh';
+import { useIsMobile } from '@/hooks/use-mobile';
+import RealtimeStatus from '@/components/shared/realtime-status';
 import { toast } from 'sonner';
-import type { UserProfile, Quiz, QuizQuestion, Score, TeacherSection } from '@/lib/types';
+import { Badge } from '@/components/ui/badge';
+import type { UserProfile, Quiz, QuizQuestion, Score, TeacherSection, Subject } from '@/lib/types';
 
 // -------------------------------------------------------
 // Props
@@ -97,8 +111,9 @@ function formatDate(dateStr: string): string {
 }
 
 function scorePercentage(score: number, total: number): number {
-  if (total === 0) return 0;
-  return Math.round((score / total) * 100);
+  if (!total || total === 0 || !score && score !== 0) return 0;
+  const pct = Math.round((score / total) * 100);
+  return Number.isNaN(pct) ? 0 : pct;
 }
 
 function pctColorClass(pct: number): string {
@@ -116,17 +131,34 @@ const PIE_COLORS = ['#10b981', '#14b8a6', '#f59e0b', '#ef4444'];
 // -------------------------------------------------------
 export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboardProps) {
   // ─── Navigation ───
-  const [activeSection, setActiveSection] = useState<TeacherSection>('dashboard');
+  const { teacherSection, setTeacherSection: storeSetTeacherSection, viewingSubjectId, setViewingSubjectId } = useAppStore();
+  const isMobile = useIsMobile();
+  const [activeSection, setActiveSectionLocal] = useState<TeacherSection>(teacherSection || 'dashboard');
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // Sync with store
+  const setActiveSection = useCallback((section: TeacherSection) => {
+    setActiveSectionLocal(section);
+    storeSetTeacherSection(section);
+  }, [storeSetTeacherSection]);
+
+  // Listen for store changes (e.g. from notifications navigation)
+  useEffect(() => {
+    if (teacherSection && teacherSection !== activeSection) {
+      setActiveSectionLocal(teacherSection);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teacherSection]);
+
   // ─── Stores ───
-  const { setTeacherSection: storeSetTeacherSection } = useAppStore();
   const { updateProfile: authUpdateProfile, signOut: authSignOut } = useAuthStore();
 
   // ─── Data state ───
   const [students, setStudents] = useState<UserProfile[]>([]);
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [scores, setScores] = useState<Score[]>([]);
+  const [subjectsCount, setSubjectsCount] = useState(0);
+  const [teacherSubjects, setTeacherSubjects] = useState<Subject[]>([]);
   const [loadingData, setLoadingData] = useState(true);
 
   // ─── Students section ───
@@ -141,6 +173,13 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
   const [quizDuration, setQuizDuration] = useState('');
   const [quizDate, setQuizDate] = useState('');
   const [quizTime, setQuizTime] = useState('');
+  const [quizSubjectId, setQuizSubjectId] = useState('');
+  const [quizAllowRetake, setQuizAllowRetake] = useState(false);
+  const [editingQuiz, setEditingQuiz] = useState<Quiz | null>(null);
+  const [viewingQuizResults, setViewingQuizResults] = useState<Quiz | null>(null);
+  const [quizResultsScores, setQuizResultsScores] = useState<Score[]>([]);
+  const [quizResultsStudents, setQuizResultsStudents] = useState<Record<string, UserProfile>>({});
+  const [loadingResults, setLoadingResults] = useState(false);
   const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
   const [currentQuestionType, setCurrentQuestionType] = useState<QuizQuestion['type']>('mcq');
   const [currentQuestionText, setCurrentQuestionText] = useState('');
@@ -160,131 +199,368 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
   // ─── Delete quiz ───
   const [deletingQuizId, setDeletingQuizId] = useState<string | null>(null);
 
+  // ─── Unread notifications ───
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  // ─── Unread messages ───
+  const [unreadMessages, setUnreadMessages] = useState(0);
+
   // -------------------------------------------------------
   // Data fetching
   // -------------------------------------------------------
   const fetchStudents = useCallback(async () => {
-    const { data: links, error: linksError } = await supabase
-      .from('teacher_student_links')
-      .select('student_id')
-      .eq('teacher_id', profile.id);
+    try {
+      const { data: links, error: linksError } = await supabase
+        .from('teacher_student_links')
+        .select('student_id')
+        .eq('teacher_id', profile.id);
 
-    if (linksError) {
-      console.error('Error fetching student links:', linksError);
-      return;
-    }
-
-    if (links && links.length > 0) {
-      const studentIds = links.map((l: { student_id: string }) => l.student_id);
-      const { data: studentProfiles, error: profilesError } = await supabase
-        .from('users')
-        .select('*')
-        .in('id', studentIds);
-
-      if (profilesError) {
-        console.error('Error fetching student profiles:', profilesError);
-      } else {
-        setStudents((studentProfiles as UserProfile[]) || []);
+      if (linksError) {
+        console.error('Error fetching student links:', linksError);
+        return;
       }
-    } else {
-      setStudents([]);
+
+      if (links && links.length > 0) {
+        const studentIds = links.map((l: { student_id: string }) => l.student_id);
+        const { data: studentProfiles, error: profilesError } = await supabase
+          .from('users')
+          .select('*')
+          .in('id', studentIds);
+
+        if (profilesError) {
+          console.error('Error fetching student profiles:', profilesError);
+        } else {
+          setStudents((studentProfiles as UserProfile[]) || []);
+        }
+      } else {
+        setStudents([]);
+      }
+    } catch {
+      // silently ignore - prevents unhandled rejection
     }
   }, [profile.id]);
 
   const fetchQuizzes = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('quizzes')
-      .select('*')
-      .eq('user_id', profile.id)
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('quizzes')
+        .select('*')
+        .eq('user_id', profile.id)
+        .order('created_at', { ascending: false });
 
-    if (error) {
-      console.error('Error fetching quizzes:', error);
-    } else {
-      setQuizzes((data as Quiz[]) || []);
+      if (error) {
+        console.error('Error fetching quizzes:', error);
+      } else {
+        const quizList = (data as Quiz[]) || [];
+
+        // Enrich with subject names
+        const quizzesWithSubjects = quizList.filter(q => q.subject_id);
+        if (quizzesWithSubjects.length > 0) {
+          const subjectIds = [...new Set(quizzesWithSubjects.map(q => q.subject_id).filter(Boolean))];
+          if (subjectIds.length > 0) {
+            const { data: subjectsData } = await supabase
+              .from('subjects')
+              .select('id, name')
+              .in('id', subjectIds);
+            if (subjectsData) {
+              const subjectMap: Record<string, string> = {};
+              (subjectsData as { id: string; name: string }[]).forEach(s => {
+                subjectMap[s.id] = s.name;
+              });
+              quizList.forEach(q => {
+                if (q.subject_id) {
+                  q.subject_name = subjectMap[q.subject_id] || '';
+                }
+              });
+            }
+          }
+        }
+
+        setQuizzes(quizList);
+      }
+    } catch {
+      // silently ignore - prevents unhandled rejection
     }
   }, [profile.id]);
 
   const fetchScores = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('scores')
-      .select('*')
-      .eq('teacher_id', profile.id)
-      .order('completed_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('scores')
+        .select('*')
+        .eq('teacher_id', profile.id)
+        .order('completed_at', { ascending: false });
 
-    if (error) {
-      console.error('Error fetching scores:', error);
-    } else {
-      setScores((data as Score[]) || []);
+      if (error) {
+        console.error('Error fetching scores:', error);
+      } else {
+        setScores((data as Score[]) || []);
+      }
+    } catch {
+      // silently ignore - prevents unhandled rejection
     }
   }, [profile.id]);
 
-  const fetchAllData = useCallback(async () => {
-    setLoadingData(true);
-    await Promise.all([fetchStudents(), fetchQuizzes(), fetchScores()]);
+  // ─── Fetch subjects count ───
+  const fetchSubjectsCount = useCallback(async () => {
+    try {
+      const { count, error } = await supabase
+        .from('subjects')
+        .select('*', { count: 'exact', head: true })
+        .eq('teacher_id', profile.id);
+
+      if (!error && count !== null) {
+        setSubjectsCount(count);
+      }
+    } catch {
+      // silently ignore
+    }
+  }, [profile.id]);
+
+  // ─── Fetch teacher subjects (for quiz creation) ───
+  const fetchTeacherSubjects = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('subjects')
+        .select('*')
+        .eq('teacher_id', profile.id)
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        setTeacherSubjects(data as Subject[]);
+      }
+    } catch {
+      // silently ignore
+    }
+  }, [profile.id]);
+
+  // Load all data
+  const initialLoadDone = useRef(false);
+  const fetchAllData = useCallback(async (showLoading = false) => {
+    if (showLoading || !initialLoadDone.current) setLoadingData(true);
+    await Promise.allSettled([fetchStudents(), fetchQuizzes(), fetchScores(), fetchSubjectsCount(), fetchTeacherSubjects()]);
     setLoadingData(false);
-  }, [fetchStudents, fetchQuizzes, fetchScores]);
+    initialLoadDone.current = true;
+  }, [fetchStudents, fetchQuizzes, fetchScores, fetchSubjectsCount]);
 
   useEffect(() => {
-    fetchAllData();
+    fetchAllData(true);
   }, [fetchAllData]);
 
   // -------------------------------------------------------
-  // Realtime subscriptions
+  // Realtime status & auto-refresh
+  // -------------------------------------------------------
+  const { status: rtStatusValue, lastUpdated: rtLastUpdated, markConnected, markDisconnected, markConnecting, markUpdated } = useRealtimeStatus();
+
+  // -------------------------------------------------------
+  // Fetch unread notifications count
+  // -------------------------------------------------------
+  const fetchUnreadNotifications = useCallback(async () => {
+    try {
+      const { count, error } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', profile.id)
+        .eq('is_read', false);
+
+      if (!error && count !== null) {
+        setUnreadNotifications(count);
+      }
+    } catch {
+      // silently ignore
+    }
+  }, [profile.id]);
+
+  useEffect(() => {
+    fetchUnreadNotifications();
+
+    const channel = supabase
+      .channel('teacher-notifications-count')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${profile.id}` },
+        () => { fetchUnreadNotifications(); markUpdated(); }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile.id, fetchUnreadNotifications, markUpdated]);
+
+  // -------------------------------------------------------
+  // Fetch unread messages count
+  // -------------------------------------------------------
+  const fetchUnreadMessages = useCallback(async () => {
+    try {
+      let totalCount = 0;
+
+      // 1. Private messages (receiver_id = me, not sent by me)
+      const { count: privateCount, error: privateError } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('receiver_id', profile.id)
+        .neq('sender_id', profile.id);
+
+      if (!privateError && privateCount !== null) {
+        totalCount += privateCount;
+      }
+
+      // 2. Subject messages from teacher's own subjects (not sent by me)
+      const { data: mySubjects } = await supabase
+        .from('subjects')
+        .select('id')
+        .eq('teacher_id', profile.id);
+
+      if (mySubjects && mySubjects.length > 0) {
+        const subjectIds = mySubjects.map(s => s.id);
+        const { count: subjectCount, error: subjectError } = await supabase
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+          .in('subject_id', subjectIds)
+          .neq('sender_id', profile.id)
+          .is('receiver_id', null);
+
+        if (!subjectError && subjectCount !== null) {
+          totalCount += subjectCount;
+        }
+      }
+
+      // 3. General chat messages (no subject, no receiver) - not from me
+      const { count: generalCount, error: generalError } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .is('subject_id', null)
+        .is('receiver_id', null)
+        .neq('sender_id', profile.id);
+
+      if (!generalError && generalCount !== null) {
+        totalCount += generalCount;
+      }
+
+      setUnreadMessages(totalCount);
+    } catch {
+      // silently ignore
+    }
+  }, [profile.id]);
+
+  useEffect(() => {
+    fetchUnreadMessages();
+
+    const interval = setInterval(fetchUnreadMessages, 15000);
+
+    const channel = supabase
+      .channel('teacher-unread-messages')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        () => { fetchUnreadMessages(); }
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
+  }, [profile.id, fetchUnreadMessages]);
+
+  // Debounced versions of fetch functions to prevent rapid re-fetches
+  const debouncedFetchStudents = useDebouncedCallback(() => fetchStudents(), 500);
+  const debouncedFetchQuizzes = useDebouncedCallback(() => fetchQuizzes(), 500);
+  const debouncedFetchScores = useDebouncedCallback(() => fetchScores(), 500);
+  const debouncedFetchSubjectsCount = useDebouncedCallback(() => fetchSubjectsCount(), 500);
+
+  // Full data refresh for polling fallback
+  const refreshAllData = useCallback(async () => {
+    await Promise.allSettled([fetchStudents(), fetchQuizzes(), fetchScores(), fetchSubjectsCount()]);
+    markUpdated();
+  }, [fetchStudents, fetchQuizzes, fetchScores, fetchSubjectsCount, markUpdated]);
+
+  // Auto-refresh every 60 seconds as fallback
+  useAutoRefresh(refreshAllData, 60000);
+
+  // -------------------------------------------------------
+  // Realtime subscriptions (with debounce + missing subscriptions)
   // -------------------------------------------------------
   useEffect(() => {
+    markConnecting();
+
     const linksChannel = supabase
       .channel('teacher-links-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'teacher_student_links', filter: `teacher_id=eq.${profile.id}` },
-        () => { fetchStudents(); }
+        () => { debouncedFetchStudents(); markUpdated(); }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') markConnected();
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') markDisconnected();
+      });
 
     const quizzesChannel = supabase
       .channel('teacher-quizzes-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'quizzes', filter: `user_id=eq.${profile.id}` },
-        () => { fetchQuizzes(); }
+        () => { debouncedFetchQuizzes(); markUpdated(); }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') markConnected();
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') markDisconnected();
+      });
 
     const scoresChannel = supabase
       .channel('teacher-scores-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'scores', filter: `teacher_id=eq.${profile.id}` },
-        () => { fetchScores(); }
+        () => { debouncedFetchScores(); markUpdated(); }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') markConnected();
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') markDisconnected();
+      });
+
+    // Missing: subjects changes (for subjects count)
+    const subjectsChannel = supabase
+      .channel('teacher-subjects-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'subjects', filter: `teacher_id=eq.${profile.id}` },
+        () => { debouncedFetchSubjectsCount(); markUpdated(); }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') markConnected();
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') markDisconnected();
+      });
 
     return () => {
       supabase.removeChannel(linksChannel);
       supabase.removeChannel(quizzesChannel);
       supabase.removeChannel(scoresChannel);
+      supabase.removeChannel(subjectsChannel);
     };
-  }, [profile.id, fetchStudents, fetchQuizzes, fetchScores]);
+  }, [profile.id, debouncedFetchStudents, debouncedFetchQuizzes, debouncedFetchScores, debouncedFetchSubjectsCount, markConnecting, markUpdated, markConnected, markDisconnected]);
 
   // -------------------------------------------------------
   // Section change handler
   // -------------------------------------------------------
   const handleSectionChange = (section: string) => {
-    if (section === 'settings') {
-      setSettingsOpen(true);
-      return;
-    }
     setActiveSection(section as TeacherSection);
     storeSetTeacherSection(section as TeacherSection);
+    // Reset subject detail when navigating away
+    if (section !== 'subjects') {
+      setViewingSubjectId(null);
+    }
   };
 
   // -------------------------------------------------------
   // Computed values
   // -------------------------------------------------------
-  const avgPerformance = scores.length > 0
-    ? Math.round(scores.reduce((sum, s) => sum + scorePercentage(s.score, s.total), 0) / scores.length)
-    : 0;
+  const avgPerformance = (() => {
+    if (scores.length === 0) return 0;
+    const avg = Math.round(scores.reduce((sum, s) => sum + scorePercentage(s.score, s.total), 0) / scores.length);
+    return Number.isNaN(avg) ? 0 : avg;
+  })();
 
   const filteredStudents = students.filter(
     (s) =>
@@ -629,7 +905,74 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
   };
 
   // -------------------------------------------------------
-  // Create quiz
+  // Open edit quiz
+  // -------------------------------------------------------
+  const handleOpenEditQuiz = (quiz: Quiz) => {
+    setEditingQuiz(quiz);
+    setQuizTitle(quiz.title);
+    setQuizDuration(quiz.duration?.toString() || '');
+    setQuizDate(quiz.scheduled_date || '');
+    setQuizTime(quiz.scheduled_time || '');
+    setQuizSubjectId(quiz.subject_id || '');
+    setQuizAllowRetake(quiz.allow_retake || false);
+    setQuizQuestions([...quiz.questions]);
+    resetQuestionForm();
+    setCreateQuizOpen(true);
+  };
+
+  // -------------------------------------------------------
+  // Open create quiz (reset form)
+  // -------------------------------------------------------
+  const handleOpenCreateQuiz = () => {
+    setEditingQuiz(null);
+    setQuizTitle('');
+    setQuizDuration('');
+    setQuizDate('');
+    setQuizTime('');
+    setQuizSubjectId('');
+    setQuizAllowRetake(false);
+    setQuizQuestions([]);
+    resetQuestionForm();
+    setCreateQuizOpen(true);
+  };
+
+  // -------------------------------------------------------
+  // View quiz results
+  // -------------------------------------------------------
+  const handleViewQuizResults = async (quiz: Quiz) => {
+    setViewingQuizResults(quiz);
+    setLoadingResults(true);
+    try {
+      const { data: quizScores, error } = await supabase
+        .from('scores')
+        .select('*')
+        .eq('quiz_id', quiz.id)
+        .order('completed_at', { ascending: false });
+      if (!error && quizScores) {
+        setQuizResultsScores(quizScores as Score[]);
+        // Fetch student profiles
+        const studentIds = [...new Set((quizScores as Score[]).map(s => s.student_id))];
+        if (studentIds.length > 0) {
+          const { data: studentProfiles } = await supabase
+            .from('users')
+            .select('*')
+            .in('id', studentIds);
+          if (studentProfiles) {
+            const map: Record<string, UserProfile> = {};
+            (studentProfiles as UserProfile[]).forEach(p => { map[p.id] = p; });
+            setQuizResultsStudents(map);
+          }
+        }
+      }
+    } catch {
+      // silently ignore
+    } finally {
+      setLoadingResults(false);
+    }
+  };
+
+  // -------------------------------------------------------
+  // Create / Update quiz
   // -------------------------------------------------------
   const handleCreateQuiz = async () => {
     if (!quizTitle.trim()) {
@@ -643,36 +986,123 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
 
     setCreatingQuiz(true);
     try {
-      const insertData: Record<string, unknown> = {
+      const quizData: Record<string, unknown> = {
         user_id: profile.id,
         title: quizTitle.trim(),
         questions: quizQuestions,
+        subject_id: quizSubjectId || null,
+        allow_retake: quizAllowRetake,
       };
 
       if (quizDuration.trim()) {
-        insertData.duration = parseInt(quizDuration, 10);
+        quizData.duration = parseInt(quizDuration, 10);
+      } else {
+        quizData.duration = null;
       }
       if (quizDate.trim()) {
-        insertData.scheduled_date = quizDate;
+        quizData.scheduled_date = quizDate;
+      } else {
+        quizData.scheduled_date = null;
       }
       if (quizTime.trim()) {
-        insertData.scheduled_time = quizTime;
+        quizData.scheduled_time = quizTime;
+      } else {
+        quizData.scheduled_time = null;
       }
 
-      const { error } = await supabase.from('quizzes').insert(insertData);
+      if (editingQuiz) {
+        // Update existing quiz - try with allow_retake, fallback without
+        let { error } = await supabase
+          .from('quizzes')
+          .update(quizData)
+          .eq('id', editingQuiz.id);
 
-      if (error) {
-        toast.error('حدث خطأ أثناء إنشاء الاختبار');
+        // If allow_retake column doesn't exist, retry without it
+        if (error && error.message?.includes('allow_retake')) {
+          const dataWithoutRetake = { ...quizData };
+          delete dataWithoutRetake.allow_retake;
+          const retryResult = await supabase
+            .from('quizzes')
+            .update(dataWithoutRetake)
+            .eq('id', editingQuiz.id);
+          error = retryResult.error;
+        }
+
+        if (error) {
+          toast.error('حدث خطأ أثناء تعديل الاختبار');
+        } else {
+          toast.success('تم تعديل الاختبار بنجاح');
+          setCreateQuizOpen(false);
+          setEditingQuiz(null);
+          fetchQuizzes();
+        }
       } else {
-        toast.success('تم إنشاء الاختبار بنجاح');
-        setCreateQuizOpen(false);
-        setQuizTitle('');
-        setQuizDuration('');
-        setQuizDate('');
-        setQuizTime('');
-        setQuizQuestions([]);
-        resetQuestionForm();
-        fetchQuizzes();
+        // Create new quiz - try with allow_retake, fallback without
+        let result = await supabase
+          .from('quizzes')
+          .insert(quizData)
+          .select('id')
+          .single();
+
+        // If allow_retake column doesn't exist, retry without it
+        if (result.error && result.error.message?.includes('allow_retake')) {
+          const dataWithoutRetake = { ...quizData };
+          delete dataWithoutRetake.allow_retake;
+          result = await supabase
+            .from('quizzes')
+            .insert(dataWithoutRetake)
+            .select('id')
+            .single();
+        }
+
+        const { data: newQuiz, error } = result;
+
+        if (error) {
+          toast.error('حدث خطأ أثناء إنشاء الاختبار');
+        } else {
+          toast.success('تم إنشاء الاختبار بنجاح');
+
+          // Send notifications to enrolled students if subject is selected
+          if (quizSubjectId && newQuiz) {
+            try {
+              const { data: enrolledStudents } = await supabase
+                .from('subject_students')
+                .select('student_id')
+                .eq('subject_id', quizSubjectId);
+
+              if (enrolledStudents && enrolledStudents.length > 0) {
+                const { data: subjectData } = await supabase
+                  .from('subjects')
+                  .select('name')
+                  .eq('id', quizSubjectId)
+                  .single();
+
+                const subjectName = (subjectData as any)?.name || 'مقرر';
+                const notifications = enrolledStudents.map(s => ({
+                  user_id: s.student_id,
+                  title: 'اختبار جديد',
+                  content: `تم إضافة اختبار "${quizTitle.trim()}" في مادة "${subjectName}"`,
+                  type: 'quiz',
+                  reference_id: newQuiz.id,
+                }));
+                await supabase.from('notifications').insert(notifications);
+              }
+            } catch (notifyErr) {
+              console.error('Failed to send notifications:', notifyErr);
+            }
+          }
+
+          setCreateQuizOpen(false);
+          setQuizTitle('');
+          setQuizDuration('');
+          setQuizDate('');
+          setQuizTime('');
+          setQuizSubjectId('');
+          setQuizAllowRetake(false);
+          setQuizQuestions([]);
+          resetQuestionForm();
+          fetchQuizzes();
+        }
       }
     } catch {
       toast.error('حدث خطأ غير متوقع');
@@ -731,19 +1161,26 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
         <h2 className="text-2xl font-bold text-foreground">أهلاً بك، د. {profile.name}</h2>
         <p className="text-muted-foreground mt-1">لوحة تحكم المعلم</p>
       </div>
-      {profile.teacher_code && (
-        <motion.button
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
-          onClick={handleCopyTeacherCode}
-          className="flex items-center gap-2 rounded-xl border-2 border-emerald-200 bg-emerald-50 px-5 py-3 text-sm font-bold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100 hover:border-emerald-300"
-          title="انقر للنسخ"
-        >
-          <Copy className="h-4 w-4" />
-          <span>كود المعلم:</span>
-          <span className="font-mono text-base tracking-wider">{profile.teacher_code}</span>
-        </motion.button>
-      )}
+      <div className="flex items-center gap-3">
+        <RealtimeStatus
+          status={rtStatusValue}
+          lastUpdated={rtLastUpdated}
+          onRefresh={refreshAllData}
+        />
+        {profile.teacher_code && (
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={handleCopyTeacherCode}
+            className="flex items-center gap-2 rounded-xl border-2 border-emerald-200 bg-emerald-50 px-5 py-3 text-sm font-bold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100 hover:border-emerald-300"
+            title="انقر للنسخ"
+          >
+            <Copy className="h-4 w-4" />
+            <span>كود المعلم:</span>
+            <span className="font-mono text-base tracking-wider">{profile.teacher_code}</span>
+          </motion.button>
+        )}
+      </div>
     </motion.div>
   );
 
@@ -755,30 +1192,36 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
       {renderHeader()}
 
       {/* Stats row */}
-      <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <StatCard
+          icon={<BookOpen className="h-6 w-6" />}
+          label="المقررات"
+          value={subjectsCount}
+          color="emerald"
+        />
         <StatCard
           icon={<Users className="h-6 w-6" />}
           label="إجمالي الطلاب"
           value={students.length}
-          color="emerald"
+          color="teal"
         />
         <StatCard
           icon={<ClipboardList className="h-6 w-6" />}
           label="الاختبارات النشطة"
           value={quizzes.length}
-          color="teal"
+          color="amber"
         />
         <StatCard
           icon={<TrendingUp className="h-6 w-6" />}
           label="متوسط الأداء"
           value={`${avgPerformance}%`}
-          color="amber"
+          color="rose"
         />
         <StatCard
           icon={<Award className="h-6 w-6" />}
           label="اختبارات منجزة"
           value={scores.length}
-          color="rose"
+          color="purple"
         />
       </motion.div>
 
@@ -1112,7 +1555,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
           <p className="text-muted-foreground mt-1">إنشاء وإدارة الاختبارات</p>
         </div>
         <button
-          onClick={() => setCreateQuizOpen(true)}
+          onClick={() => handleOpenCreateQuiz()}
           className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700"
         >
           <Plus className="h-4 w-4" />
@@ -1141,7 +1584,30 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
         </motion.div>
       ) : (
         <motion.div variants={containerVariants} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {quizzes.map((quiz) => (
+          {quizzes.map((quiz) => {
+            // Format scheduled date/time nicely
+            const formattedSchedule = (() => {
+              if (!quiz.scheduled_date) return null;
+              try {
+                const scheduledDateTime = quiz.scheduled_time
+                  ? new Date(`${quiz.scheduled_date}T${quiz.scheduled_time}`)
+                  : new Date(quiz.scheduled_date);
+                return scheduledDateTime.toLocaleDateString('ar-SA', {
+                  weekday: 'short',
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                  ...(quiz.scheduled_time ? { hour: '2-digit', minute: '2-digit' } : {}),
+                });
+              } catch {
+                return `${quiz.scheduled_date}${quiz.scheduled_time ? ` ${quiz.scheduled_time}` : ''}`;
+              }
+            })();
+            
+            // Count students who completed this quiz
+            const completedCount = scores.filter((s) => s.quiz_id === quiz.id).length;
+            
+            return (
             <motion.div key={quiz.id} variants={itemVariants} {...cardHover}>
               <div className="group rounded-xl border bg-card p-5 shadow-sm hover:shadow-md transition-shadow">
                 <div className="flex items-start gap-3">
@@ -1150,7 +1616,13 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="font-semibold text-foreground truncate">{quiz.title}</h3>
-                    <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                    {quiz.subject_name && (
+                      <div className="flex items-center gap-1 mt-1">
+                        <BookOpen className="h-3 w-3 text-emerald-600" />
+                        <span className="text-[11px] text-emerald-600 font-medium">{quiz.subject_name}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
                       <span className="flex items-center gap-1">
                         <Hash className="h-3 w-3" />
                         {quiz.questions?.length || 0} أسئلة
@@ -1161,18 +1633,71 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                           {quiz.duration} دقيقة
                         </span>
                       )}
-                      {quiz.scheduled_date && (
+                      {formattedSchedule && (
                         <span className="flex items-center gap-1">
                           <Calendar className="h-3 w-3" />
-                          {quiz.scheduled_date}
+                          {formattedSchedule}
+                        </span>
+                      )}
+                      {completedCount > 0 && (
+                        <span className="flex items-center gap-1">
+                          <Users className="h-3 w-3" />
+                          {completedCount} طالب أكمل
                         </span>
                       )}
                     </div>
                   </div>
                 </div>
 
+                {/* Retake toggle */}
+                <div className="flex items-center justify-between mt-3 pt-2 border-t border-dashed">
+                  <div className="flex items-center gap-2">
+                    <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">السماح بإعادة الاختبار</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const newRetakeValue = !quiz.allow_retake;
+                      const { error } = await supabase
+                        .from('quizzes')
+                        .update({ allow_retake: newRetakeValue })
+                        .eq('id', quiz.id);
+                      if (error) {
+                        toast.error('حدث خطأ أثناء تحديث الإعداد');
+                      } else {
+                        toast.success(newRetakeValue ? 'تم تفعيل إعادة الاختبار' : 'تم تعطيل إعادة الاختبار');
+                        fetchQuizzes();
+                      }
+                    }}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500/30 ${
+                      quiz.allow_retake ? 'bg-emerald-600' : 'bg-muted-foreground/30'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow-sm ${
+                        quiz.allow_retake ? 'translate-x-4.5' : 'translate-x-0.5'
+                      }`}
+                    />
+                  </button>
+                </div>
+
                 {/* Action buttons */}
-                <div className="flex items-center gap-2 mt-4 pt-3 border-t">
+                <div className="flex items-center gap-2 mt-3 pt-3 border-t">
+                  <button
+                    onClick={() => handleViewQuizResults(quiz)}
+                    className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-teal-700 border-teal-200 bg-teal-50 hover:bg-teal-100 transition-colors"
+                  >
+                    <BarChart3 className="h-3.5 w-3.5" />
+                    النتائج
+                  </button>
+                  <button
+                    onClick={() => handleOpenEditQuiz(quiz)}
+                    className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-amber-700 border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    تعديل
+                  </button>
                   <button
                     onClick={() => handleShareQuiz(quiz)}
                     className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition-colors"
@@ -1195,7 +1720,8 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                 </div>
               </div>
             </motion.div>
-          ))}
+            );
+          })}
         </motion.div>
       )}
 
@@ -1222,7 +1748,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
               <div className="flex items-center justify-between border-b p-5 sticky top-0 bg-background z-10">
                 <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
                   <ClipboardList className="h-5 w-5 text-emerald-600" />
-                  إنشاء اختبار جديد
+                  {editingQuiz ? 'تعديل الاختبار' : 'إنشاء اختبار جديد'}
                 </h3>
                 <button
                   onClick={() => { if (!creatingQuiz) setCreateQuizOpen(false); }}
@@ -1246,6 +1772,23 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                     disabled={creatingQuiz}
                     dir="rtl"
                   />
+                </div>
+
+                {/* Subject selector */}
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">المقرر (اختياري - لإرسال إشعارات للطلاب)</label>
+                  <select
+                    value={quizSubjectId}
+                    onChange={(e) => setQuizSubjectId(e.target.value)}
+                    className="w-full rounded-lg border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-colors"
+                    disabled={creatingQuiz}
+                    dir="rtl"
+                  >
+                    <option value="">بدون مقرر</option>
+                    {teacherSubjects.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* Duration & date/time */}
@@ -1282,6 +1825,28 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                       disabled={creatingQuiz}
                     />
                   </div>
+                </div>
+
+                {/* Allow retake toggle */}
+                <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">السماح بإعادة الاختبار</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">السماح للطلاب بإعادة الاختبار بعد إتمامه</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setQuizAllowRetake(!quizAllowRetake)}
+                    disabled={creatingQuiz}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500/30 ${
+                      quizAllowRetake ? 'bg-emerald-600' : 'bg-muted-foreground/30'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm ${
+                        quizAllowRetake ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
                 </div>
 
                 <div className="border-t pt-5">
@@ -1528,12 +2093,12 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                   {creatingQuiz ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      جاري الإنشاء...
+                      {editingQuiz ? 'جاري التعديل...' : 'جاري الإنشاء...'}
                     </>
                   ) : (
                     <>
                       <CheckCircle2 className="h-4 w-4" />
-                      إنشاء الاختبار
+                      {editingQuiz ? 'تعديل الاختبار' : 'إنشاء الاختبار'}
                     </>
                   )}
                 </button>
@@ -1544,6 +2109,130 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                 >
                   إلغاء
                 </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Quiz Results Dialog */}
+      <AnimatePresence>
+        {viewingQuizResults && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={() => setViewingQuizResults(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-3xl rounded-2xl border bg-background shadow-xl max-h-[90vh] overflow-y-auto"
+              dir="rtl"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b p-5 sticky top-0 bg-background z-10">
+                <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5 text-emerald-600" />
+                  نتائج اختبار: {viewingQuizResults.title}
+                  {(viewingQuizResults as any).subject_name && (
+                    <Badge variant="outline" className="text-xs border-emerald-300 bg-emerald-50 text-emerald-700 mr-2">
+                      <BookOpen className="h-3 w-3 ml-1" />
+                      {(viewingQuizResults as any).subject_name}
+                    </Badge>
+                  )}
+                </h3>
+                <button
+                  onClick={() => setViewingQuizResults(null)}
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-5">
+                {loadingResults ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+                  </div>
+                ) : quizResultsScores.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                    <Users className="h-12 w-12 mb-3 text-muted-foreground/40" />
+                    <p className="text-sm">لا يوجد طلاب أكملوا هذا الاختبار بعد</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Summary */}
+                    <div className="grid grid-cols-3 gap-4 mb-6">
+                      <div className="rounded-xl border bg-emerald-50 p-4 text-center">
+                        <p className="text-2xl font-bold text-emerald-700">{quizResultsScores.length}</p>
+                        <p className="text-xs text-emerald-600">طالب أكمل</p>
+                      </div>
+                      <div className="rounded-xl border bg-teal-50 p-4 text-center">
+                        <p className="text-2xl font-bold text-teal-700">
+                          {quizResultsScores.length > 0
+                            ? Math.round(quizResultsScores.reduce((sum, s) => sum + (s.total > 0 ? (s.score / s.total) * 100 : 0), 0) / quizResultsScores.length)
+                            : 0}%
+                        </p>
+                        <p className="text-xs text-teal-600">متوسط النسبة</p>
+                      </div>
+                      <div className="rounded-xl border bg-amber-50 p-4 text-center">
+                        <p className="text-2xl font-bold text-amber-700">
+                          {quizResultsScores.filter(s => s.total > 0 && (s.score / s.total) * 100 >= 60).length}
+                        </p>
+                        <p className="text-xs text-amber-600">ناجح (≥60%)</p>
+                      </div>
+                    </div>
+
+                    {/* Students table */}
+                    <div className="rounded-xl border overflow-hidden">
+                      <table className="w-full">
+                        <thead className="bg-muted/50">
+                          <tr className="text-xs text-muted-foreground">
+                            <th className="text-right font-medium p-3">الطالب</th>
+                            <th className="text-center font-medium p-3">الدرجة</th>
+                            <th className="text-center font-medium p-3">النسبة</th>
+                            <th className="text-center font-medium p-3">التاريخ</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {quizResultsScores.map((s) => {
+                            const pct = s.total > 0 ? Math.round((s.score / s.total) * 100) : 0;
+                            const student = quizResultsStudents[s.student_id];
+                            return (
+                              <tr key={s.id} className="hover:bg-muted/30 transition-colors">
+                                <td className="p-3">
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
+                                      {student?.name?.charAt(0) || '؟'}
+                                    </div>
+                                    <span className="text-sm font-medium text-foreground">{student?.name || 'طالب'}</span>
+                                  </div>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <span className="text-sm font-medium">{s.score}/{s.total}</span>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${pctColorClass(pct)}`}>
+                                    {pct}%
+                                  </span>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <span className="text-xs text-muted-foreground">{formatDate(s.completed_at)}</span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
               </div>
             </motion.div>
           </motion.div>
@@ -1809,10 +2498,29 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
         onSectionChange={handleSectionChange}
         userName={profile.name}
         onSignOut={onSignOut}
+        unreadNotifications={unreadNotifications}
+        unreadMessages={unreadMessages}
+        notificationBellSlot={
+          isMobile ? (
+            <NotificationBell
+              profile={profile}
+              onOpenPanel={() => setActiveSection('notifications')}
+            />
+          ) : undefined
+        }
       />
 
       {/* Main content */}
       <main className="md:mr-72 min-h-screen">
+        {/* Desktop: sticky top bar with notification bell */}
+        {!isMobile && (
+          <div className="sticky top-0 z-20 flex items-center justify-end gap-3 border-b bg-background/95 backdrop-blur-sm px-6 py-2">
+            <NotificationBell
+              profile={profile}
+              onOpenPanel={() => setActiveSection('notifications')}
+            />
+          </div>
+        )}
         <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
           {loadingData ? (
             <div className="flex flex-col items-center justify-center py-32">
@@ -1832,20 +2540,44 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                 {activeSection === 'students' && renderStudents()}
                 {activeSection === 'quizzes' && renderQuizzes()}
                 {activeSection === 'analytics' && renderAnalytics()}
+                {activeSection === 'subjects' && (
+                  viewingSubjectId
+                    ? <SubjectDetail subjectId={viewingSubjectId} profile={profile} onBack={() => setViewingSubjectId(null)} />
+                    : <SubjectsSection profile={profile} role="teacher" />
+                )}
+                {activeSection === 'chat' && (
+                  <div className="h-[calc(100vh-8rem)] sm:h-[calc(100vh-7rem)] overflow-hidden rounded-xl border bg-card shadow-sm">
+                    <ChatPanel profile={profile} />
+                  </div>
+                )}
+                {activeSection === 'lectures' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.35 }}
+                    className="flex flex-col items-center justify-center py-32"
+                    dir="rtl"
+                  >
+                    <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 mb-5">
+                      <Video className="h-10 w-10 text-emerald-600" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-foreground mb-2">المحاضرات</h2>
+                    <p className="text-muted-foreground text-center max-w-sm">سيتم إضافة المحاضرات قريباً</p>
+                  </motion.div>
+                )}
+                {activeSection === 'notifications' && (
+                  <NotificationsPanel profile={profile} onBack={() => setActiveSection('dashboard')} />
+                )}
+                {activeSection === 'settings' && (
+                  <SettingsPage profile={profile} onBack={() => setActiveSection('dashboard')} />
+                )}
               </motion.div>
             </AnimatePresence>
           )}
         </div>
       </main>
 
-      {/* Settings modal */}
-      <SettingsModal
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        profile={profile}
-        onUpdateProfile={handleUpdateProfile}
-        onDeleteAccount={handleDeleteAccount}
-      />
+      {/* Settings modal — kept for backward compat, now using SettingsPage */}
     </div>
   );
 }

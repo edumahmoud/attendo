@@ -1,13 +1,13 @@
-# Task: Build Shared UI Components for EduAI (Examy) Arabic RTL Educational App
+# Task: Build Shared UI Components for Examy Arabic RTL Educational App
 
 ## Summary
-Created 3 shared UI components for the EduAI Arabic RTL educational app, all with `'use client'` directive, using shadcn/ui, lucide-react, and framer-motion with emerald/teal color scheme.
+Created 3 shared UI components for the Examy Arabic RTL educational app, all with `'use client'` directive, using shadcn/ui, lucide-react, and framer-motion with emerald/teal color scheme.
 
 ## Files Created/Updated
 
 ### 1. `/src/components/shared/app-sidebar.tsx`
 - Responsive sidebar: fixed right (RTL) on desktop (w-72), collapsible Sheet on mobile
-- Logo: "EduAI" with GraduationCap icon in emerald-600
+- Logo: "Examy" with GraduationCap icon in emerald-600
 - Role-based navigation (student vs teacher) with Arabic labels
 - Student: لوحة التحكم, الملخصات, الاختبارات, المعلمون, الإعدادات
 - Teacher: لوحة التحكم, الطلاب, الاختبارات, التقارير, الإعدادات

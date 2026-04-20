@@ -16,6 +16,10 @@ import {
   ListChecks,
   PenLine,
   ArrowLeftRight,
+  BookOpen,
+  Clock,
+  Calendar,
+  ClipboardList,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/stores/app-store';
@@ -25,7 +29,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
-import type { UserProfile, Quiz, QuizQuestion, UserAnswer } from '@/lib/types';
+import type { UserProfile, Quiz, QuizQuestion, UserAnswer, Score } from '@/lib/types';
 
 // -------------------------------------------------------
 // Props
@@ -34,6 +38,7 @@ interface QuizViewProps {
   quizId: string;
   onBack: () => void;
   profile: UserProfile;
+  reviewScoreId?: string;
 }
 
 // -------------------------------------------------------
@@ -75,14 +80,19 @@ const staggerContainer = {
 // -------------------------------------------------------
 // Main Component
 // -------------------------------------------------------
-export default function QuizView({ quizId, onBack, profile }: QuizViewProps) {
+export default function QuizView({ quizId, onBack, profile, reviewScoreId }: QuizViewProps) {
   // ─── App store ───
-  const { setCurrentPage } = useAppStore();
+  useAppStore();
 
   // ─── Quiz state ───
   const [quiz, setQuiz] = useState<Quiz | null>(null);
+  const [quizSubjectName, setQuizSubjectName] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // ─── Review mode state ───
+  const [reviewMode, setReviewMode] = useState(false);
+  const [savedAnswers, setSavedAnswers] = useState<UserAnswer[]>([]);
 
   // ─── Quiz taking state ───
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -103,6 +113,7 @@ export default function QuizView({ quizId, onBack, profile }: QuizViewProps) {
   const [showResults, setShowResults] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [savingScore, setSavingScore] = useState(false);
+  const [quizStarted, setQuizStarted] = useState(false);
 
   // -------------------------------------------------------
   // Fetch quiz
@@ -128,6 +139,19 @@ export default function QuizView({ quizId, onBack, profile }: QuizViewProps) {
         return;
       }
 
+      // Fetch subject name if subject_id exists
+      if (quizData.subject_id) {
+        const { data: subjectData } = await supabase
+          .from('subjects')
+          .select('name')
+          .eq('id', quizData.subject_id)
+          .single();
+        if (subjectData) {
+          quizData.subject_name = (subjectData as any).name;
+          setQuizSubjectName((subjectData as any).name || '');
+        }
+      }
+
       setQuiz(quizData);
     } catch {
       setError('حدث خطأ أثناء تحميل الاختبار');
@@ -139,6 +163,29 @@ export default function QuizView({ quizId, onBack, profile }: QuizViewProps) {
   useEffect(() => {
     fetchQuiz();
   }, [fetchQuiz]);
+
+  // ─── Load saved score for review mode ───
+  useEffect(() => {
+    if (!reviewScoreId || !quiz) return;
+    const loadSavedScore = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('scores')
+          .select('*')
+          .eq('id', reviewScoreId)
+          .single();
+        if (!error && data) {
+          const score = data as Score;
+          setSavedAnswers(score.user_answers || []);
+          setReviewMode(true);
+          setShowResults(true);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    loadSavedScore();
+  }, [reviewScoreId, quiz]);
 
   // -------------------------------------------------------
   // Current question
@@ -424,10 +471,44 @@ export default function QuizView({ quizId, onBack, profile }: QuizViewProps) {
   }
 
   // -------------------------------------------------------
+  // Scheduled time check
+  // -------------------------------------------------------
+  const isScheduledFuture = (() => {
+    if (!quiz?.scheduled_date) return false;
+    try {
+      const scheduledDateTime = quiz.scheduled_time
+        ? new Date(`${quiz.scheduled_date}T${quiz.scheduled_time}`)
+        : new Date(quiz.scheduled_date);
+      return scheduledDateTime.getTime() > Date.now();
+    } catch {
+      return false;
+    }
+  })();
+
+  const formattedSchedule = (() => {
+    if (!quiz?.scheduled_date) return null;
+    try {
+      const scheduledDateTime = quiz.scheduled_time
+        ? new Date(`${quiz.scheduled_date}T${quiz.scheduled_time}`)
+        : new Date(quiz.scheduled_date);
+      return scheduledDateTime.toLocaleDateString('ar-SA', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        ...(quiz.scheduled_time ? { hour: '2-digit', minute: '2-digit' } : {}),
+      });
+    } catch {
+      return `${quiz.scheduled_date}${quiz.scheduled_time ? ` ${quiz.scheduled_time}` : ''}`;
+    }
+  })();
+
+  // -------------------------------------------------------
   // Results screen
   // -------------------------------------------------------
   if (showResults) {
-    const finalScore = userAnswers.filter((a) => a.isCorrect).length;
+    const answersToReview = reviewMode ? savedAnswers : userAnswers;
+    const finalScore = answersToReview.filter((a) => a.isCorrect).length;
     const percentage = totalQuestions > 0 ? Math.round((finalScore / totalQuestions) * 100) : 0;
     const scoreColor =
       percentage >= 80
@@ -473,6 +554,12 @@ export default function QuizView({ quizId, onBack, profile }: QuizViewProps) {
           <motion.div variants={fadeInUp} className="text-center">
             <h2 className="text-2xl font-bold text-foreground">نتيجة الاختبار</h2>
             <p className="text-muted-foreground mt-1">{quiz.title}</p>
+            {(quiz.subject_name || quizSubjectName) && (
+              <div className="flex items-center justify-center gap-1 mt-1">
+                <BookOpen className="h-3.5 w-3.5 text-emerald-600" />
+                <span className="text-sm text-emerald-600 font-medium">{quiz.subject_name || quizSubjectName}</span>
+              </div>
+            )}
           </motion.div>
 
           <motion.div
@@ -496,14 +583,16 @@ export default function QuizView({ quizId, onBack, profile }: QuizViewProps) {
             <Eye className="h-4 w-4" />
             مراجعة الإجابات
           </Button>
-          <Button
-            onClick={handleRetry}
-            variant="outline"
-            className="gap-2 border-teal-300 text-teal-700 hover:bg-teal-50"
-          >
-            <RotateCcw className="h-4 w-4" />
-            إعادة الاختبار
-          </Button>
+          {!reviewMode && (quiz as any).allow_retake && (
+            <Button
+              onClick={handleRetry}
+              variant="outline"
+              className="gap-2 border-teal-300 text-teal-700 hover:bg-teal-50"
+            >
+              <RotateCcw className="h-4 w-4" />
+              إعادة الاختبار
+            </Button>
+          )}
           <Button
             onClick={onBack}
             className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
@@ -529,7 +618,7 @@ export default function QuizView({ quizId, onBack, profile }: QuizViewProps) {
                   مراجعة الإجابات
                 </h3>
                 {quiz.questions.map((q, idx) => {
-                  const ans = userAnswers.find((a) => a.questionIndex === idx);
+                  const ans = answersToReview.find((a) => a.questionIndex === idx);
                   return (
                     <ReviewQuestionCard
                       key={idx}
@@ -543,6 +632,108 @@ export default function QuizView({ quizId, onBack, profile }: QuizViewProps) {
             </motion.div>
           )}
         </AnimatePresence>
+      </motion.div>
+    );
+  }
+
+  // -------------------------------------------------------
+  // Start screen (show quiz info before starting)
+  // -------------------------------------------------------
+  if (!quizStarted && !showResults) {
+    return (
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        variants={staggerContainer}
+        className="mx-auto max-w-2xl space-y-6 px-4 py-8"
+        dir="rtl"
+      >
+        {/* Back button */}
+        <motion.div variants={fadeInUp}>
+          <button
+            onClick={onBack}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            العودة
+          </button>
+        </motion.div>
+
+        {/* Quiz info card */}
+        <motion.div variants={fadeInUp}>
+          <Card className="border-emerald-200 bg-white shadow-sm">
+            <CardContent className="p-6 space-y-5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-teal-100">
+                  <ClipboardList className="h-6 w-6 text-teal-600" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-xl font-bold text-foreground truncate">{quiz.title}</h2>
+                  {(quiz.subject_name || quizSubjectName) && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <BookOpen className="h-3.5 w-3.5 text-emerald-600" />
+                      <span className="text-sm text-emerald-600 font-medium">{quiz.subject_name || quizSubjectName}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Quiz details */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg bg-muted/50 p-3 text-center">
+                  <p className="text-2xl font-bold text-foreground">{totalQuestions}</p>
+                  <p className="text-xs text-muted-foreground">سؤال</p>
+                </div>
+                {quiz.duration && (
+                  <div className="rounded-lg bg-muted/50 p-3 text-center">
+                    <p className="text-2xl font-bold text-foreground">{quiz.duration}</p>
+                    <p className="text-xs text-muted-foreground">دقيقة</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Scheduled time */}
+              {formattedSchedule && (
+                <div className={`rounded-lg border p-3 ${isScheduledFuture ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
+                  <div className="flex items-center gap-2">
+                    <Calendar className={`h-4 w-4 ${isScheduledFuture ? 'text-amber-600' : 'text-emerald-600'}`} />
+                    <span className={`text-sm font-medium ${isScheduledFuture ? 'text-amber-700' : 'text-emerald-700'}`}>
+                      {isScheduledFuture ? 'يبدأ في:' : 'بدأ في:'}
+                    </span>
+                  </div>
+                  <p className={`text-sm mt-1 ${isScheduledFuture ? 'text-amber-600' : 'text-emerald-600'}`}>
+                    {formattedSchedule}
+                  </p>
+                </div>
+              )}
+
+              {/* Start button or scheduled message */}
+              {isScheduledFuture ? (
+                <div className="flex flex-col items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-6">
+                  <Clock className="h-10 w-10 text-amber-600" />
+                  <p className="text-lg font-bold text-amber-700">لم يحين موعد الاختبار بعد</p>
+                  <p className="text-sm text-amber-600">سيبدأ الاختبار في {formattedSchedule}</p>
+                  <Button
+                    onClick={onBack}
+                    variant="outline"
+                    className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-100 mt-2"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    العودة
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  onClick={() => setQuizStarted(true)}
+                  className="w-full gap-2 bg-emerald-600 text-white hover:bg-emerald-700 h-12 text-base font-bold"
+                >
+                  <ClipboardList className="h-5 w-5" />
+                  ابدأ الاختبار الآن
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
       </motion.div>
     );
   }
@@ -569,9 +760,17 @@ export default function QuizView({ quizId, onBack, profile }: QuizViewProps) {
           </button>
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-bold text-foreground truncate">{quiz.title}</h2>
-            <p className="text-xs text-muted-foreground">
-              السؤال {currentIdx + 1} من {totalQuestions}
-            </p>
+            <div className="flex items-center gap-2 mt-0.5">
+              {(quiz.subject_name || quizSubjectName) && (
+                <span className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium">
+                  <BookOpen className="h-3 w-3" />
+                  {quiz.subject_name || quizSubjectName}
+                </span>
+              )}
+              <span className="text-xs text-muted-foreground">
+                السؤال {currentIdx + 1} من {totalQuestions}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -659,33 +858,15 @@ export default function QuizView({ quizId, onBack, profile }: QuizViewProps) {
                   />
                 )}
 
-                {/* Feedback indicator */}
+                {/* Answered indicator - only show that answer was saved, not correctness */}
                 {answered && (
                   <motion.div
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className={`flex items-center gap-2 rounded-lg p-3 ${
-                      isCorrect
-                        ? 'bg-emerald-50 text-emerald-700'
-                        : 'bg-rose-50 text-rose-700'
-                    }`}
+                    className="flex items-center gap-2 rounded-lg p-3 bg-teal-50 text-teal-700"
                   >
-                    {isCorrect ? (
-                      <>
-                        <CheckCircle2 className="h-5 w-5 shrink-0" />
-                        <span className="text-sm font-medium">إجابة صحيحة!</span>
-                      </>
-                    ) : (
-                      <>
-                        <XCircle className="h-5 w-5 shrink-0" />
-                        <span className="text-sm font-medium">إجابة خاطئة</span>
-                        {currentQuestion.type !== 'matching' && currentQuestion.correctAnswer && (
-                          <span className="text-sm text-rose-600 mr-1">
-                            الإجابة الصحيحة: {currentQuestion.correctAnswer}
-                          </span>
-                        )}
-                      </>
-                    )}
+                    <CheckCircle2 className="h-5 w-5 shrink-0" />
+                    <span className="text-sm font-medium">تم حفظ إجابتك</span>
                   </motion.div>
                 )}
 
@@ -736,9 +917,10 @@ interface MCQQuestionProps {
   isCorrect: boolean;
   selectedOption: string | null;
   onAnswer: (option: string) => void;
+  showCorrectAnswer?: boolean;
 }
 
-function MCQQuestion({ question, answered, isCorrect, selectedOption, onAnswer }: MCQQuestionProps) {
+function MCQQuestion({ question, answered, isCorrect, selectedOption, onAnswer, showCorrectAnswer = false }: MCQQuestionProps) {
   if (!question.options) return null;
 
   return (
@@ -751,12 +933,22 @@ function MCQQuestion({ question, answered, isCorrect, selectedOption, onAnswer }
           'rounded-xl border-2 p-4 text-sm font-medium transition-all text-right flex items-center gap-3';
 
         if (answered) {
-          if (isCorrectOption) {
-            btnClass += ' border-emerald-500 bg-emerald-50 text-emerald-700';
-          } else if (isSelected && !isCorrect) {
-            btnClass += ' border-rose-500 bg-rose-50 text-rose-700';
+          if (showCorrectAnswer) {
+            // Review mode: show correct/incorrect
+            if (isCorrectOption) {
+              btnClass += ' border-emerald-500 bg-emerald-50 text-emerald-700';
+            } else if (isSelected && !isCorrect) {
+              btnClass += ' border-rose-500 bg-rose-50 text-rose-700';
+            } else {
+              btnClass += ' border-border bg-muted/30 text-muted-foreground';
+            }
           } else {
-            btnClass += ' border-border bg-muted/30 text-muted-foreground';
+            // Quiz mode: just show selected state without revealing correctness
+            if (isSelected) {
+              btnClass += ' border-teal-500 bg-teal-50 text-teal-700';
+            } else {
+              btnClass += ' border-border bg-muted/30 text-muted-foreground';
+            }
           }
         } else {
           btnClass +=
@@ -775,11 +967,13 @@ function MCQQuestion({ question, answered, isCorrect, selectedOption, onAnswer }
             {/* Option letter */}
             <span
               className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                answered && isCorrectOption
+                showCorrectAnswer && answered && isCorrectOption
                   ? 'bg-emerald-600 text-white'
-                  : answered && isSelected && !isCorrect
+                  : showCorrectAnswer && answered && isSelected && !isCorrect
                     ? 'bg-rose-600 text-white'
-                    : 'bg-emerald-100 text-emerald-700'
+                    : answered && isSelected
+                      ? 'bg-teal-600 text-white'
+                      : 'bg-emerald-100 text-emerald-700'
               }`}
             >
               {String.fromCharCode(1571 + idx)}
@@ -787,11 +981,11 @@ function MCQQuestion({ question, answered, isCorrect, selectedOption, onAnswer }
 
             <span className="flex-1">{option}</span>
 
-            {/* Feedback icon */}
-            {answered && isCorrectOption && (
+            {/* Feedback icon - only in review mode */}
+            {showCorrectAnswer && answered && isCorrectOption && (
               <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
             )}
-            {answered && isSelected && !isCorrect && (
+            {showCorrectAnswer && answered && isSelected && !isCorrect && (
               <XCircle className="h-5 w-5 shrink-0 text-rose-600" />
             )}
           </motion.button>
@@ -810,6 +1004,7 @@ interface BooleanQuestionProps {
   isCorrect: boolean;
   selectedOption: string | null;
   onAnswer: (answer: string) => void;
+  showCorrectAnswer?: boolean;
 }
 
 function BooleanQuestion({
@@ -818,6 +1013,7 @@ function BooleanQuestion({
   isCorrect,
   selectedOption,
   onAnswer,
+  showCorrectAnswer = false,
 }: BooleanQuestionProps) {
   const options = [
     { label: 'صح', value: 'صح', icon: <CheckCircle2 className="h-5 w-5" /> },
@@ -834,12 +1030,22 @@ function BooleanQuestion({
           'flex flex-col items-center gap-2 rounded-xl border-2 p-6 text-base font-bold transition-all';
 
         if (answered) {
-          if (isCorrectOption) {
-            btnClass += ' border-emerald-500 bg-emerald-50 text-emerald-700';
-          } else if (isSelected && !isCorrect) {
-            btnClass += ' border-rose-500 bg-rose-50 text-rose-700';
+          if (showCorrectAnswer) {
+            // Review mode: show correct/incorrect
+            if (isCorrectOption) {
+              btnClass += ' border-emerald-500 bg-emerald-50 text-emerald-700';
+            } else if (isSelected && !isCorrect) {
+              btnClass += ' border-rose-500 bg-rose-50 text-rose-700';
+            } else {
+              btnClass += ' border-border bg-muted/30 text-muted-foreground';
+            }
           } else {
-            btnClass += ' border-border bg-muted/30 text-muted-foreground';
+            // Quiz mode: just show selected state without revealing correctness
+            if (isSelected) {
+              btnClass += ' border-teal-500 bg-teal-50 text-teal-700';
+            } else {
+              btnClass += ' border-border bg-muted/30 text-muted-foreground';
+            }
           }
         } else {
           btnClass +=
@@ -857,10 +1063,10 @@ function BooleanQuestion({
           >
             {opt.icon}
             {opt.label}
-            {answered && isCorrectOption && (
+            {showCorrectAnswer && answered && isCorrectOption && (
               <CheckCircle2 className="h-4 w-4 text-emerald-600" />
             )}
-            {answered && isSelected && !isCorrect && (
+            {showCorrectAnswer && answered && isSelected && !isCorrect && (
               <XCircle className="h-4 w-4 text-rose-600" />
             )}
           </motion.button>
@@ -946,6 +1152,7 @@ interface MatchingQuestionProps {
   onRemovePair: (key: string) => void;
   onCheck: () => void;
   feedback: 'correct' | 'incorrect' | null;
+  showCorrectAnswer?: boolean;
 }
 
 function MatchingQuestion({
@@ -959,6 +1166,7 @@ function MatchingQuestion({
   onRemovePair,
   onCheck,
   feedback,
+  showCorrectAnswer = false,
 }: MatchingQuestionProps) {
   if (!question.pairs) return null;
 
@@ -984,12 +1192,21 @@ function MatchingQuestion({
               'w-full rounded-lg border-2 p-3 text-sm font-medium transition-all text-center';
 
             if (answered) {
-              const correctValue = question.pairs?.find((p) => p.key === key)?.value;
-              const userValue = matchedPairs[key];
-              if (userValue === correctValue) {
-                btnClass += ' border-emerald-500 bg-emerald-50 text-emerald-700';
+              if (showCorrectAnswer) {
+                const correctValue = question.pairs?.find((p) => p.key === key)?.value;
+                const userValue = matchedPairs[key];
+                if (userValue === correctValue) {
+                  btnClass += ' border-emerald-500 bg-emerald-50 text-emerald-700';
+                } else {
+                  btnClass += ' border-rose-500 bg-rose-50 text-rose-700';
+                }
               } else {
-                btnClass += ' border-rose-500 bg-rose-50 text-rose-700';
+                const isUserMatched = matchedKeysSet.has(key);
+                if (isUserMatched) {
+                  btnClass += ' border-teal-500 bg-teal-50 text-teal-700';
+                } else {
+                  btnClass += ' border-border bg-muted/30 text-muted-foreground';
+                }
               }
             } else if (isMatched) {
               btnClass += ' border-teal-400 bg-teal-50 text-teal-700';
@@ -1026,15 +1243,24 @@ function MatchingQuestion({
               'w-full rounded-lg border-2 p-3 text-sm font-medium transition-all text-center';
 
             if (answered) {
-              // Find which key matches this value correctly
-              const correctKey = question.pairs?.find((p) => p.value === value)?.key;
-              const userKey = Object.entries(matchedPairs).find(
-                ([, v]) => v === value
-              )?.[0];
-              if (userKey === correctKey) {
-                btnClass += ' border-emerald-500 bg-emerald-50 text-emerald-700';
+              if (showCorrectAnswer) {
+                // Find which key matches this value correctly
+                const correctKey = question.pairs?.find((p) => p.value === value)?.key;
+                const userKey = Object.entries(matchedPairs).find(
+                  ([, v]) => v === value
+                )?.[0];
+                if (userKey === correctKey) {
+                  btnClass += ' border-emerald-500 bg-emerald-50 text-emerald-700';
+                } else {
+                  btnClass += ' border-rose-500 bg-rose-50 text-rose-700';
+                }
               } else {
-                btnClass += ' border-rose-500 bg-rose-50 text-rose-700';
+                const isUserMatched = matchedValuesSet.has(value);
+                if (isUserMatched) {
+                  btnClass += ' border-teal-500 bg-teal-50 text-teal-700';
+                } else {
+                  btnClass += ' border-border bg-muted/30 text-muted-foreground';
+                }
               }
             } else if (isMatched) {
               btnClass += ' border-teal-400 bg-teal-50 text-teal-700';
@@ -1102,8 +1328,8 @@ function MatchingQuestion({
         </Button>
       )}
 
-      {/* Show correct pairs on wrong answer */}
-      {answered && !isCorrect && question.pairs && (
+      {/* Show correct pairs on wrong answer - only in review mode */}
+      {answered && !isCorrect && question.pairs && showCorrectAnswer && (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
