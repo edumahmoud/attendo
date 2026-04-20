@@ -90,10 +90,11 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
   const subscriptionRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const { setStudentSection, setTeacherSection, setViewingSubjectId, setSubjectSection } = useAppStore();
 
-  // Fetch notifications using direct Supabase query (fastest, no API overhead)
-  const fetchNotifications = useCallback(async (showLoading = false) => {
+  // Fetch notifications using direct Supabase query (fastest)
+  const isInitialMount = useRef(true);
+  const fetchNotifications = useCallback(async () => {
     try {
-      if (showLoading) setLoading(true);
+      if (isInitialMount.current) setLoading(true);
 
       const { data, error } = await supabase
         .from('notifications')
@@ -112,20 +113,23 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
     } catch (err) {
       console.error('[NotificationBell] fetchNotifications unexpected error:', err);
     } finally {
-      if (showLoading) setLoading(false);
+      if (isInitialMount.current) {
+        setLoading(false);
+        isInitialMount.current = false;
+      }
       initialLoadDone.current = true;
     }
   }, [profile.id]);
 
-  // Fetch on mount (initial load with spinner)
+  // Fetch on mount
   useEffect(() => {
-    fetchNotifications(true);
+    fetchNotifications();
   }, [fetchNotifications]);
 
-  // Refetch silently when popover opens (no spinner if data already exists)
+  // Refetch silently when popover opens
   useEffect(() => {
-    if (open) {
-      fetchNotifications(false);
+    if (open && !isInitialMount.current) {
+      fetchNotifications();
     }
   }, [open, fetchNotifications]);
 
@@ -159,7 +163,7 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
           table: 'notifications',
           filter: `user_id=eq.${profile.id}`,
         },
-        () => { fetchNotifications(false); }
+        () => { fetchNotifications(); }
       )
       .on(
         'postgres_changes',
@@ -169,20 +173,14 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
           table: 'notifications',
           filter: `user_id=eq.${profile.id}`,
         },
-        () => { fetchNotifications(false); }
+        () => { fetchNotifications(); }
       )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('[NotificationBell] Realtime subscribed');
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.warn('[NotificationBell] Realtime subscription failed, will rely on polling');
-        }
-      });
+      .subscribe();
 
     subscriptionRef.current = channel;
 
     // Polling fallback: refresh every 15 seconds (silent, no spinner)
-    const pollInterval = setInterval(() => fetchNotifications(false), 15000);
+    const pollInterval = setInterval(() => fetchNotifications(), 15000);
 
     return () => {
       if (subscriptionRef.current) {
@@ -244,7 +242,10 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
     }
 
     const { type, reference_id } = notification;
-    if (!reference_id) return;
+    if (!reference_id) {
+      setOpen(false);
+      return;
+    }
 
     const isTeacher = profile.role === 'teacher';
     let targetSubjectId: string | null = null;
@@ -274,9 +275,12 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
           else { if (isTeacher) setTeacherSection('chat'); else setStudentSection('chat'); }
           break;
         }
-        default: return;
+        default:
+          setOpen(false);
+          return;
       }
     } catch {
+      // Error resolving reference — navigate to the appropriate section
       if (type === 'quiz') { if (isTeacher) setTeacherSection('quizzes'); else setStudentSection('quizzes'); }
       else if (type === 'message') { if (isTeacher) setTeacherSection('chat'); else setStudentSection('chat'); }
       else { if (isTeacher) setTeacherSection('subjects'); else setStudentSection('subjects'); }
@@ -284,14 +288,19 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
       return;
     }
 
-    if (targetSubjectId) {
-      setViewingSubjectId(targetSubjectId);
-      if (targetSection) setSubjectSection(targetSection as SubjectSection);
-      if (isTeacher) setTeacherSection('subjects');
-      else setStudentSection('subjects');
-    }
-
+    // Close popover first
     setOpen(false);
+
+    // Navigate to the subject detail with the correct tab
+    if (targetSubjectId) {
+      // Use setTimeout to ensure state updates happen after popover closes
+      setTimeout(() => {
+        setViewingSubjectId(targetSubjectId);
+        if (targetSection) setSubjectSection(targetSection as SubjectSection);
+        if (isTeacher) setTeacherSection('subjects');
+        else setStudentSection('subjects');
+      }, 50);
+    }
   };
 
   // Open full panel

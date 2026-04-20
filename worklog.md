@@ -140,3 +140,78 @@ Stage Summary:
 - Teacher can add/edit notes directly in the detail view
 - Excel download includes all student data with attendance status
 - All changes compile and lint passes with 0 errors
+
+---
+Task ID: 1
+Agent: Fix Subjects Loading
+
+Work Log:
+- Read and analyzed subjects-section.tsx (1388 lines)
+- Identified performance issues:
+  1. `showLoading` parameter approach still allowed skeleton flashing on realtime refetches
+  2. Teacher path: subjects query and student counts query were sequential, blocking render
+  3. `subject_code` column check ran on every mount, making unnecessary API call
+- Changes made to /home/z/my-project/src/components/shared/subjects-section.tsx:
+  1. Added `useRef` to imports (line 3)
+  2. Added `isInitialMount` ref to track first load vs subsequent refreshes (line 175)
+  3. Replaced `fetchSubjects(showLoading = false)` parameter with `isInitialMount.current` ref pattern:
+     - `setLoading(true)` only runs when `isInitialMount.current` is true
+     - `setLoading(false)` and `isInitialMount.current = false` only run in finally block on first load
+     - Subsequent fetches (realtime, manual) no longer trigger loading skeleton
+  4. Optimized teacher path (lines 212-238):
+     - Subjects are now rendered immediately with `student_count: 0` after the subjects query completes
+     - Student count query runs asynchronously in the background using `.then()` instead of `await`
+     - When counts arrive, `setSubjects` updates with `prev => prev.map(...)` to avoid race conditions
+     - This means subjects appear instantly; counts populate a moment later
+  5. Removed `showLoading` parameter from fetchSubjects entirely
+  6. Updated initial fetch call from `fetchSubjects(true)` to `fetchSubjects()`
+  7. Cached `subject_code` column check in localStorage (lines 349-384):
+     - First checks `localStorage.getItem('subject_code_missing')` before making API call
+     - On API check, saves result to localStorage with `localStorage.setItem('subject_code_missing', 'true'|'false')`
+     - Subsequent mounts read from cache, avoiding the API call entirely
+  8. Updated "verify script ran" button (line 1264) to also update localStorage cache when re-checking column
+
+Stage Summary:
+- Loading skeleton now only appears on the very first mount (isInitialMount ref pattern)
+- Realtime subscription refetches no longer cause skeleton flashing
+- Teacher subjects render immediately; student counts load in background
+- subject_code column check cached in localStorage, eliminating redundant API call on every mount
+- All existing functionality preserved (error handling, dialogs, handlers, etc.)
+- Lint passes with 0 errors (2 pre-existing warnings unrelated to this file)
+
+---
+Task ID: 2-7
+Agent: Main
+Task: Fix notifications delay, notification click navigation, add note viewers button, live realtime updates, fix file upload, add student performance column
+
+Work Log:
+- Fixed notifications-panel.tsx: Added isInitialMount ref pattern to prevent skeleton flashing on re-fetches, removed unnecessary API endpoint fallback (now uses direct Supabase query only), reduced polling to 15s
+- Fixed notification-bell.tsx: Added isInitialMount ref pattern, removed showLoading parameter, fixed handleNotificationClick to properly close popover and navigate with setTimeout for state updates after popover closes, ensured setOpen(false) is called in all code paths including when no reference_id
+- Added note viewers feature to subject-detail.tsx:
+  - Added noteViewersOpen and noteViewers state variables
+  - Added fetchNoteViewers function that queries note_views + users tables
+  - Added handleToggleNoteViewers function
+  - Changed static "شاهد هذا X طالب" text to clickable button showing "X مشاهد"
+  - Added note viewers list section in expanded note content showing viewer name + date/time
+- Added student performance column to subject-detail.tsx:
+  - Added studentPerfOpen and studentPerfData state variables
+  - Added fetchStudentPerformance function querying lecture_attendance, lectures, and scores
+  - Added handleViewStudentPerf function
+  - Added "الأداء" column header with "عرض" button per student
+  - Added expandable row showing 4 stat cards: attendance count, quizzes completed, avg score %, attendance percentage
+  - Made email and date columns responsive (hidden on small screens)
+  - Added BarChart3 import
+- Added realtime subscription for note_views table in subject-detail.tsx
+  - Added noteViewsChannel with postgres_changes subscription
+  - Added cleanup in return function
+  - Added fetchNoteViews to dependency array
+- Fixed file upload: Added bucket public check and auto-update to ensure storage bucket is public in /api/subjects/[id]/files/route.ts
+
+Stage Summary:
+- Notifications load faster with isInitialMount ref pattern (no skeleton on re-fetches)
+- Notification click in bell properly navigates to source (subject detail with correct tab)
+- Teachers can click "X مشاهد" button on notes to see who viewed each note with timestamps
+- Students table now has "الأداء" column with expandable performance stats
+- Note view counts update in realtime
+- File upload bucket is ensured to be public
+- All changes compile with 0 lint errors

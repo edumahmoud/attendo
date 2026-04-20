@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
@@ -171,12 +171,15 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
   // ─── Copy code feedback ───
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
+  // ─── Initial mount tracking ───
+  const isInitialMount = useRef(true);
+
   // =====================================================
   // Data fetching
   // =====================================================
-  const fetchSubjects = useCallback(async (showLoading = false) => {
-    // Only show loading skeleton on initial load, not on re-fetches
-    if (showLoading) setLoading(true);
+  const fetchSubjects = useCallback(async () => {
+    // Only show loading skeleton on the very first load
+    if (isInitialMount.current) setLoading(true);
     setDbError(null);
     try {
       // Verify session is valid before querying
@@ -184,12 +187,11 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
       if (!session) {
         console.error('[SubjectsSection] No active session');
         setSubjects([]);
-        setLoading(false);
         return;
       }
 
       if (isTeacher) {
-        // Teacher: fetch subjects they created + student counts
+        // Teacher: fetch subjects they created
         const { data, error } = await supabase
           .from('subjects')
           .select('*')
@@ -210,26 +212,29 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
         } else {
           const subjectsList = (data as Subject[]) || [];
 
-          // Fetch student counts for each subject
+          // Render subjects immediately without counts so the UI appears faster
+          setSubjects(subjectsList.map((s) => ({ ...s, student_count: 0 })));
+
+          // Fetch student counts in the background and update
           if (subjectsList.length > 0) {
             const subjectIds = subjectsList.map((s) => s.id);
-            const { data: studentCounts } = await supabase
+            // Run student count query — don't await blocking the render
+            supabase
               .from('subject_students')
               .select('subject_id')
-              .in('subject_id', subjectIds);
-
-            const countMap: Record<string, number> = {};
-            (studentCounts as { subject_id: string }[])?.forEach((s) => {
-              countMap[s.subject_id] = (countMap[s.subject_id] || 0) + 1;
-            });
-
-            const enriched = subjectsList.map((s) => ({
-              ...s,
-              student_count: countMap[s.id] || 0,
-            }));
-            setSubjects(enriched);
-          } else {
-            setSubjects([]);
+              .in('subject_id', subjectIds)
+              .then(({ data: studentCounts }) => {
+                const countMap: Record<string, number> = {};
+                (studentCounts as { subject_id: string }[])?.forEach((s) => {
+                  countMap[s.subject_id] = (countMap[s.subject_id] || 0) + 1;
+                });
+                setSubjects((prev) =>
+                  prev.map((s) => ({
+                    ...s,
+                    student_count: countMap[s.id] || 0,
+                  })),
+                );
+              });
           }
         }
       } else {
@@ -309,12 +314,15 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
       setDbError('unknown');
       setSubjects([]);
     } finally {
-      setLoading(false);
+      if (isInitialMount.current) {
+        setLoading(false);
+        isInitialMount.current = false;
+      }
     }
   }, [profile.id, isTeacher]);
 
   useEffect(() => {
-    fetchSubjects(true);
+    fetchSubjects();
   }, [fetchSubjects]);
 
   // ─── Realtime subscription ───
@@ -338,9 +346,18 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
     };
   }, [fetchSubjects]);
 
-  // ─── Check if subject_code column exists ───
+  // ─── Check if subject_code column exists (cached in localStorage) ───
   useEffect(() => {
     const checkSubjectCodeColumn = async () => {
+      // Check localStorage cache first to avoid redundant API calls
+      const cached = localStorage.getItem('subject_code_missing');
+      if (cached !== null) {
+        const isMissing = cached === 'true';
+        setSubjectCodeMissing(isMissing);
+        if (isMissing && isTeacher) setShowMigrationBanner(true);
+        return;
+      }
+
       try {
         const { error } = await supabase
           .from('subjects')
@@ -349,13 +366,16 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
 
         if (error && (error.code === '42703' || (error.message || '').includes('subject_code') || (error.message || '').includes('does not exist'))) {
           setSubjectCodeMissing(true);
+          localStorage.setItem('subject_code_missing', 'true');
           if (isTeacher) setShowMigrationBanner(true);
         } else {
           setSubjectCodeMissing(false);
+          localStorage.setItem('subject_code_missing', 'false');
         }
       } catch {
         // Column might not exist
         setSubjectCodeMissing(true);
+        localStorage.setItem('subject_code_missing', 'true');
         if (isTeacher) setShowMigrationBanner(true);
       }
     };
@@ -1243,13 +1263,15 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.subjects TO authenticated;`}
                 className="text-amber-600 hover:text-amber-700 hover:bg-amber-100"
                 onClick={() => {
                   setSubjectCodeMissing(false);
-                  // Re-check
+                  // Re-check and update localStorage cache
                   supabase.from('subjects').select('subject_code').limit(1).then(({ error }) => {
                     if (error && (error.code === '42703' || error.message?.includes('subject_code'))) {
                       setSubjectCodeMissing(true);
+                      localStorage.setItem('subject_code_missing', 'true');
                       toast.error('العمود لم يُضاف بعد. يرجى تشغيل السكريبت أولاً');
                     } else {
                       setSubjectCodeMissing(false);
+                      localStorage.setItem('subject_code_missing', 'false');
                       setShowMigrationBanner(false);
                       toast.success('تم تفعيل رمز الاشتراك بنجاح! 🎉');
                       fetchSubjects();

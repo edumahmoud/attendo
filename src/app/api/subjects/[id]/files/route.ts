@@ -95,6 +95,22 @@ async function ensureBucketExists(): Promise<{ success: boolean; error?: string 
       console.log(`Storage bucket "${STORAGE_BUCKET}" created successfully`);
     }
 
+    // Ensure storage policies exist for public read and authenticated upload
+    // These policies allow anyone to read files and authenticated users to upload
+    try {
+      // We use the service role key to set storage policies via the Supabase Management API
+      // Since we can't use the REST API for policy management, we ensure the bucket is public
+      // which inherently allows public read access. Upload is handled via the service role key.
+      const { data: bucketData } = await supabaseServer.storage.getBucket(STORAGE_BUCKET);
+      if (bucketData && !bucketData.public) {
+        // Update bucket to be public if it was somehow set to private
+        await supabaseServer.storage.updateBucket(STORAGE_BUCKET, { public: true });
+        console.log(`Updated bucket "${STORAGE_BUCKET}" to public`);
+      }
+    } catch (policyErr) {
+      console.warn('Could not verify/update storage policies:', policyErr);
+    }
+
     return { success: true };
   } catch (err) {
     console.error('ensureBucketExists error:', err);

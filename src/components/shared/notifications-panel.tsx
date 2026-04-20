@@ -112,18 +112,6 @@ function sendBrowserNotification(title: string, body: string) {
 }
 
 // -------------------------------------------------------
-// Helper: Get auth token for API calls
-// -------------------------------------------------------
-async function getAuthToken(): Promise<string | null> {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token ?? null;
-  } catch {
-    return null;
-  }
-}
-
-// -------------------------------------------------------
 // Component
 // -------------------------------------------------------
 export default function NotificationsPanel({ profile, onBack }: NotificationsPanelProps) {
@@ -134,48 +122,33 @@ export default function NotificationsPanel({ profile, onBack }: NotificationsPan
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [clearingAll, setClearingAll] = useState(false);
   const subscriptionRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const isInitialMount = useRef(true);
   const { setStudentSection, setTeacherSection, setViewingSubjectId, setSubjectSection } = useAppStore();
 
   // ---------- Fetch notifications ----------
   const fetchNotifications = useCallback(async () => {
     try {
-      // Try API endpoint first (uses authenticated server-side client)
-      const token = await getAuthToken();
-      if (token) {
-        try {
-          const res = await fetch('/api/notifications?page_size=50', {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (res.ok) {
-            const json = await res.json();
-            if (json.success && json.data?.notifications) {
-              setNotifications(json.data.notifications as Notification[]);
-              return;
-            }
-          }
-        } catch (apiErr) {
-          console.warn('[NotificationsPanel] API fetch failed, falling back to direct query:', apiErr);
-        }
-      }
+      if (isInitialMount.current) setLoading(true);
 
-      // Fallback: direct Supabase client query
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
         .eq('user_id', profile.id)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(50);
 
       if (error) {
-        console.error('[NotificationsPanel] Direct query error:', error);
-        toast.error('فشل في تحميل الإشعارات');
+        console.error('[NotificationsPanel] Query error:', error);
         return;
       }
       setNotifications((data as Notification[]) ?? []);
     } catch (err) {
       console.error('[NotificationsPanel] fetchNotifications unexpected error:', err);
-      toast.error('حدث خطأ أثناء تحميل الإشعارات');
     } finally {
-      setLoading(false);
+      if (isInitialMount.current) {
+        setLoading(false);
+        isInitialMount.current = false;
+      }
     }
   }, [profile.id]);
 
@@ -186,19 +159,7 @@ export default function NotificationsPanel({ profile, onBack }: NotificationsPan
         prev.map((n) => (n.id === notificationId ? { ...n, is_read: true } : n)),
       );
       try {
-        const token = await getAuthToken();
-        if (token) {
-          await fetch('/api/notifications', {
-            method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ notification_ids: [notificationId] }),
-          });
-        } else {
-          await supabase.from('notifications').update({ is_read: true }).eq('id', notificationId);
-        }
+        await supabase.from('notifications').update({ is_read: true }).eq('id', notificationId);
       } catch {
         setNotifications((prev) =>
           prev.map((n) => (n.id === notificationId ? { ...n, is_read: false } : n)),
@@ -216,24 +177,11 @@ export default function NotificationsPanel({ profile, onBack }: NotificationsPan
     setMarkingAll(true);
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
     try {
-      const token = await getAuthToken();
-      if (token) {
-        await fetch('/api/notifications', {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ mark_all: true }),
-        });
-        toast.success('تم تحديد الكل كمقروء');
-      } else {
-        await supabase
-          .from('notifications')
-          .update({ is_read: true })
-          .in('id', unreadIds);
-        toast.success('تم تحديد الكل كمقروء');
-      }
+      await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .in('id', unreadIds);
+      toast.success('تم تحديد الكل كمقروء');
     } catch {
       setNotifications((prev) =>
         prev.map((n) => (unreadIds.includes(n.id) ? { ...n, is_read: false } : n)),
@@ -252,17 +200,8 @@ export default function NotificationsPanel({ profile, onBack }: NotificationsPan
       // Optimistic remove
       setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
       try {
-        const token = await getAuthToken();
-        if (token) {
-          await fetch(`/api/notifications?id=${notificationId}`, {
-            method: 'DELETE',
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          toast.success('تم حذف الإشعار');
-        } else {
-          await supabase.from('notifications').delete().eq('id', notificationId);
-          toast.success('تم حذف الإشعار');
-        }
+        await supabase.from('notifications').delete().eq('id', notificationId);
+        toast.success('تم حذف الإشعار');
       } catch {
         toast.error('فشل في حذف الإشعار');
         fetchNotifications(); // Re-fetch on error
@@ -281,24 +220,9 @@ export default function NotificationsPanel({ profile, onBack }: NotificationsPan
     // Optimistic clear
     setNotifications([]);
     try {
-      const token = await getAuthToken();
-      if (token) {
-        // Delete all via individual API calls (batch)
-        const allIds = prevNotifications.map((n) => n.id);
-        await Promise.allSettled(
-          allIds.map((id) =>
-            fetch(`/api/notifications?id=${id}`, {
-              method: 'DELETE',
-              headers: { Authorization: `Bearer ${token}` },
-            })
-          )
-        );
-        toast.success('تم تفريغ جميع الإشعارات');
-      } else {
-        const allIds = prevNotifications.map((n) => n.id);
-        await supabase.from('notifications').delete().in('id', allIds);
-        toast.success('تم تفريغ جميع الإشعارات');
-      }
+      const allIds = prevNotifications.map((n) => n.id);
+      await supabase.from('notifications').delete().in('id', allIds);
+      toast.success('تم تفريغ جميع الإشعارات');
     } catch {
       toast.error('فشل في تفريغ الإشعارات');
       setNotifications(prevNotifications); // Revert
@@ -339,8 +263,11 @@ export default function NotificationsPanel({ profile, onBack }: NotificationsPan
               targetSubjectId = data.subject_id;
               targetSubjectSection = 'quizzes';
             } else {
+              // Fallback: navigate to quizzes section directly
+              setViewingSubjectId(null);
               if (isTeacher) setTeacherSection('quizzes');
               else setStudentSection('quizzes');
+              onBack();
               return;
             }
             break;
@@ -354,6 +281,13 @@ export default function NotificationsPanel({ profile, onBack }: NotificationsPan
             if (data?.subject_id) {
               targetSubjectId = data.subject_id;
               targetSubjectSection = 'notes';
+            } else {
+              // Fallback: navigate to subjects section
+              setViewingSubjectId(null);
+              if (isTeacher) setTeacherSection('subjects');
+              else setStudentSection('subjects');
+              onBack();
+              return;
             }
             break;
           }
@@ -366,6 +300,13 @@ export default function NotificationsPanel({ profile, onBack }: NotificationsPan
             if (data?.subject_id) {
               targetSubjectId = data.subject_id;
               targetSubjectSection = 'lectures';
+            } else {
+              // Fallback: navigate to subjects section
+              setViewingSubjectId(null);
+              if (isTeacher) setTeacherSection('subjects');
+              else setStudentSection('subjects');
+              onBack();
+              return;
             }
             break;
           }
@@ -379,8 +320,11 @@ export default function NotificationsPanel({ profile, onBack }: NotificationsPan
               targetSubjectId = data.subject_id;
               targetSubjectSection = 'chat';
             } else {
+              // Fallback: navigate to chat section directly
+              setViewingSubjectId(null);
               if (isTeacher) setTeacherSection('chat');
               else setStudentSection('chat');
+              onBack();
               return;
             }
             break;
@@ -389,6 +333,8 @@ export default function NotificationsPanel({ profile, onBack }: NotificationsPan
             return;
         }
       } catch {
+        // Error resolving reference — navigate to the appropriate section
+        setViewingSubjectId(null);
         if (type === 'quiz') {
           if (isTeacher) setTeacherSection('quizzes');
           else setStudentSection('quizzes');
@@ -399,6 +345,7 @@ export default function NotificationsPanel({ profile, onBack }: NotificationsPan
           if (isTeacher) setTeacherSection('subjects');
           else setStudentSection('subjects');
         }
+        onBack();
         return;
       }
 
@@ -413,9 +360,11 @@ export default function NotificationsPanel({ profile, onBack }: NotificationsPan
         } else {
           setStudentSection('subjects');
         }
+        // Dismiss the notifications panel so the dashboard shows the subject detail
+        onBack();
       }
     },
-    [markAsRead, profile.role, setStudentSection, setTeacherSection, setViewingSubjectId, setSubjectSection],
+    [markAsRead, profile.role, setStudentSection, setTeacherSection, setViewingSubjectId, setSubjectSection, onBack],
   );
 
   // ---------- Subscribe to realtime ----------
@@ -465,18 +414,12 @@ export default function NotificationsPanel({ profile, onBack }: NotificationsPan
         },
         () => { fetchNotifications(); }
       )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('[NotificationsPanel] Realtime subscribed');
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.warn('[NotificationsPanel] Realtime subscription failed, will rely on polling');
-        }
-      });
+      .subscribe();
 
     subscriptionRef.current = channel;
 
-    // Polling fallback every 10 seconds
-    const pollInterval = setInterval(fetchNotifications, 10000);
+    // Polling fallback every 15 seconds
+    const pollInterval = setInterval(fetchNotifications, 15000);
 
     return () => {
       if (subscriptionRef.current) {

@@ -43,6 +43,7 @@ import {
   MapPin,
   Volume2,
   Copy,
+  BarChart3,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '@/lib/supabase';
@@ -250,6 +251,10 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
   const [creatingNote, setCreatingNote] = useState(false);
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
   const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
+  const [noteViewersOpen, setNoteViewersOpen] = useState<string | null>(null);
+  const [noteViewers, setNoteViewers] = useState<Record<string, { name: string; viewed_at: string }[]>>({});
+  const [studentPerfOpen, setStudentPerfOpen] = useState<string | null>(null);
+  const [studentPerfData, setStudentPerfData] = useState<Record<string, { attendanceCount: number; totalLectures: number; avgScore: number; quizzesCompleted: number }>>({});
   const [createLectureOpen, setCreateLectureOpen] = useState(false);
   const [lectureTitle, setLectureTitle] = useState('');
   const [lectureDesc, setLectureDesc] = useState('');
@@ -389,6 +394,93 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
     }
     setNoteViews(viewCountMap);
   }, [subjectId]);
+
+  const fetchNoteViewers = useCallback(async (noteId: string) => {
+    const { data, error } = await supabase
+      .from('note_views')
+      .select('user_id, viewed_at')
+      .eq('note_id', noteId);
+
+    if (error || !data || data.length === 0) {
+      setNoteViewers((prev) => ({ ...prev, [noteId]: [] }));
+      return;
+    }
+
+    const userIds = data.map((v: { user_id: string }) => v.user_id);
+    const { data: profiles } = await supabase
+      .from('users')
+      .select('id, name')
+      .in('id', userIds);
+
+    const profileMap = new Map(
+      (profiles as { id: string; name: string }[])?.map((p) => [p.id, p.name]) || []
+    );
+
+    const viewers = data.map((v: { user_id: string; viewed_at: string }) => ({
+      name: profileMap.get(v.user_id) || 'طالب',
+      viewed_at: v.viewed_at,
+    }));
+
+    setNoteViewers((prev) => ({ ...prev, [noteId]: viewers }));
+  }, []);
+
+  const handleToggleNoteViewers = async (noteId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (noteViewersOpen === noteId) {
+      setNoteViewersOpen(null);
+    } else {
+      setNoteViewersOpen(noteId);
+      if (!noteViewers[noteId]) {
+        await fetchNoteViewers(noteId);
+      }
+    }
+  };
+
+  const fetchStudentPerformance = useCallback(async (studentId: string) => {
+    // Count attendance for this student in this subject's lectures
+    const { data: attendanceData } = await supabase
+      .from('lecture_attendance')
+      .select('lecture_id')
+      .eq('student_id', studentId);
+
+    // Get the lecture IDs for this subject to calculate total lectures
+    const { data: lecturesData } = await supabase
+      .from('lectures')
+      .select('id')
+      .eq('subject_id', subjectId);
+
+    const totalLectures = lecturesData?.length || 0;
+    const lectureIds = new Set(lecturesData?.map((l: { id: string }) => l.id) || []);
+    const attendanceCount = attendanceData?.filter((a: { lecture_id: string }) => lectureIds.has(a.lecture_id)).length || 0;
+
+    // Get quiz scores for this student from this teacher
+    const { data: scoresData } = await supabase
+      .from('scores')
+      .select('score, total')
+      .eq('student_id', studentId)
+      .eq('teacher_id', profile.id);
+
+    const quizzesCompleted = scoresData?.length || 0;
+    const avgScore = scoresData && scoresData.length > 0
+      ? Math.round(scoresData.reduce((acc: number, s: { score: number; total: number }) => acc + scorePercentage(s.score, s.total), 0) / scoresData.length)
+      : 0;
+
+    setStudentPerfData((prev) => ({
+      ...prev,
+      [studentId]: { attendanceCount, totalLectures, avgScore, quizzesCompleted },
+    }));
+  }, [subjectId, profile.id]);
+
+  const handleViewStudentPerf = async (studentId: string) => {
+    if (studentPerfOpen === studentId) {
+      setStudentPerfOpen(null);
+      return;
+    }
+    setStudentPerfOpen(studentId);
+    if (!studentPerfData[studentId]) {
+      await fetchStudentPerformance(studentId);
+    }
+  };
 
   const fetchQuizzes = useCallback(async () => {
     const teacherId = subject?.teacher_id;
@@ -720,6 +812,16 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
       )
       .subscribe();
 
+    // Note views realtime - refresh view counts
+    const noteViewsChannel = supabase
+      .channel(`subject-note-views-${subjectId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'note_views' },
+        () => fetchNoteViews()
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(filesChannel);
       supabase.removeChannel(notesChannel);
@@ -729,8 +831,9 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
       supabase.removeChannel(quizzesChannel);
       supabase.removeChannel(scoresChannel);
       supabase.removeChannel(attendanceChannel);
+      supabase.removeChannel(noteViewsChannel);
     };
-  }, [subjectId, fetchFiles, fetchNotes, fetchStudents, fetchLectures, fetchMessages, fetchQuizzes, fetchScores, fetchAttendanceCounts, fetchMyAttendance, isTeacher, attendanceLectureId, fetchLectureAttendance]);
+  }, [subjectId, fetchFiles, fetchNotes, fetchStudents, fetchLectures, fetchMessages, fetchQuizzes, fetchScores, fetchAttendanceCounts, fetchMyAttendance, isTeacher, attendanceLectureId, fetchLectureAttendance, fetchNoteViews]);
 
   // =====================================================
   // Handlers
@@ -1587,10 +1690,13 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
                             {formatDate(note.created_at)}
                           </span>
                           {isTeacher && (
-                            <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <button
+                              onClick={(e) => handleToggleNoteViewers(note.id, e)}
+                              className="text-xs text-emerald-600 hover:text-emerald-700 flex items-center gap-1 hover:underline"
+                            >
                               <Eye className="h-3 w-3" />
-                              شاهد هذا {views} طالب{views !== 1 ? '' : ''}
-                            </span>
+                              {views} مشاهد
+                            </button>
                           )}
                         </div>
                       </div>
@@ -1630,6 +1736,32 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
                             <div className="prose prose-sm max-w-none text-foreground/90 whitespace-pre-wrap leading-relaxed">
                               {note.content}
                             </div>
+
+                            {/* Note viewers list (teacher) */}
+                            {isTeacher && noteViewersOpen === note.id && (
+                              <div className="mt-3 pt-3 border-t">
+                                <p className="text-xs font-medium text-foreground mb-2 flex items-center gap-1.5">
+                                  <Eye className="h-3.5 w-3.5 text-emerald-600" />
+                                  من شاهد الملاحظة
+                                </p>
+                                {noteViewers[note.id] === undefined ? (
+                                  <div className="flex items-center justify-center py-2">
+                                    <Loader2 className="h-4 w-4 animate-spin text-emerald-500" />
+                                  </div>
+                                ) : noteViewers[note.id]?.length === 0 ? (
+                                  <p className="text-xs text-muted-foreground">لم يشاهد أحد بعد</p>
+                                ) : (
+                                  <div className="max-h-32 overflow-y-auto custom-scrollbar space-y-1">
+                                    {noteViewers[note.id]?.map((viewer, idx) => (
+                                      <div key={idx} className="flex items-center justify-between text-xs">
+                                        <span className="text-foreground">{viewer.name}</span>
+                                        <span className="text-muted-foreground">{formatDate(viewer.viewed_at)} {formatTime(viewer.viewed_at)}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </motion.div>
                       )}
@@ -2608,44 +2740,94 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
                   <thead className="bg-muted/50 sticky top-0">
                     <tr className="text-xs text-muted-foreground">
                       <th className="text-right font-medium p-3">الطالب</th>
-                      <th className="text-right font-medium p-3">البريد الإلكتروني</th>
-                      <th className="text-right font-medium p-3">تاريخ التسجيل</th>
+                      <th className="text-right font-medium p-3 hidden sm:table-cell">البريد الإلكتروني</th>
+                      <th className="text-right font-medium p-3 hidden md:table-cell">تاريخ التسجيل</th>
+                      <th className="text-center font-medium p-3">الأداء</th>
                       <th className="text-right font-medium p-3">إجراء</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {filteredStudents.map((student) => (
-                      <tr key={student.id} className="hover:bg-muted/30 transition-colors">
-                        <td className="p-3">
-                          <div className="flex items-center gap-2">
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-                              {(student.student_name || 'ط').charAt(0)}
-                            </div>
-                            <span className="text-sm font-medium text-foreground truncate">
-                              {student.student_name || 'طالب'}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="p-3 text-sm text-muted-foreground">{student.student_email || '—'}</td>
-                        <td className="p-3 text-sm text-muted-foreground">{formatDate(student.enrolled_at)}</td>
-                        <td className="p-3">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="gap-1 text-rose-600 hover:text-rose-700 hover:bg-rose-50 text-xs h-8"
-                            onClick={() => handleRemoveStudent(student.student_id)}
-                            disabled={removingStudentId === student.student_id}
-                          >
-                            {removingStudentId === student.student_id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-3.5 w-3.5" />
-                            )}
-                            إزالة
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredStudents.map((student) => {
+                      const perf = studentPerfData[student.student_id];
+                      const showPerf = studentPerfOpen === student.student_id;
+                      return (
+                        <>
+                          <tr key={student.id} className="hover:bg-muted/30 transition-colors">
+                            <td className="p-3">
+                              <div className="flex items-center gap-2">
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
+                                  {(student.student_name || 'ط').charAt(0)}
+                                </div>
+                                <span className="text-sm font-medium text-foreground truncate">
+                                  {student.student_name || 'طالب'}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="p-3 text-sm text-muted-foreground hidden sm:table-cell">{student.student_email || '—'}</td>
+                            <td className="p-3 text-sm text-muted-foreground hidden md:table-cell">{formatDate(student.enrolled_at)}</td>
+                            <td className="p-3 text-center">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="gap-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 text-xs h-8"
+                                onClick={() => handleViewStudentPerf(student.student_id)}
+                              >
+                                <BarChart3 className="h-3.5 w-3.5" />
+                                عرض
+                              </Button>
+                            </td>
+                            <td className="p-3">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="gap-1 text-rose-600 hover:text-rose-700 hover:bg-rose-50 text-xs h-8"
+                                onClick={() => handleRemoveStudent(student.student_id)}
+                                disabled={removingStudentId === student.student_id}
+                              >
+                                {removingStudentId === student.student_id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                )}
+                                إزالة
+                              </Button>
+                            </td>
+                          </tr>
+                          {showPerf && (
+                            <tr key={`${student.id}-perf`} className="bg-emerald-50/30">
+                              <td colSpan={5} className="p-4">
+                                {perf ? (
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                    <div className="rounded-lg border bg-background p-3 text-center">
+                                      <p className="text-lg font-bold text-emerald-700">{perf.attendanceCount}/{perf.totalLectures}</p>
+                                      <p className="text-[10px] text-muted-foreground">الحضور</p>
+                                    </div>
+                                    <div className="rounded-lg border bg-background p-3 text-center">
+                                      <p className="text-lg font-bold text-teal-700">{perf.quizzesCompleted}</p>
+                                      <p className="text-[10px] text-muted-foreground">اختبارات مكتملة</p>
+                                    </div>
+                                    <div className="rounded-lg border bg-background p-3 text-center">
+                                      <p className={`text-lg font-bold ${perf.avgScore >= 75 ? 'text-emerald-700' : perf.avgScore >= 50 ? 'text-amber-700' : 'text-rose-700'}`}>{perf.avgScore}%</p>
+                                      <p className="text-[10px] text-muted-foreground">متوسط الدرجات</p>
+                                    </div>
+                                    <div className="rounded-lg border bg-background p-3 text-center">
+                                      <p className={`text-lg font-bold ${perf.totalLectures > 0 && (perf.attendanceCount / perf.totalLectures * 100) >= 75 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                        {perf.totalLectures > 0 ? Math.round(perf.attendanceCount / perf.totalLectures * 100) : 0}%
+                                      </p>
+                                      <p className="text-[10px] text-muted-foreground">نسبة الحضور</p>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-center py-3">
+                                    <Loader2 className="h-5 w-5 animate-spin text-emerald-500" />
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          )}
+                        </>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
