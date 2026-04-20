@@ -177,6 +177,14 @@ export interface LectureAttendance {
   student_email?: string;
 }
 
+export interface LectureNote {
+  id: string;
+  lecture_id: string;
+  teacher_id: string;
+  content: string;
+  created_at: string;
+}
+
 export interface Message {
   id: string;
   subject_id?: string;

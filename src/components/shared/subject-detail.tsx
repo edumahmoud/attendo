@@ -79,6 +79,7 @@ import type {
   SubjectNote,
   Lecture,
   LectureAttendance,
+  LectureNote,
   Quiz,
   Score,
   Message,
@@ -266,8 +267,10 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
   const [studentSearch, setStudentSearch] = useState('');
   const [lectureDetailOpen, setLectureDetailOpen] = useState(false);
   const [lectureDetailData, setLectureDetailData] = useState<Lecture | null>(null);
-  const [lectureNote, setLectureNote] = useState('');
-  const [savingLectureNote, setSavingLectureNote] = useState(false);
+  const [lectureNotes, setLectureNotes] = useState<Record<string, LectureNote[]>>({});
+  const [newNoteContent, setNewNoteContent] = useState('');
+  const [addingNote, setAddingNote] = useState(false);
+  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
   const [lectureDetailSearch, setLectureDetailSearch] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -473,6 +476,20 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
       setLectureAttendance((prev) => ({ ...prev, [lectureId]: enriched }));
     } else {
       setLectureAttendance((prev) => ({ ...prev, [lectureId]: [] }));
+    }
+  }, []);
+
+  const fetchLectureNotes = useCallback(async (lectureId: string) => {
+    const { data, error } = await supabase
+      .from('lecture_notes')
+      .select('*')
+      .eq('lecture_id', lectureId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching lecture notes:', error);
+    } else {
+      setLectureNotes((prev) => ({ ...prev, [lectureId]: (data as LectureNote[]) || [] }));
     }
   }, []);
 
