@@ -1,29 +1,19 @@
 ---
 Task ID: 1
 Agent: Main Agent
-Task: Fix file/image uploads in Supabase environment
+Task: Create consolidated SQL file for Supabase setup including all storage/upload fixes
 
 Work Log:
-- Diagnosed upload failures using new /api/storage/setup diagnostic endpoint
-- Discovered ROOT CAUSE: service_role key lacks `USAGE` permission on `public` schema (cannot read/write DB tables)
-- Found that service_role CAN do storage operations (buckets, uploads, deletes) but NOT database queries
-- Created both storage buckets (avatars, subject-files) via POST /api/storage/setup auto-setup
-- Identified missing columns: `gender` (users table), `visibility` (subject_files table)
-- Restructured ALL upload routes to use SERVICE ROLE for storage operations only and USER'S JWT for DB operations
-- Updated avatar upload: now requires auth token, uses user JWT for profile update, service role for storage only
-- Updated subject files route: uses authResult.supabase for all DB queries (GET, POST, DELETE)
-- Updated student upload route: uses authResult.supabase for all DB queries
-- Fixed visibility column check to use anon key instead of service role
-- Added cleanup of old avatars before uploading new ones
-- Added better error messages with actionable `detail` field
-- Updated settings-page.tsx to send auth token with avatar upload request
-- Created comprehensive STORAGE_AND_COLUMNS_FIX_SQL in setup-db route
-- Updated setup-db route with new Step 7 for storage/column fix
-- Created supabase/fix_storage_complete.sql with all needed SQL
+- Read all existing SQL files (schema.sql, schema_v2.sql, fix_storage_complete.sql, fix_storage_policies.sql, add_gender_and_storage.sql, add_subject_code.sql, fix_notifications_rls.sql, fix_messages_rls.sql, fix_attendance_rls.sql, add_allow_retake.sql, add_lecture_notes.sql, fix_auth_trigger_pending_role.sql)
+- Read all upload API routes (upload-avatar, subject files upload, subject files CRUD)
+- Read supabase-server.ts, supabase-auth.ts, settings-page.tsx
+- Read setup-db route with embedded SQL
+- Created /home/z/my-project/supabase/COMPLETE_SETUP.sql - a single comprehensive 1023-line SQL file that includes everything
 
 Stage Summary:
-- Both storage buckets created and working (avatars: public, 2MB; subject-files: public, 10MB)
-- Upload code now works with split strategy: service role for storage, user JWT for DB
-- Missing columns (gender, visibility) need to be added via SQL in Supabase Dashboard
-- service_role permissions need to be fixed via GRANT SQL in Supabase Dashboard
-- User needs to run the SQL from /api/setup-db (sql.storage_and_columns_fix) in Supabase SQL Editor
+- Created COMPLETE_SETUP.sql that covers ALL database setup in one file
+- Includes: tables, columns, RLS policies, storage buckets, storage policies, schema permissions (service_role GRANT), triggers, functions, views, realtime
+- Key fix for uploads: GRANT USAGE ON SCHEMA public TO service_role (root cause of avatar upload failure)
+- Key fix: Storage buckets (avatars, subject-files) with proper policies
+- Key fix: Missing columns (gender, visibility, avatar_url, allow_retake, subject_code)
+- The file is idempotent - safe to run multiple times
