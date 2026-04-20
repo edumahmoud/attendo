@@ -689,6 +689,18 @@ GRANT SELECT, INSERT, UPDATE ON public.subjects TO anon;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.subjects TO authenticated;
 `.trim();
 
+const ROLE_CONSTRAINT_FIX_SQL = `
+-- =====================================================
+-- Fix role CHECK constraint to include 'admin' and 'pending'
+-- The original schema only allowed 'student' and 'teacher'
+-- This must be run after the base schema
+-- =====================================================
+
+ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE public.users ADD CONSTRAINT users_role_check 
+  CHECK (role IN ('student', 'teacher', 'admin', 'pending'));
+`.trim();
+
 export async function GET() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -702,6 +714,7 @@ export async function GET() {
       critical_fixes: CRITICAL_FIXES_SQL,
       schema_v2: SCHEMA_V2_SQL,
       subject_code_migration: SUBJECT_CODE_MIGRATION_SQL,
+      role_constraint_fix: ROLE_CONSTRAINT_FIX_SQL,
     },
     steps: [
       {
@@ -736,12 +749,18 @@ export async function GET() {
       },
       {
         step: 6,
+        title: 'Fix Role Constraint (CRITICAL for Admin)',
+        description: 'In the same SQL Editor, run the SQL provided in sql.role_constraint_fix below. This allows the "admin" and "pending" roles in the users table.',
+        critical: true,
+      },
+      {
+        step: 7,
         title: 'Create Storage Bucket (Optional)',
         description: 'Go to Supabase Dashboard > Storage and create a bucket named "subject-files" for file uploads. Set it to private.',
         critical: false,
       },
       {
-        step: 7,
+        step: 8,
         title: 'Add Service Role Key (Optional)',
         description: 'Add your SUPABASE_SERVICE_ROLE_KEY to .env.local for server-side admin operations',
         critical: false,
@@ -766,6 +785,7 @@ export async function POST() {
           critical_fixes: CRITICAL_FIXES_SQL,
           schema_v2: SCHEMA_V2_SQL,
           subject_code_migration: SUBJECT_CODE_MIGRATION_SQL,
+          role_constraint_fix: ROLE_CONSTRAINT_FIX_SQL,
         },
         instructions: 'Please run the SQL manually in the Supabase SQL Editor (Dashboard > SQL Editor). Also make sure to enable Email signups in Authentication > Providers > Email.',
       },
@@ -814,6 +834,7 @@ export async function POST() {
           critical_fixes: CRITICAL_FIXES_SQL,
           schema_v2: SCHEMA_V2_SQL,
           subject_code_migration: SUBJECT_CODE_MIGRATION_SQL,
+          role_constraint_fix: ROLE_CONSTRAINT_FIX_SQL,
         },
         instructions: 'Please run the SQL manually in the Supabase SQL Editor (Dashboard > SQL Editor). Also make sure to enable Email signups in Authentication > Providers > Email.',
       },

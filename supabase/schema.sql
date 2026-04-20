@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   email TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('student', 'teacher')),
+  role TEXT NOT NULL CHECK (role IN ('student', 'teacher', 'admin', 'pending')),
   teacher_code TEXT UNIQUE,
   avatar_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { GraduationCap, Loader2, BookOpen, BrainCircuit, Users, Shield } from 'lucide-react';
+import { GraduationCap, Loader2, BookOpen, BrainCircuit, Users, Shield, Database } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth-store';
 import { useAppStore } from '@/stores/app-store';
 import LoginForm from '@/components/auth/login-form';
 import RegisterForm from '@/components/auth/register-form';
 import RoleSelection from '@/components/auth/role-selection';
+import SetupWizard from '@/components/auth/setup-wizard';
 import StudentDashboard from '@/components/student/student-dashboard';
 import TeacherDashboard from '@/components/teacher/teacher-dashboard';
 import AdminDashboard from '@/components/admin/admin-dashboard';
@@ -21,15 +22,46 @@ export default function Home() {
   const { currentPage, viewingQuizId, viewingSummaryId, setCurrentPage, reviewScoreId } = useAppStore();
   const [authMode, setAuthMode] = useState<AuthMode>('login');
 
+  // Setup wizard state
+  const [checkingSetup, setCheckingSetup] = useState(true);
+  const [needsSetup, setNeedsSetup] = useState(false);
+
+  // Check if system needs initial setup (no users)
+  const checkSetup = useCallback(async () => {
+    try {
+      const response = await fetch('/api/setup');
+      const data = await response.json();
+      if (data.needsSetup === true) {
+        setNeedsSetup(true);
+      }
+    } catch {
+      // Silently ignore - will show normal auth page
+    } finally {
+      setCheckingSetup(false);
+    }
+  }, []);
+
   // Initialize auth on mount
   useEffect(() => {
     initialize();
   }, [initialize]);
 
+  // Check setup status after initialization
+  useEffect(() => {
+    if (!initialized) return;
+    checkSetup();
+  }, [initialized, checkSetup]);
+
+  // Handle setup completion - refresh and go to auth
+  const handleSetupComplete = useCallback(() => {
+    setNeedsSetup(false);
+    setCheckingSetup(false);
+  }, []);
+
   // Set correct page when user state changes
   useEffect(() => {
     if (!initialized) return;
-    
+
     if (user) {
       if (user.role === 'pending') {
         // User hasn't selected a role yet - show role selection
@@ -44,8 +76,8 @@ export default function Home() {
     }
   }, [user, initialized, setCurrentPage]);
 
-  // Loading state
-  if (loading || !initialized) {
+  // Loading state (auth initialization + setup check)
+  if (loading || !initialized || checkingSetup) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-teal-50" dir="rtl">
         <motion.div
@@ -68,7 +100,43 @@ export default function Home() {
     );
   }
 
-  // Auth pages (login / register)
+  // ═══════════════════════════════════════════
+  // SETUP WIZARD - First time system setup
+  // ═══════════════════════════════════════════
+  if (needsSetup && !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-emerald-600 to-teal-700" dir="rtl">
+        {/* Background decoration */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-40 -right-40 w-80 h-80 bg-white/5 rounded-full blur-3xl" />
+          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-white/5 rounded-full blur-3xl" />
+          <div className="absolute top-1/4 left-1/4 w-60 h-60 bg-emerald-400/10 rounded-full blur-2xl" />
+        </div>
+
+        {/* Setup badge at top */}
+        <div className="absolute top-8 left-0 right-0 flex justify-center">
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="flex items-center gap-2 rounded-full bg-white/10 backdrop-blur-sm px-4 py-2 border border-white/20"
+          >
+            <Database className="w-4 h-4 text-emerald-300" />
+            <span className="text-sm font-medium text-white/80">إعداد أولي للنظام</span>
+          </motion.div>
+        </div>
+
+        {/* Setup wizard form */}
+        <div className="relative z-10 w-full max-w-md">
+          <SetupWizard onSetupComplete={handleSetupComplete} />
+        </div>
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════
+  // AUTH PAGES (login / register)
+  // ═══════════════════════════════════════════
   if (!user || currentPage === 'auth') {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-emerald-600 to-teal-700" dir="rtl">
