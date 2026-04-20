@@ -114,6 +114,7 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
   const [showReview, setShowReview] = useState(false);
   const [savingScore, setSavingScore] = useState(false);
   const [quizStarted, setQuizStarted] = useState(false);
+  const [resultsBlocked, setResultsBlocked] = useState(false);
 
   // -------------------------------------------------------
   // Fetch quiz
@@ -371,10 +372,18 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
       resetQuestionState();
       setCurrentIdx((prev) => prev + 1);
     } else {
-      // Calculate final score and show results
+      // Calculate final score and submit all answers
       const finalAnswers = [...userAnswers, newAnswer];
       const finalScore = finalAnswers.filter((a) => a.isCorrect).length;
       saveScore(finalScore, finalAnswers);
+
+      // Check if results are visible to students
+      if (quiz.results_visible === false) {
+        setShowResults(true);
+        setResultsBlocked(true);
+        return;
+      }
+
       setShowResults(true);
     }
   };
@@ -504,6 +513,65 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
   })();
 
   // -------------------------------------------------------
+  // Results screen (blocked - teacher hasn't shown results yet)
+  // -------------------------------------------------------
+  if (showResults && resultsBlocked) {
+    return (
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        variants={staggerContainer}
+        className="mx-auto max-w-2xl space-y-6 px-4 py-8"
+        dir="rtl"
+      >
+        <motion.div variants={fadeInUp} className="flex flex-col items-center gap-4">
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 20, delay: 0.2 }}
+            className="flex h-32 w-32 items-center justify-center rounded-full bg-teal-100 ring-8 ring-teal-200 shadow-lg"
+          >
+            <div className="text-center">
+              <CheckCircle2 className="mx-auto h-10 w-10 text-teal-600 mb-1" />
+            </div>
+          </motion.div>
+
+          <motion.div variants={fadeInUp} className="text-center">
+            <h2 className="text-2xl font-bold text-foreground">تم إرسال إجاباتك</h2>
+            <p className="text-muted-foreground mt-1">{quiz.title}</p>
+            {(quiz.subject_name || quizSubjectName) && (
+              <div className="flex items-center justify-center gap-1 mt-1">
+                <BookOpen className="h-3.5 w-3.5 text-emerald-600" />
+                <span className="text-sm text-emerald-600 font-medium">{quiz.subject_name || quizSubjectName}</span>
+              </div>
+            )}
+          </motion.div>
+
+          <motion.div
+            variants={fadeInUp}
+            className="rounded-2xl border-2 border-teal-200 bg-teal-50 px-8 py-4 text-center max-w-sm"
+          >
+            <p className="text-base font-medium text-teal-700">
+              ستظهر النتيجة بعد قيام المعلم بإظهارها
+            </p>
+          </motion.div>
+        </motion.div>
+
+        {/* Action buttons */}
+        <motion.div variants={fadeInUp} className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+          <Button
+            onClick={onBack}
+            className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
+          >
+            <Home className="h-4 w-4" />
+            العودة للرئيسية
+          </Button>
+        </motion.div>
+      </motion.div>
+    );
+  }
+
+  // -------------------------------------------------------
   // Results screen
   // -------------------------------------------------------
   if (showResults) {
@@ -583,7 +651,7 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
             <Eye className="h-4 w-4" />
             مراجعة الإجابات
           </Button>
-          {!reviewMode && (quiz as any).allow_retake && (
+          {!reviewMode && quiz.allow_retake && (
             <Button
               onClick={handleRetry}
               variant="outline"
@@ -866,7 +934,7 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
                     className="flex items-center gap-2 rounded-lg p-3 bg-teal-50 text-teal-700"
                   >
                     <CheckCircle2 className="h-5 w-5 shrink-0" />
-                    <span className="text-sm font-medium">تم حفظ إجابتك</span>
+                    <span className="text-sm font-medium">تم تسجيل إجابتك</span>
                   </motion.div>
                 )}
 

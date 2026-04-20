@@ -83,11 +83,13 @@ function timeAgoAr(dateStr: string): string {
 // -------------------------------------------------------
 export default function NotificationBell({ profile, onOpenPanel }: NotificationBellProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const initialLoadDone = useRef(false);
   const subscriptionRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const notificationsRef = useRef<Notification[]>([]);
   const { setStudentSection, setTeacherSection, setViewingSubjectId, setSubjectSection } = useAppStore();
 
   // Fetch notifications using direct Supabase query (fastest)
@@ -108,7 +110,10 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
         return;
       }
       if (data) {
-        setNotifications(data as Notification[]);
+        const notifs = data as Notification[];
+        setNotifications(notifs);
+        notificationsRef.current = notifs;
+        setUnreadCount(notifs.filter(n => !n.is_read).length);
       }
     } catch (err) {
       console.error('[NotificationBell] fetchNotifications unexpected error:', err);
@@ -133,7 +138,7 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
     }
   }, [open, fetchNotifications]);
 
-  // Subscribe to realtime notifications
+  // Subscribe to realtime notifications — realtime-only, no polling
   useEffect(() => {
     const channel = supabase
       .channel('bell-notifications-realtime')
@@ -148,6 +153,10 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
         (payload) => {
           const newNotification = payload.new as Notification;
           setNotifications((prev) => [newNotification, ...prev].slice(0, 20));
+          notificationsRef.current = [newNotification, ...notificationsRef.current].slice(0, 20);
+          if (!newNotification.is_read) {
+            setUnreadCount((prev) => prev + 1);
+          }
 
           // Show toast
           toast(newNotification.title, {
@@ -163,7 +172,22 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
           table: 'notifications',
           filter: `user_id=eq.${profile.id}`,
         },
-        () => { fetchNotifications(); }
+        (payload) => {
+          const updatedNotification = payload.new as Notification;
+          setNotifications((prev) =>
+            prev.map((n) => (n.id === updatedNotification.id ? updatedNotification : n))
+          );
+          // Recalculate unread count based on old vs new is_read state
+          const oldNotification = notificationsRef.current.find((n) => n.id === updatedNotification.id);
+          if (oldNotification && !oldNotification.is_read && updatedNotification.is_read) {
+            setUnreadCount((prev) => Math.max(0, prev - 1));
+          } else if (oldNotification && oldNotification.is_read && !updatedNotification.is_read) {
+            setUnreadCount((prev) => prev + 1);
+          }
+          notificationsRef.current = notificationsRef.current.map((n) =>
+            n.id === updatedNotification.id ? updatedNotification : n
+          );
+        },
       )
       .on(
         'postgres_changes',
@@ -173,51 +197,67 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
           table: 'notifications',
           filter: `user_id=eq.${profile.id}`,
         },
-        () => { fetchNotifications(); }
+        (payload) => {
+          const deletedId = (payload.old as { id: string }).id;
+          const oldNotification = notificationsRef.current.find((n) => n.id === deletedId);
+          setNotifications((prev) => prev.filter((n) => n.id !== deletedId));
+          if (oldNotification && !oldNotification.is_read) {
+            setUnreadCount((prev) => Math.max(0, prev - 1));
+          }
+          notificationsRef.current = notificationsRef.current.filter((n) => n.id !== deletedId);
+        },
       )
       .subscribe();
 
     subscriptionRef.current = channel;
-
-    // Polling fallback: refresh every 15 seconds (silent, no spinner)
-    const pollInterval = setInterval(() => fetchNotifications(), 15000);
 
     return () => {
       if (subscriptionRef.current) {
         supabase.removeChannel(subscriptionRef.current);
         subscriptionRef.current = null;
       }
-      clearInterval(pollInterval);
     };
-  }, [profile.id, fetchNotifications]);
-
-  // Unread count
-  const unreadCount = notifications.filter((n) => !n.is_read).length;
+  }, [profile.id]);
 
   // Mark as read
   const markAsRead = async (notificationId: string) => {
+    const oldNotif = notificationsRef.current.find((n) => n.id === notificationId);
     setNotifications((prev) =>
       prev.map((n) => (n.id === notificationId ? { ...n, is_read: true } : n)),
     );
+    notificationsRef.current = notificationsRef.current.map((n) =>
+      n.id === notificationId ? { ...n, is_read: true } : n
+    );
+    if (oldNotif && !oldNotif.is_read) {
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    }
     try {
       await supabase.from('notifications').update({ is_read: true }).eq('id', notificationId);
     } catch {
       setNotifications((prev) =>
         prev.map((n) => (n.id === notificationId ? { ...n, is_read: false } : n)),
       );
+      notificationsRef.current = notificationsRef.current.map((n) =>
+        n.id === notificationId ? { ...n, is_read: false } : n
+      );
+      if (oldNotif && !oldNotif.is_read) {
+        setUnreadCount((prev) => prev + 1);
+      }
     }
   };
 
   // Mark all as read
   const markAllAsRead = async () => {
-    const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
+    const unreadIds = notificationsRef.current.filter((n) => !n.is_read).map((n) => n.id);
     if (unreadIds.length === 0) return;
 
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    notificationsRef.current = notificationsRef.current.map((n) => ({ ...n, is_read: true }));
+    setUnreadCount(0);
     try {
       await supabase.from('notifications').update({ is_read: true }).in('id', unreadIds);
     } catch {
-      fetchNotifications(false);
+      fetchNotifications();
     }
   };
 
@@ -225,11 +265,16 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
   const deleteNotification = async (e: React.MouseEvent, notificationId: string) => {
     e.stopPropagation();
     setDeletingId(notificationId);
+    const oldNotification = notificationsRef.current.find((n) => n.id === notificationId);
     setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
+    notificationsRef.current = notificationsRef.current.filter((n) => n.id !== notificationId);
+    if (oldNotification && !oldNotification.is_read) {
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    }
     try {
       await supabase.from('notifications').delete().eq('id', notificationId);
     } catch {
-      fetchNotifications(false);
+      fetchNotifications();
     } finally {
       setDeletingId(null);
     }

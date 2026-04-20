@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useAuthStore } from '@/stores/auth-store';
 import { useAppStore } from '@/stores/app-store';
+import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 
 interface LoginFormProps {
@@ -76,6 +77,28 @@ export default function LoginForm({ onSwitchToRegister }: LoginFormProps) {
       toast.error('حدث خطأ غير متوقع');
     } finally {
       setIsGoogleLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      toast.error('يرجى إدخال البريد الإلكتروني أولاً');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.toLowerCase().trim(), {
+        redirectTo: `${window.location.origin}`,
+      });
+      if (error) {
+        toast.error('حدث خطأ أثناء إرسال رابط إعادة التعيين');
+      } else {
+        toast.success('تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني', { duration: 5000 });
+      }
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -173,6 +196,23 @@ export default function LoginForm({ onSwitchToRegister }: LoginFormProps) {
                     )}
                   </button>
                 </div>
+              </motion.div>
+
+              {/* Forgot Password Link */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.45 }}
+                className="flex justify-end"
+              >
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  disabled={isLoading}
+                  className="text-sm text-emerald-600 hover:text-emerald-700 transition-colors hover:underline"
+                >
+                  نسيت كلمة المرور؟
+                </button>
               </motion.div>
 
               {/* Submit Button */}

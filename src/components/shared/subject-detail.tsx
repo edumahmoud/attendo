@@ -44,6 +44,7 @@ import {
   Volume2,
   Copy,
   BarChart3,
+  Pencil,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '@/lib/supabase';
@@ -251,8 +252,15 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
   const [creatingNote, setCreatingNote] = useState(false);
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
   const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
-  const [noteViewersOpen, setNoteViewersOpen] = useState<string | null>(null);
-  const [noteViewers, setNoteViewers] = useState<Record<string, { name: string; viewed_at: string }[]>>({});
+  const [noteViewersOpen, setNoteViewersOpen] = useState(false);
+  const [viewingNoteId, setViewingNoteId] = useState<string | null>(null);
+  const [noteViewerList, setNoteViewerList] = useState<{ user_id: string; user_name: string; user_email: string; viewed_at: string }[]>([]);
+  const [loadingViewers, setLoadingViewers] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingNoteTitle, setEditingNoteTitle] = useState('');
+  const [editingNoteContent, setEditingNoteContent] = useState('');
+  const [deleteLectureId, setDeleteLectureId] = useState<string | null>(null);
+  const [deleteLectureDialogOpen, setDeleteLectureDialogOpen] = useState(false);
   const [studentPerfOpen, setStudentPerfOpen] = useState<string | null>(null);
   const [studentPerfData, setStudentPerfData] = useState<Record<string, { attendanceCount: number; totalLectures: number; avgScore: number; quizzesCompleted: number }>>({});
   const [createLectureOpen, setCreateLectureOpen] = useState(false);
@@ -395,45 +403,38 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
     setNoteViews(viewCountMap);
   }, [subjectId]);
 
-  const fetchNoteViewers = useCallback(async (noteId: string) => {
-    const { data, error } = await supabase
-      .from('note_views')
-      .select('user_id, viewed_at')
-      .eq('note_id', noteId);
+  const fetchNoteViewersList = useCallback(async (noteId: string) => {
+    setLoadingViewers(true);
+    try {
+      const { data, error } = await supabase
+        .from('note_views')
+        .select('viewed_at, users(name, email)')
+        .eq('note_id', noteId)
+        .order('viewed_at', { ascending: false });
 
-    if (error || !data || data.length === 0) {
-      setNoteViewers((prev) => ({ ...prev, [noteId]: [] }));
-      return;
+      if (error || !data) {
+        setNoteViewerList([]);
+        return;
+      }
+
+      const viewers = data.map((v: { viewed_at: string; users: { name: string; email: string } | null }) => ({
+        user_id: '',
+        user_name: v.users?.name || 'طالب',
+        user_email: v.users?.email || '',
+        viewed_at: v.viewed_at,
+      }));
+
+      setNoteViewerList(viewers);
+    } finally {
+      setLoadingViewers(false);
     }
-
-    const userIds = data.map((v: { user_id: string }) => v.user_id);
-    const { data: profiles } = await supabase
-      .from('users')
-      .select('id, name')
-      .in('id', userIds);
-
-    const profileMap = new Map(
-      (profiles as { id: string; name: string }[])?.map((p) => [p.id, p.name]) || []
-    );
-
-    const viewers = data.map((v: { user_id: string; viewed_at: string }) => ({
-      name: profileMap.get(v.user_id) || 'طالب',
-      viewed_at: v.viewed_at,
-    }));
-
-    setNoteViewers((prev) => ({ ...prev, [noteId]: viewers }));
   }, []);
 
-  const handleToggleNoteViewers = async (noteId: string, e?: React.MouseEvent) => {
+  const handleOpenNoteViewers = async (noteId: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (noteViewersOpen === noteId) {
-      setNoteViewersOpen(null);
-    } else {
-      setNoteViewersOpen(noteId);
-      if (!noteViewers[noteId]) {
-        await fetchNoteViewers(noteId);
-      }
-    }
+    setViewingNoteId(noteId);
+    setNoteViewersOpen(true);
+    await fetchNoteViewersList(noteId);
   };
 
   const fetchStudentPerformance = useCallback(async (studentId: string) => {
@@ -981,6 +982,37 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
     }
   };
 
+  // ─── Save edited note ───
+  const handleSaveEditNote = async () => {
+    if (!editingNoteId || !editingNoteTitle.trim()) return;
+    const { error } = await supabase
+      .from('subject_notes')
+      .update({ title: editingNoteTitle.trim(), content: editingNoteContent, updated_at: new Date().toISOString() })
+      .eq('id', editingNoteId);
+    if (!error) {
+      toast.success('تم تعديل الملاحظة بنجاح');
+      setEditingNoteId(null);
+      fetchNotes();
+    } else {
+      toast.error('حدث خطأ أثناء تعديل الملاحظة');
+    }
+  };
+
+  // ─── Delete lecture ───
+  const handleDeleteLecture = async (lectureId: string) => {
+    // Delete attendance first (cascade should handle this, but be safe)
+    await supabase.from('lecture_attendance').delete().eq('lecture_id', lectureId);
+    const { error } = await supabase.from('lectures').delete().eq('id', lectureId);
+    if (!error) {
+      toast.success('تم حذف المحاضرة بنجاح');
+      fetchLectures();
+    } else {
+      toast.error('حدث خطأ أثناء حذف المحاضرة');
+    }
+    setDeleteLectureDialogOpen(false);
+    setDeleteLectureId(null);
+  };
+
   // ─── View note (track) ───
   const handleViewNote = async (noteId: string) => {
     if (expandedNoteId === noteId) {
@@ -989,13 +1021,12 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
     }
     setExpandedNoteId(noteId);
 
-    // Track view for students
+    // Track view for students (upsert to avoid duplicates)
     if (!isTeacher) {
       try {
-        await supabase.from('note_views').insert({
-          note_id: noteId,
-          user_id: profile.id,
-        });
+        await supabase
+          .from('note_views')
+          .upsert({ note_id: noteId, user_id: profile.id }, { onConflict: 'note_id,user_id' });
         fetchNoteViews();
       } catch {
         // Silently fail for view tracking
@@ -1425,56 +1456,6 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
           />
         </motion.div>
 
-        {/* Quick actions - Teacher only */}
-        {isTeacher && (
-          <motion.div variants={itemVariants}>
-            <Card className="shadow-sm">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-semibold flex items-center gap-2">
-                  <Volume2 className="h-4 w-4 text-teal-600" />
-                  إجراءات سريعة
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <Button
-                    variant="outline"
-                    className="h-auto py-3 flex flex-col gap-1.5 border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
-                    onClick={() => setActiveTab('files')}
-                  >
-                    <Upload className="h-4 w-4" />
-                    <span className="text-xs">رفع ملف</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-auto py-3 flex flex-col gap-1.5 border-teal-200 hover:bg-teal-50 hover:text-teal-700"
-                    onClick={() => setCreateNoteOpen(true)}
-                  >
-                    <StickyNote className="h-4 w-4" />
-                    <span className="text-xs">ملاحظة جديدة</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-auto py-3 flex flex-col gap-1.5 border-amber-200 hover:bg-amber-50 hover:text-amber-700"
-                    onClick={() => setActiveTab('quizzes')}
-                  >
-                    <ClipboardList className="h-4 w-4" />
-                    <span className="text-xs">اختبار جديد</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-auto py-3 flex flex-col gap-1.5 border-rose-200 hover:bg-rose-50 hover:text-rose-700"
-                    onClick={() => setCreateLectureOpen(true)}
-                  >
-                    <Video className="h-4 w-4" />
-                    <span className="text-xs">محاضرة جديدة</span>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
-
         {/* Recent activity summary */}
         <motion.div variants={itemVariants}>
           <Card className="shadow-sm">
@@ -1672,7 +1653,7 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <h4 className="font-semibold text-foreground truncate">{note.title}</h4>
+                          <h4 className="font-semibold text-foreground break-words">{note.title}</h4>
                           {isExpanded ? (
                             <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
                           ) : (
@@ -1680,7 +1661,7 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
                           )}
                         </div>
                         {!isExpanded && (
-                          <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                          <p className="text-sm text-muted-foreground mt-1 line-clamp-2 break-words">
                             {note.content}
                           </p>
                         )}
@@ -1691,7 +1672,7 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
                           </span>
                           {isTeacher && (
                             <button
-                              onClick={(e) => handleToggleNoteViewers(note.id, e)}
+                              onClick={(e) => handleOpenNoteViewers(note.id, e)}
                               className="text-xs text-emerald-600 hover:text-emerald-700 flex items-center gap-1 hover:underline"
                             >
                               <Eye className="h-3 w-3" />
@@ -1701,24 +1682,39 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
                         </div>
                       </div>
 
-                      {/* Delete button for teachers */}
+                      {/* Action buttons for teachers */}
                       {isTeacher && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="shrink-0 h-8 w-8 text-muted-foreground hover:text-rose-600 hover:bg-rose-50"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteNote(note.id);
-                          }}
-                          disabled={deletingNoteId === note.id}
-                        >
-                          {deletingNoteId === note.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
-                        </Button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="shrink-0 h-8 w-8 text-muted-foreground hover:text-teal-600 hover:bg-teal-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingNoteId(note.id);
+                              setEditingNoteTitle(note.title);
+                              setEditingNoteContent(note.content || '');
+                            }}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="shrink-0 h-8 w-8 text-muted-foreground hover:text-rose-600 hover:bg-rose-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteNote(note.id);
+                            }}
+                            disabled={deletingNoteId === note.id}
+                          >
+                            {deletingNoteId === note.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
                       )}
                     </button>
 
@@ -1733,35 +1729,9 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
                           className="overflow-hidden"
                         >
                           <div className="px-4 pb-4 border-t pt-3">
-                            <div className="prose prose-sm max-w-none text-foreground/90 whitespace-pre-wrap leading-relaxed">
+                            <div className="prose prose-sm max-w-none text-foreground/90 whitespace-pre-wrap break-words leading-relaxed">
                               {note.content}
                             </div>
-
-                            {/* Note viewers list (teacher) */}
-                            {isTeacher && noteViewersOpen === note.id && (
-                              <div className="mt-3 pt-3 border-t">
-                                <p className="text-xs font-medium text-foreground mb-2 flex items-center gap-1.5">
-                                  <Eye className="h-3.5 w-3.5 text-emerald-600" />
-                                  من شاهد الملاحظة
-                                </p>
-                                {noteViewers[note.id] === undefined ? (
-                                  <div className="flex items-center justify-center py-2">
-                                    <Loader2 className="h-4 w-4 animate-spin text-emerald-500" />
-                                  </div>
-                                ) : noteViewers[note.id]?.length === 0 ? (
-                                  <p className="text-xs text-muted-foreground">لم يشاهد أحد بعد</p>
-                                ) : (
-                                  <div className="max-h-32 overflow-y-auto custom-scrollbar space-y-1">
-                                    {noteViewers[note.id]?.map((viewer, idx) => (
-                                      <div key={idx} className="flex items-center justify-between text-xs">
-                                        <span className="text-foreground">{viewer.name}</span>
-                                        <span className="text-muted-foreground">{formatDate(viewer.viewed_at)} {formatTime(viewer.viewed_at)}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            )}
                           </div>
                         </motion.div>
                       )}
@@ -1826,6 +1796,111 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
                 <CheckCircle2 className="h-4 w-4" />
               )}
               {creatingNote ? 'جاري الإنشاء...' : 'إنشاء'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Note Viewers Dialog (Teacher) */}
+      <Dialog open={noteViewersOpen} onOpenChange={(open) => {
+        setNoteViewersOpen(open);
+        if (!open) {
+          setViewingNoteId(null);
+          setNoteViewerList([]);
+        }
+      }}>
+        <DialogContent dir="rtl" className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-5 w-5 text-emerald-600" />
+              من شاهد الملاحظة
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            {loadingViewers ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-emerald-500" />
+              </div>
+            ) : noteViewerList.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-3">
+                  <Eye className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <p className="text-sm text-muted-foreground">لم يشاهد أحد هذه الملاحظة بعد</p>
+              </div>
+            ) : (
+              <div className="max-h-96 overflow-y-auto custom-scrollbar space-y-2">
+                {noteViewerList.map((viewer, idx) => (
+                  <div key={idx} className="flex items-center gap-3 rounded-lg border p-3 hover:bg-muted/30 transition-colors">
+                    <Avatar className="h-9 w-9 shrink-0">
+                      <AvatarFallback className="text-xs bg-emerald-100 text-emerald-700">
+                        {viewer.user_name.charAt(0)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground break-words">{viewer.user_name}</p>
+                      {viewer.user_email && (
+                        <p className="text-xs text-muted-foreground break-words">{viewer.user_email}</p>
+                      )}
+                    </div>
+                    <div className="text-left shrink-0">
+                      <p className="text-xs text-muted-foreground">{formatDate(viewer.viewed_at)}</p>
+                      <p className="text-[10px] text-muted-foreground">{formatTime(viewer.viewed_at)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Note Dialog (Teacher) */}
+      <Dialog open={editingNoteId !== null} onOpenChange={(open) => {
+        if (!open) setEditingNoteId(null);
+      }}>
+        <DialogContent dir="rtl" className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5 text-teal-600" />
+              تعديل الملاحظة
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">العنوان</label>
+              <Input
+                value={editingNoteTitle}
+                onChange={(e) => setEditingNoteTitle(e.target.value)}
+                placeholder="عنوان الملاحظة..."
+                dir="rtl"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">المحتوى</label>
+              <Textarea
+                value={editingNoteContent}
+                onChange={(e) => setEditingNoteContent(e.target.value)}
+                placeholder="اكتب ملاحظتك هنا..."
+                rows={6}
+                dir="rtl"
+                className="resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setEditingNoteId(null)}
+            >
+              إلغاء
+            </Button>
+            <Button
+              onClick={handleSaveEditNote}
+              className="gap-2 bg-teal-600 hover:bg-teal-700"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              حفظ التعديلات
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2087,7 +2162,7 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
                           )}
                         </div>
                         {lecture.description && (
-                          <p className="text-sm text-muted-foreground mt-1 line-clamp-1">{lecture.description}</p>
+                          <p className="text-sm text-muted-foreground mt-1 line-clamp-1 break-words">{lecture.description}</p>
                         )}
                         <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
                           {lecture.started_at && (
@@ -2165,6 +2240,18 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
                             >
                               <Users className="h-3.5 w-3.5" />
                               الحضور
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="gap-1.5 text-rose-500 hover:text-rose-600 hover:bg-rose-50"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteLectureId(lecture.id);
+                                setDeleteLectureDialogOpen(true);
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </>
                         ) : (
@@ -2379,6 +2466,43 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
         onScan={handleQrScanResult}
         title="مسح رمز QR لتسجيل الحضور"
       />
+
+      {/* Delete Lecture Confirmation Dialog (Teacher) */}
+      <Dialog open={deleteLectureDialogOpen} onOpenChange={(open) => {
+        setDeleteLectureDialogOpen(open);
+        if (!open) setDeleteLectureId(null);
+      }}>
+        <DialogContent dir="rtl" className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-rose-500" />
+              تأكيد حذف المحاضرة
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground py-2">
+            هل أنت متأكد من حذف هذه المحاضرة؟ سيتم حذف جميع سجلات الحضور المرتبطة بها. لا يمكن التراجع عن هذا الإجراء.
+          </p>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteLectureDialogOpen(false);
+                setDeleteLectureId(null);
+              }}
+            >
+              إلغاء
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteLectureId && handleDeleteLecture(deleteLectureId)}
+              className="gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              حذف المحاضرة
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Lecture Detail Dialog (Teacher) */}
       <Dialog open={lectureDetailOpen} onOpenChange={(open) => {

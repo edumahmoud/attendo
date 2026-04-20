@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   ArrowRight,
@@ -156,6 +156,10 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
   // ─── Copy state ─────────────────────────────────────
   const [copiedCode, setCopiedCode] = useState(false);
 
+  // ─── Avatar upload state ──────────────────────────────
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // ─── Fetch user titles ──────────────────────────────
   useEffect(() => {
     const fetchTitles = async () => {
@@ -261,6 +265,42 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
 
   // ─── Handlers ───────────────────────────────────────
 
+  const handleAvatarUpload = useCallback(async (file: File) => {
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('حجم الصورة يجب أن يكون أقل من 2 ميجابايت');
+      return;
+    }
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('نوع الصورة غير مدعوم. استخدم JPG أو PNG أو WebP');
+      return;
+    }
+
+    setUploadingAvatar(true);
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file);
+      formData.append('userId', profile.id);
+
+      const response = await fetch('/api/profile/upload-avatar', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success('تم تحديث الصورة الشخصية بنجاح');
+        await refreshProfile();
+      } else {
+        toast.error(data.error || 'فشل في رفع الصورة');
+      }
+    } catch {
+      toast.error('فشل في رفع الصورة');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }, [profile.id, refreshProfile]);
+
   const handleSaveProfile = useCallback(async () => {
     const trimmed = name.trim();
     if (!trimmed) {
@@ -308,9 +348,22 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
 
     setIsChangingPassword(true);
     try {
+      // Verify current password by re-authenticating
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: profile.email,
+        password: currentPassword,
+      });
+
+      if (signInError) {
+        toast.error('كلمة المرور الحالية غير صحيحة');
+        setIsChangingPassword(false);
+        return;
+      }
+
+      // Current password is correct, now update
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) {
-        toast.error('فشل في تغيير كلمة المرور. تأكد من صحة كلمة المرور الحالية');
+        toast.error('فشل في تغيير كلمة المرور');
       } else {
         toast.success('تم تغيير كلمة المرور بنجاح');
         setCurrentPassword('');
@@ -323,7 +376,7 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
     } finally {
       setIsChangingPassword(false);
     }
-  }, [currentPassword, newPassword, confirmPassword]);
+  }, [currentPassword, newPassword, confirmPassword, profile.email]);
 
   const handleDeleteAccount = useCallback(async () => {
     setIsDeletingAccount(true);
@@ -584,10 +637,26 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
                   <button
                     className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 transition-opacity group-hover:opacity-100"
                     aria-label="تغيير الصورة الشخصية"
-                    onClick={() => toast.info('سيتم إضافة ميزة رفع الصور قريباً')}
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingAvatar}
                   >
-                    <Camera className="h-6 w-6 text-white" />
+                    {uploadingAvatar ? (
+                      <Loader2 className="h-6 w-6 text-white animate-spin" />
+                    ) : (
+                      <Camera className="h-6 w-6 text-white" />
+                    )}
                   </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleAvatarUpload(file);
+                      e.target.value = '';
+                    }}
+                  />
                 </div>
 
                 <div className="flex-1 space-y-1 text-center sm:text-right">

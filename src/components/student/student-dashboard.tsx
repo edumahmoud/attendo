@@ -43,7 +43,7 @@ import { useAutoRefresh, useDebouncedCallback, useRealtimeStatus } from '@/hooks
 import { useIsMobile } from '@/hooks/use-mobile';
 import RealtimeStatus from '@/components/shared/realtime-status';
 import { toast } from 'sonner';
-import type { UserProfile, Summary, Quiz, Score, StudentSection, Subject } from '@/lib/types';
+import type { UserProfile, Summary, Quiz, Score, StudentSection, Subject, SubjectFile } from '@/lib/types';
 
 // -------------------------------------------------------
 // PDF.js worker setup - lazy loaded to avoid server-side DOMMatrix error
@@ -181,6 +181,15 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
 
   // ─── Subjects count (for dashboard) ───
   const [subjectsCount, setSubjectsCount] = useState(0);
+
+  // ─── Student files section ───
+  const [studentFiles, setStudentFiles] = useState<SubjectFile[]>([]);
+  const [enrolledSubjects, setEnrolledSubjects] = useState<Subject[]>([]);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadSubjectId, setUploadSubjectId] = useState<string | null>(null);
+  const [uploadVisibility, setUploadVisibility] = useState<'public' | 'private'>('private');
+  const [fileDragOver, setFileDragOver] = useState(false);
+  const studentFileInputRef = useRef<HTMLInputElement>(null);
 
   // -------------------------------------------------------
   // Data fetching
@@ -384,14 +393,131 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
     }
   }, [profile.id]);
 
+  // ─── Fetch student files across all enrolled subjects ───
+  const fetchStudentFiles = useCallback(async () => {
+    try {
+      // Get enrolled subjects
+      const { data: enrollments } = await supabase
+        .from('subject_students')
+        .select('subject_id')
+        .eq('student_id', profile.id);
+
+      if (!enrollments || enrollments.length === 0) {
+        setStudentFiles([]);
+        setEnrolledSubjects([]);
+        return;
+      }
+
+      const enrolledSubjectIds = enrollments.map((e: { subject_id: string }) => e.subject_id);
+
+      // Fetch subject details
+      const { data: subjectsData } = await supabase
+        .from('subjects')
+        .select('*')
+        .in('id', enrolledSubjectIds);
+
+      if (subjectsData) {
+        setEnrolledSubjects(subjectsData as Subject[]);
+      }
+
+      // Fetch all files for these subjects that the student can see
+      const { data: filesData, error } = await supabase
+        .from('subject_files')
+        .select('*')
+        .in('subject_id', enrolledSubjectIds)
+        .or(`visibility.eq.public,visibility.is.null,uploaded_by.eq.${profile.id}`)
+        .order('created_at', { ascending: false });
+
+      if (!error && filesData) {
+        setStudentFiles(filesData as SubjectFile[]);
+      }
+    } catch {
+      // silently ignore
+    }
+  }, [profile.id]);
+
+  // ─── Handle file upload ───
+  const handleFileUpload = async (file: File) => {
+    if (!uploadSubjectId) {
+      toast.error('يرجى اختيار المقرر أولاً');
+      return;
+    }
+
+    setUploadingFile(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('name', file.name);
+      formData.append('visibility', uploadVisibility);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const response = await fetch(`/api/subjects/${uploadSubjectId}/files/upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        toast.success('تم رفع الملف بنجاح');
+        fetchStudentFiles();
+      } else {
+        toast.error(result.error || 'فشل في رفع الملف');
+      }
+    } catch {
+      toast.error('حدث خطأ أثناء رفع الملف');
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
+  // ─── Handle file drop ───
+  const handleFileDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setFileDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+  };
+
+  // ─── Handle delete student file ───
+  const handleDeleteFile = async (file: SubjectFile) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const response = await fetch(`/api/subjects/${file.subject_id}/files?fileId=${file.id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        toast.success('تم حذف الملف بنجاح');
+        fetchStudentFiles();
+      } else {
+        toast.error(result.error || 'فشل في حذف الملف');
+      }
+    } catch {
+      toast.error('حدث خطأ أثناء حذف الملف');
+    }
+  };
+
   // Load all data
   const initialLoadDone = useRef(false);
   const fetchAllData = useCallback(async (showLoading = false) => {
     if (showLoading || !initialLoadDone.current) setLoadingData(true);
-    await Promise.allSettled([fetchSummaries(), fetchQuizzes(), fetchScores(), fetchLinkedTeachers(), fetchSubjectsCount()]);
+    await Promise.allSettled([fetchSummaries(), fetchQuizzes(), fetchScores(), fetchLinkedTeachers(), fetchSubjectsCount(), fetchStudentFiles()]);
     setLoadingData(false);
     initialLoadDone.current = true;
-  }, [fetchSummaries, fetchQuizzes, fetchScores, fetchLinkedTeachers, fetchSubjectsCount]);
+  }, [fetchSummaries, fetchQuizzes, fetchScores, fetchLinkedTeachers, fetchSubjectsCount, fetchStudentFiles]);
 
   useEffect(() => {
     fetchAllData(true);
@@ -416,9 +542,9 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
 
   // Full data refresh for polling fallback
   const refreshAllData = useCallback(async () => {
-    await Promise.allSettled([fetchSummaries(), fetchQuizzes(), fetchScores(), fetchLinkedTeachers(), fetchSubjectsCount()]);
+    await Promise.allSettled([fetchSummaries(), fetchQuizzes(), fetchScores(), fetchLinkedTeachers(), fetchSubjectsCount(), fetchStudentFiles()]);
     markUpdated();
-  }, [fetchSummaries, fetchQuizzes, fetchScores, fetchLinkedTeachers, fetchSubjectsCount, markUpdated]);
+  }, [fetchSummaries, fetchQuizzes, fetchScores, fetchLinkedTeachers, fetchSubjectsCount, fetchStudentFiles, markUpdated]);
 
   // Auto-refresh every 60 seconds as fallback
   useAutoRefresh(refreshAllData, 60000);
@@ -1748,6 +1874,252 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
   );
 
   // -------------------------------------------------------
+  // Render: Files Section
+  // -------------------------------------------------------
+  const renderFiles = () => {
+    // Group files by type
+    const documents = studentFiles.filter((f) => ['pdf', 'document', 'spreadsheet', 'presentation'].includes(f.file_type || ''));
+    const images = studentFiles.filter((f) => f.file_type === 'image');
+    const videos = studentFiles.filter((f) => f.file_type === 'video');
+    const other = studentFiles.filter((f) => !['pdf', 'document', 'spreadsheet', 'presentation', 'image', 'video'].includes(f.file_type || ''));
+
+    // Get subject name for a file
+    const getSubjectName = (subjectId: string) => {
+      return enrolledSubjects.find((s) => s.id === subjectId)?.name || '';
+    };
+
+    // File icon based on type
+    const getFileIcon = (fileType?: string) => {
+      switch (fileType) {
+        case 'pdf':
+        case 'document':
+          return <FileText className="h-5 w-5 text-rose-500" />;
+        case 'image':
+          return <FileUp className="h-5 w-5 text-emerald-500" />;
+        case 'video':
+          return <Video className="h-5 w-5 text-teal-500" />;
+        case 'spreadsheet':
+          return <BarChart3 className="h-5 w-5 text-amber-500" />;
+        default:
+          return <FileText className="h-5 w-5 text-muted-foreground" />;
+      }
+    };
+
+    // File size formatter
+    const formatFileSize = (bytes?: number) => {
+      if (!bytes) return '';
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    };
+
+    // Render a file group section
+    const renderFileGroup = (title: string, files: SubjectFile[], icon: React.ReactNode) => {
+      if (files.length === 0) return null;
+      return (
+        <motion.div variants={itemVariants}>
+          <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+            <div className="flex items-center gap-2 border-b p-4">
+              {icon}
+              <h3 className="font-semibold text-foreground">{title}</h3>
+              <Badge className="bg-muted text-muted-foreground text-[10px]">{files.length}</Badge>
+            </div>
+            <div className="max-h-96 overflow-y-auto custom-scrollbar divide-y">
+              {files.map((file) => (
+                <div key={file.id} className="flex items-center gap-3 p-4 hover:bg-muted/30 transition-colors">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted/50">
+                    {getFileIcon(file.file_type)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-foreground truncate">{file.file_name}</p>
+                      {file.visibility === 'private' && (
+                        <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[9px]">خاص</Badge>
+                      )}
+                      {file.visibility === 'public' && (
+                        <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[9px]">عام</Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <BookOpen className="h-3 w-3" />
+                        {getSubjectName(file.subject_id)}
+                      </span>
+                      {file.file_size && <span>{formatFileSize(file.file_size)}</span>}
+                      <span>{formatDate(file.created_at)}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <a
+                      href={file.file_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex h-8 w-8 items-center justify-center rounded-md text-emerald-600 hover:bg-emerald-50 transition-colors"
+                      title="تحميل"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </a>
+                    {file.uploaded_by === profile.id && (
+                      <button
+                        onClick={() => handleDeleteFile(file)}
+                        className="flex h-8 w-8 items-center justify-center rounded-md text-rose-600 hover:bg-rose-50 transition-colors"
+                        title="حذف"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </motion.div>
+      );
+    };
+
+    return (
+      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+        {/* Header */}
+        <motion.div variants={itemVariants} className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">الملفات</h2>
+            <p className="text-muted-foreground mt-1">ملفاتك والمفات المشتركة في مقرراتك</p>
+          </div>
+        </motion.div>
+
+        {/* Upload section */}
+        <motion.div variants={itemVariants}>
+          <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+            <div className="border-b p-4">
+              <h3 className="font-semibold text-foreground flex items-center gap-2">
+                <Upload className="h-4 w-4 text-emerald-600" />
+                رفع ملف جديد
+              </h3>
+            </div>
+            <div className="p-4 space-y-4">
+              {/* Subject selector */}
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1.5 block">المقرر <span className="text-rose-500">*</span></label>
+                <select
+                  value={uploadSubjectId || ''}
+                  onChange={(e) => setUploadSubjectId(e.target.value || null)}
+                  className="w-full rounded-lg border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-colors"
+                  dir="rtl"
+                  disabled={uploadingFile}
+                >
+                  <option value="">اختر المقرر</option>
+                  {enrolledSubjects.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Visibility toggle */}
+              <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-foreground">ظهور الملف</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {uploadVisibility === 'private' ? 'فقط أنت يمكن رؤية هذا الملف' : 'المعلم والطلاب يمكنهم رؤية هذا الملف'}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setUploadVisibility('private')}
+                    disabled={uploadingFile}
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
+                      uploadVisibility === 'private'
+                        ? 'border-amber-500 bg-amber-50 text-amber-700'
+                        : 'border-border text-muted-foreground hover:bg-muted/50'
+                    }`}
+                  >
+                    خاص
+                  </button>
+                  <button
+                    onClick={() => setUploadVisibility('public')}
+                    disabled={uploadingFile}
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
+                      uploadVisibility === 'public'
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                        : 'border-border text-muted-foreground hover:bg-muted/50'
+                    }`}
+                  >
+                    عام
+                  </button>
+                </div>
+              </div>
+
+              {/* Drop zone */}
+              <input
+                ref={studentFileInputRef}
+                type="file"
+                accept=".pdf,image/*,video/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFileUpload(file);
+                  e.target.value = '';
+                }}
+                className="hidden"
+                disabled={uploadingFile || !uploadSubjectId}
+              />
+              <div
+                onDragOver={(e) => { e.preventDefault(); setFileDragOver(true); }}
+                onDragLeave={() => setFileDragOver(false)}
+                onDrop={handleFileDrop}
+                onClick={() => uploadSubjectId && studentFileInputRef.current?.click()}
+                className={`flex flex-col items-center gap-3 rounded-xl border-2 border-dashed p-8 transition-all cursor-pointer ${
+                  fileDragOver
+                    ? 'border-emerald-500 bg-emerald-50/50'
+                    : uploadingFile
+                      ? 'border-muted-foreground/30 bg-muted/20 cursor-wait'
+                      : !uploadSubjectId
+                        ? 'border-muted-foreground/20 bg-muted/10 cursor-not-allowed opacity-60'
+                        : 'border-emerald-300 bg-emerald-50/30 hover:border-emerald-400 hover:bg-emerald-50/50'
+                }`}
+              >
+                {uploadingFile ? (
+                  <>
+                    <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+                    <span className="text-sm font-medium text-emerald-700">جاري رفع الملف...</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-8 w-8 text-emerald-400" />
+                    <span className="text-sm text-muted-foreground">
+                      {uploadSubjectId ? 'اسحب الملف هنا أو اضغط للاختيار' : 'اختر المقرر أولاً لرفع ملف'}
+                    </span>
+                    <span className="text-xs text-muted-foreground/60">PDF، صور، فيديو — الحد الأقصى 10 ميجابايت</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* File groups */}
+        {studentFiles.length === 0 ? (
+          <motion.div
+            variants={itemVariants}
+            className="flex flex-col items-center justify-center rounded-xl border border-dashed border-emerald-300 bg-emerald-50/30 py-16"
+          >
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 mb-4">
+              <FileText className="h-8 w-8 text-emerald-600" />
+            </div>
+            <p className="text-lg font-semibold text-foreground mb-1">لا توجد ملفات</p>
+            <p className="text-sm text-muted-foreground">ارفع ملفاً جديداً أو انتظر حتى يشارك المعلم ملفات</p>
+          </motion.div>
+        ) : (
+          <div className="space-y-4">
+            {renderFileGroup('المستندات', documents, <FileText className="h-4 w-4 text-rose-500" />)}
+            {renderFileGroup('الصور', images, <FileUp className="h-4 w-4 text-emerald-500" />)}
+            {renderFileGroup('الفيديوهات', videos, <Video className="h-4 w-4 text-teal-500" />)}
+            {other.length > 0 && renderFileGroup('أخرى', other, <FileText className="h-4 w-4 text-muted-foreground" />)}
+          </div>
+        )}
+      </motion.div>
+    );
+  };
+
+  // -------------------------------------------------------
   // Render: Analytics Section
   // -------------------------------------------------------
   const renderAnalytics = () => {
@@ -1918,6 +2290,8 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
         );
       case 'lectures':
         return renderLectures();
+      case 'files':
+        return renderFiles();
       case 'notifications':
         return <NotificationsPanel profile={profile} onBack={() => setActiveSection('dashboard')} />;
       case 'analytics':

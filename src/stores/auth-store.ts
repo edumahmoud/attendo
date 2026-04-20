@@ -127,32 +127,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           .eq('id', session.user.id)
           .single();
         
-        // If profile doesn't exist, try to create it from auth metadata
         if (!profile) {
-          const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'مستخدم';
-          const userRole = session.user.user_metadata?.role || 'pending';
-          
-          await supabase.from('users').insert({
-            id: session.user.id,
-            email: session.user.email || '',
-            name: userName,
-            role: userRole,
-          });
-          
-          // Fetch the newly created profile (with teacher_code if teacher)
-          const { data: newProfile } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-          
-          profile = newProfile;
+          // Profile doesn't exist - user may have been deleted
+          await supabase.auth.signOut();
+          set({ user: null, loading: false, initialized: true });
+          return;
         }
         
         if (profile) {
           set({ user: profile as UserProfile, loading: false, initialized: true });
-        } else {
-          set({ loading: false, initialized: true });
         }
       } else {
         set({ user: null, loading: false, initialized: true });
@@ -170,25 +153,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           .eq('id', session.user.id)
           .single();
         
-        // If profile doesn't exist, try to create it from auth metadata
         if (!profile) {
-          const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'مستخدم';
-          const userRole = session.user.user_metadata?.role || 'pending';
-          
-          await supabase.from('users').insert({
-            id: session.user.id,
-            email: session.user.email || '',
-            name: userName,
-            role: userRole,
-          });
-          
-          const { data: newProfile } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-          
-          profile = newProfile;
+          // Profile doesn't exist - user may have been deleted
+          await supabase.auth.signOut();
+          set({ user: null, loading: false, initialized: true });
+          return;
         }
         
         if (profile) {

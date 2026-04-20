@@ -3,7 +3,7 @@
 // =====================================================
 
 // New role type - add 'admin'
-export type UserRole = 'student' | 'teacher' | 'admin' | 'pending';
+export type UserRole = 'student' | 'teacher' | 'admin' | 'pending' | 'disabled';
 
 // Update UserProfile to include new fields
 export interface UserProfile {
@@ -55,6 +55,7 @@ export interface Quiz {
   subject_id?: string;
   questions: QuizQuestion[];
   allow_retake?: boolean;
+  results_visible?: boolean;
   created_at: string;
   // Joined data
   subject_name?: string;
@@ -121,7 +122,10 @@ export interface SubjectFile {
   file_url: string;
   file_type?: string;
   file_size?: number;
+  visibility?: 'public' | 'private';
   created_at: string;
+  // Joined data
+  uploader_name?: string;
 }
 
 export interface SubjectNote {
@@ -221,13 +225,14 @@ export type AppPage =
   | 'subject-detail';
 
 // Update section types
-export type StudentSection = 'dashboard' | 'subjects' | 'summaries' | 'quizzes' | 'teachers' | 'chat' | 'analytics' | 'lectures' | 'notifications' | 'settings';
+export type StudentSection = 'dashboard' | 'subjects' | 'summaries' | 'quizzes' | 'teachers' | 'chat' | 'analytics' | 'lectures' | 'notifications' | 'files' | 'settings';
 export type TeacherSection = 'dashboard' | 'subjects' | 'students' | 'quizzes' | 'analytics' | 'chat' | 'lectures' | 'notifications' | 'settings';
 
 // Helper to check if user has a valid (non-pending) role
 export function isActiveRole(role: UserRole): role is 'student' | 'teacher' | 'admin' {
   return role === 'student' || role === 'teacher' || role === 'admin';
 }
+
 export type AdminSection = 'dashboard' | 'users' | 'subjects' | 'quizzes' | 'settings';
 
 // Subject detail sub-sections

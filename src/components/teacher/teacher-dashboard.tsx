@@ -160,6 +160,9 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
   const [subjectsCount, setSubjectsCount] = useState(0);
   const [teacherSubjects, setTeacherSubjects] = useState<Subject[]>([]);
   const [loadingData, setLoadingData] = useState(true);
+  const [attendanceData, setAttendanceData] = useState<{ student_id: string; attended: number; total: number }[]>([]);
+  const [performanceDialogOpen, setPerformanceDialogOpen] = useState(false);
+  const [performanceStudent, setPerformanceStudent] = useState<UserProfile | null>(null);
 
   // ─── Students section ───
   const [studentSearch, setStudentSearch] = useState('');
@@ -333,14 +336,56 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
     }
   }, [profile.id]);
 
+  // ─── Fetch attendance data for performance calculation ───
+  const fetchAttendanceData = useCallback(async () => {
+    try {
+      // Get lectures for teacher's subjects
+      const { data: lectures } = await supabase
+        .from('lectures')
+        .select('id')
+        .eq('teacher_id', profile.id);
+
+      if (!lectures || lectures.length === 0) {
+        setAttendanceData([]);
+        return;
+      }
+
+      const lectureIds = lectures.map((l: { id: string }) => l.id);
+      const totalLectures = lectureIds.length;
+
+      // Get attendance for each student
+      const { data: attendance } = await supabase
+        .from('lecture_attendance')
+        .select('student_id')
+        .in('lecture_id', lectureIds);
+
+      if (attendance) {
+        const studentAttendanceMap: Record<string, number> = {};
+        (attendance as { student_id: string }[]).forEach((a) => {
+          studentAttendanceMap[a.student_id] = (studentAttendanceMap[a.student_id] || 0) + 1;
+        });
+
+        const attendanceArray = Object.entries(studentAttendanceMap).map(([student_id, attended]) => ({
+          student_id,
+          attended,
+          total: totalLectures,
+        }));
+
+        setAttendanceData(attendanceArray);
+      }
+    } catch {
+      // silently ignore
+    }
+  }, [profile.id]);
+
   // Load all data
   const initialLoadDone = useRef(false);
   const fetchAllData = useCallback(async (showLoading = false) => {
     if (showLoading || !initialLoadDone.current) setLoadingData(true);
-    await Promise.allSettled([fetchStudents(), fetchQuizzes(), fetchScores(), fetchSubjectsCount(), fetchTeacherSubjects()]);
+    await Promise.allSettled([fetchStudents(), fetchQuizzes(), fetchScores(), fetchSubjectsCount(), fetchTeacherSubjects(), fetchAttendanceData()]);
     setLoadingData(false);
     initialLoadDone.current = true;
-  }, [fetchStudents, fetchQuizzes, fetchScores, fetchSubjectsCount]);
+  }, [fetchStudents, fetchQuizzes, fetchScores, fetchSubjectsCount, fetchTeacherSubjects, fetchAttendanceData]);
 
   useEffect(() => {
     fetchAllData(true);
@@ -577,6 +622,28 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
     return scores.filter((s) => s.student_id === studentId);
   };
 
+  // Get student performance metrics
+  const getStudentPerformance = (studentId: string) => {
+    const studentScores = scores.filter((s) => s.student_id === studentId);
+    const attendance = attendanceData.find((a) => a.student_id === studentId);
+
+    const avgScore = studentScores.length > 0
+      ? Math.round(studentScores.reduce((sum, s) => sum + scorePercentage(s.score, s.total), 0) / studentScores.length)
+      : null;
+
+    const attendanceRate = attendance && attendance.total > 0
+      ? Math.round((attendance.attended / attendance.total) * 100)
+      : null;
+
+    return {
+      avgScore,
+      attendanceRate,
+      totalQuizzes: studentScores.length,
+      totalLectures: attendance?.total || 0,
+      attendedLectures: attendance?.attended || 0,
+    };
+  };
+
   // -------------------------------------------------------
   // Copy teacher code
   // -------------------------------------------------------
@@ -765,6 +832,28 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
       toast.error('حدث خطأ غير متوقع');
     } finally {
       setResettingStudent(false);
+    }
+  };
+
+  // -------------------------------------------------------
+  // Toggle results visibility
+  // -------------------------------------------------------
+  const handleToggleResults = async (quizId: string, currentValue: boolean) => {
+    try {
+      const response = await fetch('/api/quizzes/update', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quizId, updates: { results_visible: !currentValue } }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success(!currentValue ? 'تم إظهار النتائج للطلاب' : 'تم إخفاء النتائج عن الطلاب');
+        fetchQuizzes();
+      } else {
+        toast.error('حدث خطأ أثناء تحديث الإعداد');
+      }
+    } catch {
+      toast.error('حدث خطأ أثناء تحديث الإعداد');
     }
   };
 
@@ -979,6 +1068,10 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
       toast.error('يرجى إدخال عنوان الاختبار');
       return;
     }
+    if (!quizSubjectId) {
+      toast.error('يرجى اختيار المقرر');
+      return;
+    }
     if (quizQuestions.length === 0) {
       toast.error('يرجى إضافة سؤال واحد على الأقل');
       return;
@@ -1148,6 +1241,157 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
       { name: 'ضعيف', value: weak },
     ].filter((d) => d.value > 0);
   })();
+
+  // ─── Reports filter & sort state ───
+  const [reportSubjectFilter, setReportSubjectFilter] = useState<string>('all');
+  const [reportSortKey, setReportSortKey] = useState<'name' | 'avgScore' | 'attendanceRate' | 'quizzesCompleted'>('name');
+  const [reportSortDir, setReportSortDir] = useState<'asc' | 'desc'>('asc');
+
+  // Filtered data for reports based on subject
+  const filteredReportScores = reportSubjectFilter === 'all'
+    ? scores
+    : scores.filter((s) => {
+        const quiz = quizzes.find((q) => q.id === s.quiz_id);
+        return quiz?.subject_id === reportSubjectFilter;
+      });
+
+  const filteredReportQuizzes = reportSubjectFilter === 'all'
+    ? quizzes
+    : quizzes.filter((q) => q.subject_id === reportSubjectFilter);
+
+  // Score distribution for CSS bar chart (0-20%, 20-40%, 40-60%, 60-80%, 80-100%)
+  const scoreDistribution = (() => {
+    const ranges = [
+      { label: '0-20%', min: 0, max: 20, count: 0, color: 'bg-rose-500' },
+      { label: '20-40%', min: 20, max: 40, count: 0, color: 'bg-amber-500' },
+      { label: '40-60%', min: 40, max: 60, count: 0, color: 'bg-yellow-500' },
+      { label: '60-80%', min: 60, max: 80, count: 0, color: 'bg-teal-500' },
+      { label: '80-100%', min: 80, max: 101, count: 0, color: 'bg-emerald-500' },
+    ];
+    filteredReportScores.forEach((s) => {
+      const pct = scorePercentage(s.score, s.total);
+      for (const range of ranges) {
+        if (pct >= range.min && pct < range.max) {
+          range.count++;
+          break;
+        }
+      }
+    });
+    return ranges;
+  })();
+
+  // Student performance summary for table
+  const studentPerformanceData = students.map((s) => {
+    const studentScores = filteredReportScores.filter((sc) => sc.student_id === s.id);
+    const avgScore = studentScores.length > 0
+      ? Math.round(studentScores.reduce((sum, sc) => sum + scorePercentage(sc.score, sc.total), 0) / studentScores.length)
+      : null;
+    const attendance = attendanceData.find((a) => a.student_id === s.id);
+    const attendanceRate = attendance && attendance.total > 0
+      ? Math.round((attendance.attended / attendance.total) * 100)
+      : null;
+    return {
+      id: s.id,
+      name: s.name,
+      email: s.email,
+      avgScore,
+      attendanceRate,
+      quizzesCompleted: studentScores.length,
+    };
+  });
+
+  // Sort student performance data
+  const sortedStudentPerformance = [...studentPerformanceData].sort((a, b) => {
+    let cmp = 0;
+    switch (reportSortKey) {
+      case 'name': cmp = a.name.localeCompare(b.name, 'ar'); break;
+      case 'avgScore': cmp = (a.avgScore ?? -1) - (b.avgScore ?? -1); break;
+      case 'attendanceRate': cmp = (a.attendanceRate ?? -1) - (b.attendanceRate ?? -1); break;
+      case 'quizzesCompleted': cmp = a.quizzesCompleted - b.quizzesCompleted; break;
+    }
+    return reportSortDir === 'asc' ? cmp : -cmp;
+  });
+
+  // Toggle sort
+  const handleReportSort = (key: typeof reportSortKey) => {
+    if (reportSortKey === key) {
+      setReportSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setReportSortKey(key);
+      setReportSortDir('asc');
+    }
+  };
+
+  // CSV export
+  const exportToCSV = (data: Record<string, unknown>[], filename: string) => {
+    if (data.length === 0) return;
+    const headers = Object.keys(data[0]);
+    const csvContent = [
+      headers.join(','),
+      ...data.map(row => headers.map(h => {
+        const val = row[h];
+        if (typeof val === 'string' && (val.includes(',') || val.includes('"'))) {
+          return `"${val.replace(/"/g, '""')}"`;
+        }
+        return val ?? '';
+      }).join(','))
+    ].join('\n');
+
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${filename}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
+  // Export student performance as Excel
+  const handleExportPerformanceExcel = () => {
+    try {
+      const wb = XLSX.utils.book_new();
+      const data = sortedStudentPerformance.map((s) => ({
+        'اسم الطالب': s.name,
+        'البريد الإلكتروني': s.email,
+        'متوسط الدرجات': s.avgScore !== null ? `${s.avgScore}%` : 'لا توجد بيانات',
+        'نسبة الحضور': s.attendanceRate !== null ? `${s.attendanceRate}%` : 'لا توجد بيانات',
+        'الاختبارات المكتملة': s.quizzesCompleted,
+      }));
+      const ws = XLSX.utils.json_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, 'أداء الطلاب');
+
+      // Add score distribution sheet
+      const distData = scoreDistribution.map((d) => ({
+        'النسبة': d.label,
+        'عدد الطلاب': d.count,
+      }));
+      const ws2 = XLSX.utils.json_to_sheet(distData);
+      XLSX.utils.book_append_sheet(wb, ws2, 'توزيع الدرجات');
+
+      const subjectName = reportSubjectFilter === 'all' ? 'جميع_المقررات' : teacherSubjects.find((s) => s.id === reportSubjectFilter)?.name || 'مقرر';
+      XLSX.writeFile(wb, `تقرير_أداء_الطلاب_${subjectName}_${new Date().toISOString().split('T')[0]}.xlsx`);
+      toast.success('تم تصدير التقرير بنجاح');
+    } catch {
+      toast.error('حدث خطأ أثناء تصدير البيانات');
+    }
+  };
+
+  // Export student performance as CSV
+  const handleExportPerformanceCSV = () => {
+    try {
+      const data = sortedStudentPerformance.map((s) => ({
+        'اسم الطالب': s.name,
+        'البريد الإلكتروني': s.email,
+        'متوسط الدرجات': s.avgScore !== null ? `${s.avgScore}%` : 'لا توجد بيانات',
+        'نسبة الحضور': s.attendanceRate !== null ? `${s.attendanceRate}%` : 'لا توجد بيانات',
+        'الاختبارات المكتملة': s.quizzesCompleted,
+      }));
+      const subjectName = reportSubjectFilter === 'all' ? 'جميع_المقررات' : teacherSubjects.find((s) => s.id === reportSubjectFilter)?.name || 'مقرر';
+      exportToCSV(data as Record<string, unknown>[], `تقرير_أداء_الطلاب_${subjectName}_${new Date().toISOString().split('T')[0]}`);
+      toast.success('تم تصدير CSV بنجاح');
+    } catch {
+      toast.error('حدث خطأ أثناء تصدير البيانات');
+    }
+  };
 
   // -------------------------------------------------------
   // Render: Header
@@ -1412,6 +1656,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
           {filteredStudents.map((student) => {
             const lastScore = getStudentLastScore(student.id);
             const pct = lastScore ? scorePercentage(lastScore.score, lastScore.total) : null;
+            const perf = getStudentPerformance(student.id);
             return (
               <motion.div key={student.id} variants={itemVariants} {...cardHover}>
                 <div
@@ -1433,14 +1678,44 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">آخر نتيجة</span>
-                    {pct !== null ? (
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${pctColorClass(pct)}`}>
-                        {pct}%
+                  {/* Performance metrics */}
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    <div className="rounded-lg border bg-muted/30 p-2 text-center">
+                      <p className="text-xs text-muted-foreground">متوسط الدرجات</p>
+                      <p className={`text-sm font-bold ${perf.avgScore !== null ? (perf.avgScore >= 75 ? 'text-emerald-700' : perf.avgScore >= 60 ? 'text-amber-700' : 'text-rose-700') : 'text-muted-foreground'}`}>
+                        {perf.avgScore !== null ? `${perf.avgScore}%` : 'لا توجد بيانات'}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border bg-muted/30 p-2 text-center">
+                      <p className="text-xs text-muted-foreground">الحضور</p>
+                      <p className={`text-sm font-bold ${perf.attendanceRate !== null ? (perf.attendanceRate >= 75 ? 'text-emerald-700' : perf.attendanceRate >= 50 ? 'text-amber-700' : 'text-rose-700') : 'text-muted-foreground'}`}>
+                        {perf.attendanceRate !== null ? `${perf.attendanceRate}%` : 'لا توجد بيانات'}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border bg-muted/30 p-2 text-center">
+                      <p className="text-xs text-muted-foreground">الاختبارات</p>
+                      <p className="text-sm font-bold text-foreground">
+                        {perf.totalQuizzes > 0 ? perf.totalQuizzes : 'لا توجد بيانات'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPerformanceStudent(student);
+                        setPerformanceDialogOpen(true);
+                      }}
+                      className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+                    >
+                      <BarChart3 className="h-3.5 w-3.5" />
+                      عرض الأداء
+                    </button>
+                    <div className="flex-1" />
+                    {pct !== null && (
+                      <span className="text-xs text-muted-foreground">
+                        آخر نتيجة: <span className={`font-bold ${pctColorClass(pct)}`}>{pct}%</span>
                       </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">لا توجد نتائج</span>
                     )}
                   </div>
                 </div>
@@ -1536,6 +1811,164 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                   إغلاق
                 </button>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Performance Detail Dialog */}
+      <AnimatePresence>
+        {performanceDialogOpen && performanceStudent && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={() => setPerformanceDialogOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-2xl rounded-2xl border bg-background shadow-xl max-h-[90vh] overflow-y-auto"
+              dir="rtl"
+            >
+              {(() => {
+                const perf = getStudentPerformance(performanceStudent.id);
+                const studentScores = getStudentScores(performanceStudent.id);
+
+                return (
+                  <>
+                    {/* Header */}
+                    <div className="flex items-center justify-between border-b p-5 sticky top-0 bg-background z-10">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold">
+                          {performanceStudent.name.charAt(0)}
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-foreground">أداء الطالب: {performanceStudent.name}</h3>
+                          <p className="text-xs text-muted-foreground">{performanceStudent.email}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setPerformanceDialogOpen(false)}
+                        className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    <div className="p-5 space-y-5">
+                      {/* Performance overview cards */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="rounded-xl border p-4 text-center">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 mx-auto mb-2">
+                            <Award className="h-5 w-5 text-emerald-600" />
+                          </div>
+                          <p className="text-xs text-muted-foreground">متوسط الدرجات</p>
+                          <p className={`text-xl font-bold ${perf.avgScore !== null ? (perf.avgScore >= 75 ? 'text-emerald-700' : perf.avgScore >= 60 ? 'text-amber-700' : 'text-rose-700') : 'text-muted-foreground'}`}>
+                            {perf.avgScore !== null ? `${perf.avgScore}%` : 'لا توجد بيانات'}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border p-4 text-center">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-100 mx-auto mb-2">
+                            <Users className="h-5 w-5 text-teal-600" />
+                          </div>
+                          <p className="text-xs text-muted-foreground">نسبة الحضور</p>
+                          <p className={`text-xl font-bold ${perf.attendanceRate !== null ? (perf.attendanceRate >= 75 ? 'text-emerald-700' : perf.attendanceRate >= 50 ? 'text-amber-700' : 'text-rose-700') : 'text-muted-foreground'}`}>
+                            {perf.attendanceRate !== null ? `${perf.attendanceRate}%` : 'لا توجد بيانات'}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border p-4 text-center">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 mx-auto mb-2">
+                            <ClipboardList className="h-5 w-5 text-amber-600" />
+                          </div>
+                          <p className="text-xs text-muted-foreground">اختبارات مكتملة</p>
+                          <p className="text-xl font-bold text-foreground">
+                            {perf.totalQuizzes > 0 ? perf.totalQuizzes : 'لا توجد بيانات'}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border p-4 text-center">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-rose-100 mx-auto mb-2">
+                            <BarChart3 className="h-5 w-5 text-rose-600" />
+                          </div>
+                          <p className="text-xs text-muted-foreground">المحاضرات</p>
+                          <p className="text-xl font-bold text-foreground">
+                            {perf.totalLectures > 0 ? `${perf.attendedLectures}/${perf.totalLectures}` : 'لا توجد بيانات'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Visual performance bar */}
+                      {perf.avgScore !== null && (
+                        <div className="rounded-xl border p-4">
+                          <p className="text-sm font-medium text-foreground mb-3">مؤشر الأداء العام</p>
+                          <div className="h-4 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                perf.avgScore >= 75 ? 'bg-emerald-500' : perf.avgScore >= 60 ? 'bg-amber-500' : 'bg-rose-500'
+                              }`}
+                              style={{ width: `${perf.avgScore}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between mt-1 text-xs text-muted-foreground">
+                            <span>ضعيف</span>
+                            <span>مقبول</span>
+                            <span>جيد</span>
+                            <span>ممتاز</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Quiz scores list */}
+                      <div className="rounded-xl border overflow-hidden">
+                        <div className="border-b p-4">
+                          <h4 className="font-semibold text-foreground flex items-center gap-2">
+                            <ClipboardList className="h-4 w-4 text-emerald-600" />
+                            نتائج الاختبارات
+                          </h4>
+                        </div>
+                        <div className="max-h-72 overflow-y-auto custom-scrollbar">
+                          {studentScores.length === 0 ? (
+                            <div className="p-6 text-center text-muted-foreground text-sm">
+                              لا توجد نتائج اختبارات لهذا الطالب
+                            </div>
+                          ) : (
+                            <div className="divide-y">
+                              {studentScores.map((score) => {
+                                const pct = scorePercentage(score.score, score.total);
+                                return (
+                                  <div key={score.id} className="flex items-center gap-3 p-3 hover:bg-muted/30 transition-colors">
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium text-foreground truncate">{score.quiz_title}</p>
+                                      <p className="text-xs text-muted-foreground">{score.score}/{score.total} · {formatDate(score.completed_at)}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-16 h-2 rounded-full bg-muted overflow-hidden">
+                                        <div
+                                          className={`h-full rounded-full ${
+                                            pct >= 75 ? 'bg-emerald-500' : pct >= 60 ? 'bg-amber-500' : 'bg-rose-500'
+                                          }`}
+                                          style={{ width: `${pct}%` }}
+                                        />
+                                      </div>
+                                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${pctColorClass(pct)}`}>
+                                        {pct}%
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </motion.div>
           </motion.div>
         )}
@@ -1682,6 +2115,27 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                   </button>
                 </div>
 
+                {/* Results visibility toggle */}
+                <div className="flex items-center justify-between mt-2 pt-2 border-t border-dashed">
+                  <div className="flex items-center gap-2">
+                    <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">إظهار النتائج للطلاب</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleResults(quiz.id, quiz.results_visible !== false)}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500/30 ${
+                      quiz.results_visible !== false ? 'bg-emerald-600' : 'bg-muted-foreground/30'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow-sm ${
+                        quiz.results_visible !== false ? 'translate-x-4.5' : 'translate-x-0.5'
+                      }`}
+                    />
+                  </button>
+                </div>
+
                 {/* Action buttons */}
                 <div className="flex items-center gap-2 mt-3 pt-3 border-t">
                   <button
@@ -1776,7 +2230,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
 
                 {/* Subject selector */}
                 <div>
-                  <label className="text-sm font-medium text-foreground mb-1.5 block">المقرر (اختياري - لإرسال إشعارات للطلاب)</label>
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">المقرر <span className="text-rose-500">*</span></label>
                   <select
                     value={quizSubjectId}
                     onChange={(e) => setQuizSubjectId(e.target.value)}
@@ -1784,7 +2238,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                     disabled={creatingQuiz}
                     dir="rtl"
                   >
-                    <option value="">بدون مقرر</option>
+                    <option value="">اختر المقرر</option>
                     {teacherSubjects.map((s) => (
                       <option key={s.id} value={s.id}>{s.name}</option>
                     ))}
@@ -2087,7 +2541,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
               <div className="flex items-center gap-3 border-t p-5 sticky bottom-0 bg-background">
                 <button
                   onClick={handleCreateQuiz}
-                  disabled={creatingQuiz || !quizTitle.trim() || quizQuestions.length === 0}
+                  disabled={creatingQuiz || !quizTitle.trim() || !quizSubjectId || quizQuestions.length === 0}
                   className="flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {creatingQuiz ? (
@@ -2310,182 +2764,438 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
   // -------------------------------------------------------
   // Render: Analytics Section
   // -------------------------------------------------------
-  const renderAnalytics = () => (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
-      {/* Header */}
-      <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground">التقارير والإحصائيات</h2>
-          <p className="text-muted-foreground mt-1">تحليل شامل لأداء الطلاب والاختبارات</p>
+  const renderAnalytics = () => {
+    const maxDistCount = Math.max(...scoreDistribution.map((d) => d.count), 1);
+
+    return (
+      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+        {/* Header */}
+        <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">التقارير والإحصائيات</h2>
+            <p className="text-muted-foreground mt-1">تحليل شامل لأداء الطلاب والاختبارات</p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleExportPerformanceExcel}
+              className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700"
+            >
+              <Download className="h-4 w-4" />
+              تصدير Excel
+            </button>
+            <button
+              onClick={handleExportPerformanceCSV}
+              className="flex items-center gap-2 rounded-lg border border-emerald-600 px-4 py-2.5 text-sm font-medium text-emerald-600 shadow-sm transition-colors hover:bg-emerald-50"
+            >
+              <Download className="h-4 w-4" />
+              تصدير CSV
+            </button>
+          </div>
+        </motion.div>
+
+        {/* Subject Filter */}
+        <motion.div variants={itemVariants} className="flex items-center gap-3">
+          <BookOpen className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium text-foreground">تصفية حسب المقرر:</span>
+          <select
+            value={reportSubjectFilter}
+            onChange={(e) => setReportSubjectFilter(e.target.value)}
+            className="rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          >
+            <option value="all">جميع المقررات</option>
+            {teacherSubjects.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </motion.div>
+
+        {/* Charts Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Recharts: Bar chart */}
+          <motion.div variants={itemVariants}>
+            <div className="rounded-xl border bg-card p-5 shadow-sm">
+              <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-emerald-600" />
+                متوسط الأداء لكل اختبار
+              </h3>
+              {barChartData.length === 0 ? (
+                <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
+                  لا توجد بيانات كافية
+                </div>
+              ) : (
+                <div className="h-72" dir="ltr">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={reportSubjectFilter === 'all' ? barChartData : filteredReportQuizzes.map((q) => {
+                      const qScores = filteredReportScores.filter((s) => s.quiz_id === q.id);
+                      const avg = qScores.length > 0
+                        ? Math.round(qScores.reduce((sum, s) => sum + scorePercentage(s.score, s.total), 0) / qScores.length)
+                        : 0;
+                      return { name: q.title.length > 15 ? q.title.slice(0, 15) + '...' : q.title, avg };
+                    })} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis
+                        dataKey="name"
+                        tick={{ fontSize: 11, fill: '#6b7280' }}
+                        angle={-20}
+                        textAnchor="end"
+                        height={60}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11, fill: '#6b7280' }}
+                        domain={[0, 100]}
+                        tickFormatter={(v) => `${v}%`}
+                      />
+                      <Tooltip
+                        formatter={(value: number) => [`${value}%`, 'متوسط الأداء']}
+                        contentStyle={{ direction: 'rtl', textAlign: 'right' }}
+                      />
+                      <Bar
+                        dataKey="avg"
+                        fill="#10b981"
+                        radius={[6, 6, 0, 0]}
+                        maxBarSize={50}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          </motion.div>
+
+          {/* Pie chart */}
+          <motion.div variants={itemVariants}>
+            <div className="rounded-xl border bg-card p-5 shadow-sm">
+              <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+                <Award className="h-4 w-4 text-teal-600" />
+                توزيع أداء الطلاب
+              </h3>
+              {pieChartData.length === 0 ? (
+                <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
+                  لا توجد بيانات كافية
+                </div>
+              ) : (
+                <div className="h-72" dir="ltr">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={(() => {
+                          const excellent = filteredReportScores.filter((s) => scorePercentage(s.score, s.total) >= 90).length;
+                          const veryGood = filteredReportScores.filter((s) => { const p = scorePercentage(s.score, s.total); return p >= 75 && p < 90; }).length;
+                          const good = filteredReportScores.filter((s) => { const p = scorePercentage(s.score, s.total); return p >= 60 && p < 75; }).length;
+                          const weak = filteredReportScores.filter((s) => scorePercentage(s.score, s.total) < 60).length;
+                          return [
+                            { name: 'ممتاز', value: excellent },
+                            { name: 'جيد جداً', value: veryGood },
+                            { name: 'جيد', value: good },
+                            { name: 'ضعيف', value: weak },
+                          ].filter((d) => d.value > 0);
+                        })()}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={90}
+                        paddingAngle={3}
+                        dataKey="value"
+                        label={({ name, value }) => `${name} (${value})`}
+                      >
+                        {pieChartData.map((_, index) => (
+                          <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{ direction: 'rtl', textAlign: 'right' }}
+                      />
+                      <Legend
+                        formatter={(value) => <span style={{ color: '#374151', fontSize: 12 }}>{value}</span>}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          </motion.div>
         </div>
-        <button
-          onClick={handleExportAllData}
-          className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700"
-        >
-          <Download className="h-4 w-4" />
-          تصدير كافة البيانات (Excel)
-        </button>
-      </motion.div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Bar chart */}
+        {/* CSS-based Score Distribution Bar Chart */}
         <motion.div variants={itemVariants}>
           <div className="rounded-xl border bg-card p-5 shadow-sm">
             <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-emerald-600" />
-              متوسط الأداء لكل اختبار
+              <BarChart3 className="h-4 w-4 text-emerald-600" />
+              توزيع الدرجات
             </h3>
-            {barChartData.length === 0 ? (
-              <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
-                لا توجد بيانات كافية
-              </div>
-            ) : (
-              <div className="h-72" dir="ltr">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={barChartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                    <XAxis
-                      dataKey="name"
-                      tick={{ fontSize: 11, fill: '#6b7280' }}
-                      angle={-20}
-                      textAnchor="end"
-                      height={60}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 11, fill: '#6b7280' }}
-                      domain={[0, 100]}
-                      tickFormatter={(v) => `${v}%`}
-                    />
-                    <Tooltip
-                      formatter={(value: number) => [`${value}%`, 'متوسط الأداء']}
-                      contentStyle={{ direction: 'rtl', textAlign: 'right' }}
-                    />
-                    <Bar
-                      dataKey="avg"
-                      fill="#10b981"
-                      radius={[6, 6, 0, 0]}
-                      maxBarSize={50}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-        </motion.div>
-
-        {/* Pie chart */}
-        <motion.div variants={itemVariants}>
-          <div className="rounded-xl border bg-card p-5 shadow-sm">
-            <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
-              <Award className="h-4 w-4 text-teal-600" />
-              توزيع أداء الطلاب
-            </h3>
-            {pieChartData.length === 0 ? (
-              <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
-                لا توجد بيانات كافية
-              </div>
-            ) : (
-              <div className="h-72" dir="ltr">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieChartData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={55}
-                      outerRadius={90}
-                      paddingAngle={3}
-                      dataKey="value"
-                      label={({ name, value }) => `${name} (${value})`}
+            <div className="space-y-3">
+              {scoreDistribution.map((range) => (
+                <div key={range.label} className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground w-14 text-left shrink-0" dir="ltr">{range.label}</span>
+                  <div className="flex-1 h-8 bg-muted/30 rounded-lg overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: maxDistCount > 0 ? `${(range.count / maxDistCount) * 100}%` : '0%' }}
+                      transition={{ duration: 0.6, ease: 'easeOut' }}
+                      className={`h-full ${range.color} rounded-lg flex items-center justify-end px-2`}
                     >
-                      {pieChartData.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{ direction: 'rtl', textAlign: 'right' }}
-                    />
-                    <Legend
-                      formatter={(value) => <span style={{ color: '#374151', fontSize: 12 }}>{value}</span>}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+                      {range.count > 0 && (
+                        <span className="text-xs font-bold text-white">{range.count}</span>
+                      )}
+                    </motion.div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </motion.div>
+
+        {/* CSS-based Student Performance Comparison */}
+        <motion.div variants={itemVariants}>
+          <div className="rounded-xl border bg-card p-5 shadow-sm">
+            <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+              <Users className="h-4 w-4 text-teal-600" />
+              مقارنة أداء الطلاب
+            </h3>
+            {sortedStudentPerformance.length === 0 ? (
+              <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
+                لا يوجد طلاب
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {sortedStudentPerformance.map((s) => (
+                  <div key={s.id} className="flex items-center gap-3">
+                    <span className="text-xs text-foreground w-28 truncate shrink-0" title={s.name}>{s.name}</span>
+                    <div className="flex-1 h-6 bg-muted/30 rounded-md overflow-hidden">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: s.avgScore !== null ? `${s.avgScore}%` : '0%' }}
+                        transition={{ duration: 0.5, ease: 'easeOut' }}
+                        className={`h-full rounded-md flex items-center justify-end px-2 ${
+                          s.avgScore === null ? 'bg-muted' :
+                          s.avgScore >= 90 ? 'bg-emerald-500' :
+                          s.avgScore >= 75 ? 'bg-teal-500' :
+                          s.avgScore >= 60 ? 'bg-amber-500' :
+                          'bg-rose-500'
+                        }`}
+                      >
+                        <span className="text-[10px] font-bold text-white">
+                          {s.avgScore !== null ? `${s.avgScore}%` : '—'}
+                        </span>
+                      </motion.div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </motion.div>
-      </div>
 
-      {/* Detailed table per quiz */}
-      <motion.div variants={itemVariants}>
-        <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between border-b p-4">
-            <h3 className="font-semibold text-foreground flex items-center gap-2">
-              <ClipboardList className="h-4 w-4 text-teal-600" />
-              تفاصيل الاختبارات
-            </h3>
-          </div>
-          <div className="overflow-x-auto">
-            {quizzes.length === 0 ? (
-              <div className="p-6 text-center text-muted-foreground text-sm">
-                لا توجد اختبارات
+        {/* Student Performance Table with Sort */}
+        <motion.div variants={itemVariants}>
+          <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between border-b p-4">
+              <h3 className="font-semibold text-foreground flex items-center gap-2">
+                <ClipboardList className="h-4 w-4 text-teal-600" />
+                ملخص أداء الطلاب
+              </h3>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportPerformanceCSV}
+                  className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  CSV
+                </button>
+                <button
+                  onClick={handleExportPerformanceExcel}
+                  className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Excel
+                </button>
               </div>
-            ) : (
-              <table className="w-full">
-                <thead className="bg-muted/50">
-                  <tr className="text-xs text-muted-foreground">
-                    <th className="text-right font-medium p-3">اسم الاختبار</th>
-                    <th className="text-right font-medium p-3">عدد الطلاب</th>
-                    <th className="text-right font-medium p-3">متوسط الأداء</th>
-                    <th className="text-right font-medium p-3">تحميل</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {quizzes.map((quiz) => {
-                    const qScores = scores.filter((s) => s.quiz_id === quiz.id);
-                    const avg = qScores.length > 0
-                      ? Math.round(qScores.reduce((sum, s) => sum + scorePercentage(s.score, s.total), 0) / qScores.length)
-                      : 0;
-                    return (
-                      <tr key={quiz.id} className="hover:bg-muted/30 transition-colors">
+            </div>
+            <div className="overflow-x-auto">
+              {sortedStudentPerformance.length === 0 ? (
+                <div className="p-6 text-center text-muted-foreground text-sm">
+                  لا يوجد طلاب
+                </div>
+              ) : (
+                <table className="w-full">
+                  <thead className="bg-muted/50">
+                    <tr className="text-xs text-muted-foreground">
+                      <th
+                        className="text-right font-medium p-3 cursor-pointer hover:text-foreground transition-colors"
+                        onClick={() => handleReportSort('name')}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          اسم الطالب
+                          {reportSortKey === 'name' && (
+                            <span className="text-emerald-600">{reportSortDir === 'asc' ? '↑' : '↓'}</span>
+                          )}
+                        </span>
+                      </th>
+                      <th
+                        className="text-right font-medium p-3 cursor-pointer hover:text-foreground transition-colors"
+                        onClick={() => handleReportSort('avgScore')}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          متوسط الدرجات
+                          {reportSortKey === 'avgScore' && (
+                            <span className="text-emerald-600">{reportSortDir === 'asc' ? '↑' : '↓'}</span>
+                          )}
+                        </span>
+                      </th>
+                      <th
+                        className="text-right font-medium p-3 cursor-pointer hover:text-foreground transition-colors"
+                        onClick={() => handleReportSort('attendanceRate')}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          نسبة الحضور
+                          {reportSortKey === 'attendanceRate' && (
+                            <span className="text-emerald-600">{reportSortDir === 'asc' ? '↑' : '↓'}</span>
+                          )}
+                        </span>
+                      </th>
+                      <th
+                        className="text-right font-medium p-3 cursor-pointer hover:text-foreground transition-colors"
+                        onClick={() => handleReportSort('quizzesCompleted')}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          الاختبارات المكتملة
+                          {reportSortKey === 'quizzesCompleted' && (
+                            <span className="text-emerald-600">{reportSortDir === 'asc' ? '↑' : '↓'}</span>
+                          )}
+                        </span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {sortedStudentPerformance.map((s) => (
+                      <tr key={s.id} className="hover:bg-muted/30 transition-colors">
                         <td className="p-3">
                           <div className="flex items-center gap-2">
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-100">
-                              <ClipboardList className="h-4 w-4 text-teal-600" />
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100">
+                              <Users className="h-4 w-4 text-emerald-600" />
                             </div>
-                            <span className="text-sm font-medium text-foreground truncate">{quiz.title}</span>
+                            <div>
+                              <span className="text-sm font-medium text-foreground block">{s.name}</span>
+                              <span className="text-[10px] text-muted-foreground">{s.email}</span>
+                            </div>
                           </div>
                         </td>
                         <td className="p-3">
-                          <span className="text-sm text-foreground">{qScores.length}</span>
+                          {s.avgScore !== null ? (
+                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${pctColorClass(s.avgScore)}`}>
+                              {s.avgScore}%
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">لا توجد بيانات</span>
+                          )}
                         </td>
                         <td className="p-3">
-                          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${pctColorClass(avg)}`}>
-                            {avg}%
-                          </span>
+                          {s.attendanceRate !== null ? (
+                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                              s.attendanceRate >= 90 ? 'text-emerald-700 bg-emerald-100' :
+                              s.attendanceRate >= 75 ? 'text-teal-700 bg-teal-100' :
+                              s.attendanceRate >= 60 ? 'text-amber-700 bg-amber-100' :
+                              'text-rose-700 bg-rose-100'
+                            }`}>
+                              {s.attendanceRate}%
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">لا توجد بيانات</span>
+                          )}
                         </td>
                         <td className="p-3">
-                          <button
-                            onClick={() => handleExportQuizData(quiz)}
-                            disabled={qScores.length === 0}
-                            className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            <Download className="h-3.5 w-3.5" />
-                            Excel
-                          </button>
+                          <span className="text-sm text-foreground">{s.quizzesCompleted}</span>
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
-        </div>
+        </motion.div>
+
+        {/* Detailed table per quiz */}
+        <motion.div variants={itemVariants}>
+          <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between border-b p-4">
+              <h3 className="font-semibold text-foreground flex items-center gap-2">
+                <ClipboardList className="h-4 w-4 text-teal-600" />
+                تفاصيل الاختبارات
+              </h3>
+              <button
+                onClick={handleExportAllData}
+                className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+              >
+                <Download className="h-3.5 w-3.5" />
+                تصدير كافة البيانات
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              {filteredReportQuizzes.length === 0 ? (
+                <div className="p-6 text-center text-muted-foreground text-sm">
+                  لا توجد اختبارات
+                </div>
+              ) : (
+                <table className="w-full">
+                  <thead className="bg-muted/50">
+                    <tr className="text-xs text-muted-foreground">
+                      <th className="text-right font-medium p-3">اسم الاختبار</th>
+                      <th className="text-right font-medium p-3">المقرر</th>
+                      <th className="text-right font-medium p-3">عدد الطلاب</th>
+                      <th className="text-right font-medium p-3">متوسط الأداء</th>
+                      <th className="text-right font-medium p-3">تحميل</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {filteredReportQuizzes.map((quiz) => {
+                      const qScores = filteredReportScores.filter((s) => s.quiz_id === quiz.id);
+                      const avg = qScores.length > 0
+                        ? Math.round(qScores.reduce((sum, s) => sum + scorePercentage(s.score, s.total), 0) / qScores.length)
+                        : 0;
+                      return (
+                        <tr key={quiz.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="p-3">
+                            <div className="flex items-center gap-2">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-100">
+                                <ClipboardList className="h-4 w-4 text-teal-600" />
+                              </div>
+                              <span className="text-sm font-medium text-foreground truncate">{quiz.title}</span>
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <span className="text-sm text-muted-foreground">{quiz.subject_name || '—'}</span>
+                          </td>
+                          <td className="p-3">
+                            <span className="text-sm text-foreground">{qScores.length}</span>
+                          </td>
+                          <td className="p-3">
+                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${pctColorClass(avg)}`}>
+                              {avg}%
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <button
+                              onClick={() => handleExportQuizData(quiz)}
+                              disabled={qScores.length === 0}
+                              className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              Excel
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </motion.div>
       </motion.div>
-    </motion.div>
-  );
+    );
+  };
 
   // -------------------------------------------------------
   // Main render

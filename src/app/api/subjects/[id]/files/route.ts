@@ -151,11 +151,19 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const accessResult = await verifySubjectAccess(user.id, subjectId, profile);
     if (accessResult instanceof NextResponse) return accessResult;
 
-    const { data, error } = await supabaseServer
+    // For students, only show: public files + their own private files
+    let query = supabaseServer
       .from('subject_files')
-      .select('id, subject_id, uploaded_by, file_name, file_url, file_type, file_size, created_at')
+      .select('id, subject_id, uploaded_by, file_name, file_url, file_type, file_size, created_at, visibility')
       .eq('subject_id', subjectId)
       .order('created_at', { ascending: false });
+
+    // If student, filter to show public files + own private files
+    if (!accessResult.isTeacher) {
+      query = query.or(`visibility.eq.public,visibility.is.null,uploaded_by.eq.${user.id}`);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Files fetch error:', error);

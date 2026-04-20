@@ -64,14 +64,14 @@ export default function Home() {
 
     if (user) {
       if (user.role === 'pending') {
-        // User hasn't selected a role yet - show role selection
         setCurrentPage('role-selection');
-      } else if (currentPage === 'auth' || currentPage === 'role-selection') {
+      } else {
         const targetPage = user.role === 'admin' ? 'admin-dashboard' : user.role === 'teacher' ? 'teacher-dashboard' : 'student-dashboard';
-        setCurrentPage(targetPage);
+        if (currentPage === 'auth' || currentPage === 'role-selection') {
+          setCurrentPage(targetPage);
+        }
       }
     } else {
-      // No user = always go to auth
       setCurrentPage('auth');
     }
   }, [user, initialized, setCurrentPage]);

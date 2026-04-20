@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users,
@@ -17,6 +17,7 @@ import {
   X,
   Loader2,
   ChevronLeft,
+  ChevronRight,
   Mail,
   Calendar,
   Hash,
@@ -128,12 +129,14 @@ const roleLabels: Record<string, string> = {
   student: 'طالب',
   teacher: 'معلم',
   admin: 'مشرف',
+  disabled: 'معطل',
 };
 
 const roleColors: Record<string, string> = {
   student: 'bg-emerald-100 text-emerald-700 border-emerald-200',
   teacher: 'bg-teal-100 text-teal-700 border-teal-200',
   admin: 'bg-amber-100 text-amber-700 border-amber-200',
+  disabled: 'bg-rose-100 text-rose-700 border-rose-200',
 };
 
 // Simple bar chart data for recent activity
@@ -163,12 +166,26 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
 
   // ─── Users section ───
   const [userSearch, setUserSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [grantAdminConfirm, setGrantAdminConfirm] = useState<UserProfile | null>(null);
   const [revokeAdminConfirm, setRevokeAdminConfirm] = useState<UserProfile | null>(null);
   const [deleteUserConfirm, setDeleteUserConfirm] = useState<UserProfile | null>(null);
   const [disableUserConfirm, setDisableUserConfirm] = useState<UserProfile | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [usersPage, setUsersPage] = useState(1);
+  const USERS_PER_PAGE = 20;
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounced search handler
+  const handleUserSearchChange = (value: string) => {
+    setUserSearch(value);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      setDebouncedSearch(value);
+      setUsersPage(1);
+    }, 300);
+  };
 
   // ─── Subjects section ───
   const [deleteSubjectConfirm, setDeleteSubjectConfirm] = useState<Subject | null>(null);
@@ -405,11 +422,15 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
 
   const filteredUsers = allUsers.filter((u) => {
     const matchesSearch =
-      u.name.toLowerCase().includes(userSearch.toLowerCase()) ||
-      u.email.toLowerCase().includes(userSearch.toLowerCase());
+      u.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+      u.email.toLowerCase().includes(debouncedSearch.toLowerCase());
     const matchesRole = roleFilter === 'all' || u.role === roleFilter;
     return matchesSearch && matchesRole;
   });
+
+  // Pagination
+  const totalPages = Math.ceil(filteredUsers.length / USERS_PER_PAGE);
+  const paginatedUsers = filteredUsers.slice((usersPage - 1) * USERS_PER_PAGE, usersPage * USERS_PER_PAGE);
 
   // Recent activity data for bar chart
   const recentActivityData: BarDataItem[] = (() => {
@@ -525,6 +546,13 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
       await supabase.from('quizzes').delete().eq('user_id', user.id);
       await supabase.from('summaries').delete().eq('user_id', user.id);
 
+      // Delete auth user via API to prevent re-creation on login
+      await fetch('/api/admin/delete-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      });
+
       const { error } = await supabase.from('users').delete().eq('id', user.id);
 
       if (error) {
@@ -549,11 +577,10 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
     }
     setActionLoading(user.id);
     try {
-      // Mark user as disabled by setting role to 'disabled' concept - we'll use a metadata approach
-      // Since there's no 'disabled' field, we'll use is_admin = false and store a flag
+      // Set user role to 'disabled' to actually disable them
       const { error } = await supabase
         .from('users')
-        .update({ is_admin: false })
+        .update({ role: 'disabled', is_admin: false })
         .eq('id', user.id);
 
       if (error) {
@@ -635,23 +662,23 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
 
     setSendingAnnouncement(true);
     try {
-      // Create notifications for all users
-      const notifications = allUsers.map((u) => ({
-        user_id: u.id,
-        title: announcementTitle.trim(),
-        content: announcementContent.trim(),
-        type: 'system' as const,
-        is_read: false,
-      }));
-
-      const { error } = await supabase.from('notifications').insert(notifications);
-
-      if (error) {
-        toast.error('حدث خطأ أثناء إرسال الإعلان');
-      } else {
-        toast.success(`تم إرسال الإعلان إلى ${allUsers.length} مستخدم`);
+      const userIds = allUsers.map((u) => u.id);
+      const response = await fetch('/api/admin/send-announcement', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: announcementTitle.trim(),
+          content: announcementContent.trim(),
+          userIds,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success(`تم إرسال الإعلان إلى ${data.count} مستخدم`);
         setAnnouncementTitle('');
         setAnnouncementContent('');
+      } else {
+        toast.error(data.error || 'حدث خطأ أثناء إرسال الإعلان');
       }
     } catch {
       toast.error('حدث خطأ غير متوقع');
@@ -928,7 +955,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
           <input
             type="text"
             value={userSearch}
-            onChange={(e) => setUserSearch(e.target.value)}
+            onChange={(e) => handleUserSearchChange(e.target.value)}
             placeholder="بحث بالاسم أو البريد الإلكتروني..."
             className="w-full rounded-lg border bg-background pr-10 pl-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-colors"
             dir="rtl"
@@ -943,6 +970,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
             <SelectItem value="student">طالب</SelectItem>
             <SelectItem value="teacher">معلم</SelectItem>
             <SelectItem value="admin">مشرف</SelectItem>
+            <SelectItem value="disabled">معطل</SelectItem>
           </SelectContent>
         </Select>
       </motion.div>
@@ -972,31 +1000,34 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                     <th className="text-right font-medium p-3">الاسم</th>
                     <th className="text-right font-medium p-3 hidden sm:table-cell">البريد الإلكتروني</th>
                     <th className="text-right font-medium p-3">الدور</th>
-                    <th className="text-right font-medium p-3">مشرف</th>
                     <th className="text-right font-medium p-3 hidden md:table-cell">تاريخ التسجيل</th>
                     <th className="text-right font-medium p-3">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {filteredUsers.map((user) => {
+                  {paginatedUsers.map((user) => {
                     const titlePrefix = getUserTitlePrefix(user);
                     const isSelf = user.id === profile.id;
+                    const isDisabled = user.role === 'disabled';
                     return (
                       <tr
                         key={user.id}
-                        className="hover:bg-muted/30 transition-colors"
+                        className={`hover:bg-muted/30 transition-colors ${isDisabled ? 'opacity-60' : ''}`}
                       >
                         <td className="p-3">
                           <div className="flex items-center gap-2">
                             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
                               {user.name.charAt(0)}
                             </div>
-                            <span className="text-sm font-medium text-foreground truncate">
-                              {titlePrefix && (
-                                <span className="text-emerald-600 ml-1">{titlePrefix}</span>
-                              )}
-                              {user.name}
-                            </span>
+                            <div className="min-w-0">
+                              <span className="text-sm font-medium text-foreground truncate block">
+                                {titlePrefix && (
+                                  <span className="text-emerald-600 ml-1">{titlePrefix}</span>
+                                )}
+                                {user.name}
+                              </span>
+                              <span className="text-xs text-muted-foreground truncate block sm:hidden">{user.email}</span>
+                            </div>
                           </div>
                         </td>
                         <td className="p-3 hidden sm:table-cell">
@@ -1009,13 +1040,6 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                             {roleLabels[user.role] || user.role}
                           </Badge>
                         </td>
-                        <td className="p-3">
-                          {user.is_admin ? (
-                            <ShieldCheck className="h-4 w-4 text-emerald-600" />
-                          ) : (
-                            <ShieldX className="h-4 w-4 text-muted-foreground/40" />
-                          )}
-                        </td>
                         <td className="p-3 hidden md:table-cell">
                           <span className="text-xs text-muted-foreground">
                             {formatDate(user.created_at)}
@@ -1024,7 +1048,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                         <td className="p-3">
                           <div className="flex items-center gap-1">
                             {/* Grant/Revoke admin */}
-                            {!user.is_admin ? (
+                            {!user.is_admin && !isDisabled ? (
                               <motion.button
                                 whileHover={{ scale: 1.1 }}
                                 whileTap={{ scale: 0.9 }}
@@ -1035,30 +1059,56 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                               >
                                 <Shield className="h-3.5 w-3.5" />
                               </motion.button>
-                            ) : (
+                            ) : user.is_admin && !isSelf ? (
                               <motion.button
                                 whileHover={{ scale: 1.1 }}
                                 whileTap={{ scale: 0.9 }}
                                 onClick={() => setRevokeAdminConfirm(user)}
-                                disabled={actionLoading === user.id || isSelf}
+                                disabled={actionLoading === user.id}
                                 className="flex h-7 w-7 items-center justify-center rounded-md text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-50"
                                 title="إزالة صلاحيات المشرف"
                               >
                                 <ShieldCheck className="h-3.5 w-3.5" />
                               </motion.button>
-                            )}
+                            ) : null}
 
-                            {/* Disable user */}
-                            <motion.button
-                              whileHover={{ scale: 1.1 }}
-                              whileTap={{ scale: 0.9 }}
-                              onClick={() => setDisableUserConfirm(user)}
-                              disabled={actionLoading === user.id || isSelf}
-                              className="flex h-7 w-7 items-center justify-center rounded-md text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-50"
-                              title="تعطيل المستخدم"
-                            >
-                              <Ban className="h-3.5 w-3.5" />
-                            </motion.button>
+                            {/* Disable/Enable user */}
+                            {isDisabled ? (
+                              <motion.button
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.9 }}
+                                onClick={async () => {
+                                  setActionLoading(user.id);
+                                  const { error } = await supabase
+                                    .from('users')
+                                    .update({ role: 'student', is_admin: false })
+                                    .eq('id', user.id);
+                                  if (error) {
+                                    toast.error('حدث خطأ أثناء تفعيل المستخدم');
+                                  } else {
+                                    toast.success(`تم تفعيل المستخدم ${user.name}`);
+                                    fetchUsers();
+                                  }
+                                  setActionLoading(null);
+                                }}
+                                disabled={actionLoading === user.id || isSelf}
+                                className="flex h-7 w-7 items-center justify-center rounded-md text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50"
+                                title="تفعيل المستخدم"
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                              </motion.button>
+                            ) : (
+                              <motion.button
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.9 }}
+                                onClick={() => setDisableUserConfirm(user)}
+                                disabled={actionLoading === user.id || isSelf}
+                                className="flex h-7 w-7 items-center justify-center rounded-md text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-50"
+                                title="تعطيل المستخدم"
+                              >
+                                <Ban className="h-3.5 w-3.5" />
+                              </motion.button>
+                            )}
 
                             {/* Delete user */}
                             <motion.button
@@ -1080,6 +1130,35 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
               </table>
             )}
           </div>
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t px-4 py-3">
+              <span className="text-xs text-muted-foreground">
+                عرض {((usersPage - 1) * USERS_PER_PAGE) + 1} - {Math.min(usersPage * USERS_PER_PAGE, filteredUsers.length)} من {filteredUsers.length}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setUsersPage((p) => Math.max(1, p - 1))}
+                  disabled={usersPage === 1}
+                  className="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="h-3 w-3" />
+                  السابق
+                </button>
+                <span className="text-xs text-muted-foreground">
+                  {usersPage} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setUsersPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={usersPage === totalPages}
+                  className="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  التالي
+                  <ChevronLeft className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </motion.div>
 
@@ -1091,9 +1170,19 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
               <Shield className="h-5 w-5 text-amber-500" />
               تأكيد منح صلاحيات المشرف
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-right">
-              هل أنت متأكد من منح صلاحيات المشرف للمستخدم &quot;{grantAdminConfirm?.name}&quot;؟
-              سيتمكن هذا المستخدم من الوصول إلى لوحة تحكم الإدارة وإدارة النظام بالكامل.
+            <AlertDialogDescription className="text-right space-y-2">
+              <p>
+                هل أنت متأكد من منح صلاحيات المشرف للمستخدم &quot;{grantAdminConfirm?.name}&quot;؟
+              </p>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-800 text-xs">
+                <p className="font-bold mb-1">⚠️ تحذير:</p>
+                <ul className="space-y-1 list-disc list-inside">
+                  <li>سيتمكن هذا المستخدم من الوصول إلى لوحة تحكم الإدارة بالكامل</li>
+                  <li>سيتمكن من حذف المستخدمين والمواد والاختبارات</li>
+                  <li>سيتمكن من إرسال إعلانات لجميع المستخدمين</li>
+                  <li>سيتمكن من منح صلاحيات المشرف لمستخدمين آخرين</li>
+                </ul>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-row-reverse gap-2">
@@ -1190,9 +1279,9 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
               <Ban className="h-5 w-5 text-amber-500" />
               تأكيد تعطيل المستخدم
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-right">
-              هل أنت متأكد من تعطيل حساب &quot;{disableUserConfirm?.name}&quot;؟
-              لن يتمكن هذا المستخدم من الوصول إلى صلاحيات المشرف.
+            <AlertDialogDescription className="text-right space-y-2">
+              <p>هل أنت متأكد من تعطيل حساب &quot;{disableUserConfirm?.name}&quot;؟</p>
+              <p className="text-xs text-muted-foreground">لن يتمكن هذا المستخدم من الوصول إلى النظام. يمكنك تفعيله لاحقاً من جدول المستخدمين.</p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-row-reverse gap-2">
