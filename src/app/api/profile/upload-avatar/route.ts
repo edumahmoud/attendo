@@ -57,16 +57,27 @@ async function ensureAvatarBucketExists(): Promise<{ success: boolean; error?: s
 export async function POST(request: Request) {
   try {
     if (!isSupabaseServerConfigured) {
-      console.error('[AVATAR] Server not configured - missing SUPABASE_SERVICE_ROLE_KEY');
-      return NextResponse.json({ success: false, error: 'Service key not configured' }, { status: 400 });
+      console.error('[AVATAR] Server not configured - missing SUPABASE_SERVICE_ROLE_KEY. Env vars available:', {
+        hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+        hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      });
+      return NextResponse.json({ success: false, error: 'خدمة التخزين غير مُعدة. يرجى إضافة SUPABASE_SERVICE_ROLE_KEY في ملف .env' }, { status: 500 });
     }
 
-    const formData = await request.formData();
-    const file = formData.get('avatar') as File;
-    const userId = formData.get('userId') as string;
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch (formErr) {
+      console.error('[AVATAR] Failed to parse form data:', formErr);
+      return NextResponse.json({ success: false, error: 'فشل في قراءة بيانات الطلب' }, { status: 400 });
+    }
+
+    const file = formData.get('avatar') as File | null;
+    const userId = formData.get('userId') as string | null;
 
     if (!file || !userId) {
-      return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
+      console.error('[AVATAR] Missing required fields - file:', !!file, 'userId:', !!userId, 'formKeys:', Array.from(formData.keys()));
+      return NextResponse.json({ success: false, error: 'الحقول المطلوبة غير موجودة' }, { status: 400 });
     }
 
     console.log('[AVATAR] Upload request - userId:', userId, 'file:', file.name, 'size:', file.size, 'type:', file.type);
@@ -93,10 +104,17 @@ export async function POST(request: Request) {
     const storagePath = `${userId}/${Date.now()}.${fileExt}`;
 
     // Convert file to Buffer for server-side upload
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    let fileBuffer: Buffer;
+    try {
+      fileBuffer = Buffer.from(await file.arrayBuffer());
+    } catch (bufErr) {
+      console.error('[AVATAR] Failed to read file buffer:', bufErr);
+      return NextResponse.json({ success: false, error: 'فشل في قراءة بيانات الصورة' }, { status: 400 });
+    }
 
     // Upload to Supabase Storage using service role (bypasses RLS)
-    const { error: uploadError } = await supabaseServer.storage
+    console.log('[AVATAR] Uploading to storage path:', storagePath);
+    const { data: uploadData, error: uploadError } = await supabaseServer.storage
       .from(AVATAR_BUCKET)
       .upload(storagePath, fileBuffer, {
         contentType: file.type,
@@ -104,9 +122,15 @@ export async function POST(request: Request) {
       });
 
     if (uploadError) {
-      console.error('[AVATAR] Storage upload error:', uploadError);
+      console.error('[AVATAR] Storage upload error:', JSON.stringify({
+        message: uploadError.message,
+        name: uploadError.name,
+        statusCode: (uploadError as unknown as { statusCode?: number }).statusCode,
+      }));
       return NextResponse.json({ success: false, error: `فشل في رفع الصورة: ${uploadError.message}` }, { status: 500 });
     }
+
+    console.log('[AVATAR] Storage upload successful, path:', uploadData?.path);
 
     // Get public URL
     const { data: urlData } = supabaseServer.storage
@@ -115,21 +139,51 @@ export async function POST(request: Request) {
 
     const publicUrl = urlData?.publicUrl ? `${urlData.publicUrl}?t=${Date.now()}` : '';
 
-    // Update user profile
-    const { error: updateError } = await supabaseServer
-      .from('users')
-      .update({ avatar_url: publicUrl })
-      .eq('id', userId);
-
-    if (updateError) {
-      console.error('[AVATAR] Profile update error:', updateError);
-      return NextResponse.json({ success: false, error: 'فشل في تحديث الملف الشخصي' }, { status: 500 });
+    if (!publicUrl) {
+      console.error('[AVATAR] Failed to get public URL for path:', storagePath);
+      return NextResponse.json({ success: false, error: 'فشل في الحصول على رابط الصورة' }, { status: 500 });
     }
 
-    console.log('[AVATAR] Avatar uploaded successfully for user:', userId);
+    // Update user profile
+    console.log('[AVATAR] Updating user profile with avatar URL:', publicUrl);
+    const { data: updateData, error: updateError } = await supabaseServer
+      .from('users')
+      .update({ avatar_url: publicUrl })
+      .eq('id', userId)
+      .select('id, avatar_url');
+
+    if (updateError) {
+      console.error('[AVATAR] Profile update error:', JSON.stringify({
+        message: updateError.message,
+        code: updateError.code,
+        details: updateError.details,
+        hint: updateError.hint,
+      }));
+      return NextResponse.json({ success: false, error: `فشل في تحديث الملف الشخصي: ${updateError.message}` }, { status: 500 });
+    }
+
+    if (!updateData || updateData.length === 0) {
+      console.error('[AVATAR] Profile update returned no rows - user may not exist in users table. UserId:', userId);
+      // Upload succeeded but profile update didn't match any row
+      // Still return the URL so the client can use it
+      return NextResponse.json({
+        success: true,
+        avatarUrl: publicUrl,
+        warning: 'تم رفع الصورة لكن لم يتم تحديث الملف الشخصي - المستخدم غير موجود في جدول المستخدمين',
+      });
+    }
+
+    console.log('[AVATAR] Avatar uploaded and profile updated successfully for user:', userId);
     return NextResponse.json({ success: true, avatarUrl: publicUrl });
   } catch (err) {
-    console.error('[AVATAR] Unexpected error:', err);
-    return NextResponse.json({ success: false, error: 'Server error' }, { status: 500 });
+    console.error('[AVATAR] Unexpected error:', err instanceof Error ? {
+      message: err.message,
+      stack: err.stack,
+      name: err.name,
+    } : err);
+    return NextResponse.json({
+      success: false,
+      error: `خطأ في الخادم: ${err instanceof Error ? err.message : 'خطأ غير معروف'}`,
+    }, { status: 500 });
   }
 }

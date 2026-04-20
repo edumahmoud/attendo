@@ -40,6 +40,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import AppSidebar from '@/components/shared/app-sidebar';
+import NotificationBell from '@/components/shared/notification-bell';
+import SettingsPage from '@/components/shared/settings-page';
 import StatCard from '@/components/shared/stat-card';
 import { useAppStore } from '@/stores/app-store';
 import { useAuthStore } from '@/stores/auth-store';
@@ -2045,7 +2047,15 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
         }}
       />
 
-      <main className="mr-0 md:mr-72 p-4 sm:p-6 lg:p-8 min-h-screen">
+      <main className="mr-0 md:mr-72 min-h-screen">
+        {/* Desktop: sticky top bar with notification bell */}
+        <div className="sticky top-0 z-20 flex items-center justify-end gap-3 border-b bg-background/95 backdrop-blur-sm px-6 py-2">
+          <NotificationBell
+            profile={profile}
+            onOpenPanel={() => handleSectionChange('settings')}
+          />
+        </div>
+        <div className="p-4 sm:p-6 lg:p-8">
         <AnimatePresence mode="wait">
           {activeSection === 'dashboard' && (
             <motion.div
@@ -2099,10 +2109,11 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.2 }}
             >
-              {renderSettings()}
+              <SettingsPage profile={profile} onBack={() => handleSectionChange('dashboard')} />
             </motion.div>
           )}
         </AnimatePresence>
+        </div>
       </main>
     </div>
   );

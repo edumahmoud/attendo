@@ -66,10 +66,10 @@ export async function getAuthenticatedUser(request: NextRequest): Promise<AuthRe
 export async function getUserProfile(
   supabase: SupabaseClient,
   userId: string
-): Promise<{ id: string; email: string; name: string; role: string; is_admin?: boolean } | null> {
+): Promise<{ id: string; email: string; name: string; role: string; is_admin?: boolean; gender?: string; title_id?: string } | null> {
   const { data, error } = await supabase
     .from('users')
-    .select('id, email, name, role, is_admin')
+    .select('id, email, name, role, is_admin, gender, title_id')
     .eq('id', userId)
     .single();
 

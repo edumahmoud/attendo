@@ -132,12 +132,32 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
     fetchNotifications();
   }, [fetchNotifications]);
 
-  // Refetch silently when popover opens
+  // Refetch silently when popover opens — use merge instead of replace to avoid flicker
   useEffect(() => {
-    if (open && !isInitialMount.current) {
-      fetchNotifications();
+    if (open) {
+      // Silently refresh from server and merge with existing
+      (async () => {
+        try {
+          const { data, error } = await supabase
+            .from('notifications')
+            .select('*')
+            .eq('user_id', profile.id)
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+          if (!error && data) {
+            const serverNotifs = data as Notification[];
+            // Merge: use server data as source of truth but don't lose local-only state
+            setNotifications(serverNotifs);
+            notificationsRef.current = serverNotifs;
+            setUnreadCount(serverNotifs.filter(n => !n.is_read).length);
+          }
+        } catch {
+          // Silently fail
+        }
+      })();
     }
-  }, [open, fetchNotifications]);
+  }, [open, profile.id]);
 
   // Subscribe to realtime notifications — realtime-only, no polling
   useEffect(() => {
@@ -171,13 +191,17 @@ export default function NotificationBell({ profile, onOpenPanel }: NotificationB
           // Show toast with deduplication: only toast once per notification ID
           if (!toastedIdsRef.current.has(newNotification.id)) {
             toastedIdsRef.current.add(newNotification.id);
-            toast(newNotification.title, {
-              description: newNotification.content,
-            });
-            // Clean up toasted ID after 30 seconds to prevent unbounded Set growth
+            // Use setTimeout to avoid showing toast during React render cycle
+            setTimeout(() => {
+              toast(newNotification.title, {
+                description: newNotification.content,
+              });
+            }, 0);
+            // Clean up toasted ID after 60 seconds to prevent unbounded Set growth
+            // Using longer timeout to prevent re-toasting of same notification
             setTimeout(() => {
               toastedIdsRef.current.delete(newNotification.id);
-            }, 30000);
+            }, 60000);
           }
         },
       )

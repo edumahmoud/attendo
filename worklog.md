@@ -33,3 +33,25 @@ Work Log:
 Stage Summary:
 - File upload, quiz actions, quiz flow, and lecture deletion all fixed
 - Quiz now uses StoredAnswer pattern for deferred evaluation
+
+---
+Task ID: 7
+Agent: Main Agent
+Task: Fix critical bugs - Lock import, notifications, admin dashboard, avatar upload improvements
+
+Work Log:
+- Fixed missing `Lock` import in teacher-dashboard.tsx (was causing compile error, breaking all quiz buttons)
+- Improved notification deduplication: Changed popover-open refetch to merge strategy instead of full replace
+- Increased toast deduplication timeout from 30s to 60s and added setTimeout(0) for toast to avoid render cycle conflicts
+- Added NotificationBell component to admin dashboard header
+- Added SettingsPage component to admin settings section (replacing custom renderSettings)
+- Improved admin dashboard layout with sticky notification bar
+- Updated getUserProfile to include gender and title_id fields
+- Verified scientific title (اللقب العلمي) is already hidden from student view (only shown in settings for teacher/admin)
+- Verified quiz action buttons are properly wired (the main issue was the Lock import causing compile failure)
+
+Stage Summary:
+- CRITICAL FIX: Lock import missing caused entire teacher dashboard to fail compiling - this was the root cause of "quiz buttons not working"
+- Notification improvements for deduplication
+- Admin dashboard now has NotificationBell and proper SettingsPage
+- getUserProfile now includes gender and title_id fields

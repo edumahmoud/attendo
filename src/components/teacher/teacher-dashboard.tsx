@@ -44,6 +44,7 @@ import {
   BookOpen,
   BarChart3,
   Pencil,
+  Lock,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import AppSidebar from '@/components/shared/app-sidebar';

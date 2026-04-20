@@ -188,7 +188,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
   try {
     // Check if server is configured
     if (!isSupabaseServerConfigured) {
-      console.error('[FILES UPLOAD] Server not configured - missing SUPABASE_SERVICE_ROLE_KEY');
+      console.error('[FILES UPLOAD] Server not configured. Env vars:', {
+        hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+        hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      });
       return NextResponse.json(
         { success: false, error: 'خدمة التخزين غير مُعدة. يرجى إضافة SUPABASE_SERVICE_ROLE_KEY في ملف .env' },
         { status: 500 }
@@ -224,11 +227,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Only teachers can upload
-    if (profile.role !== 'teacher') {
-      console.error('[FILES UPLOAD] User is not a teacher:', user.id, 'role:', profile.role);
+    // Only teachers (and admins acting as teachers) can upload via this endpoint
+    if (profile.role !== 'teacher' && profile.role !== 'admin') {
+      console.error('[FILES UPLOAD] User is not a teacher/admin:', user.id, 'role:', profile.role);
       return NextResponse.json(
-        { success: false, error: 'فقط المعلمون يمكنهم رفع الملفات' },
+        { success: false, error: 'فقط المعلمون يمكنهم رفع الملفات عبر هذا المسار' },
         { status: 403, headers: rateLimitHeaders }
       );
     }
@@ -241,7 +244,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       .single();
 
     if (subjectError || !subject) {
-      console.error('[FILES UPLOAD] Subject query error:', subjectError);
+      console.error('[FILES UPLOAD] Subject query error:', subjectError?.message || 'not found');
       return NextResponse.json(
         { success: false, error: 'المادة غير موجودة' },
         { status: 404, headers: rateLimitHeaders }
@@ -257,7 +260,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     // Parse multipart form data
-    const formData = await request.formData();
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch (formErr) {
+      console.error('[FILES UPLOAD] Failed to parse form data:', formErr);
+      return NextResponse.json(
+        { success: false, error: 'فشل في قراءة بيانات الطلب' },
+        { status: 400, headers: rateLimitHeaders }
+      );
+    }
+
     const file = formData.get('file') as File | null;
     const displayName = formData.get('name') as string | null;
 
@@ -293,8 +306,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     // Upload to Supabase Storage using the SERVER client (service role bypasses RLS)
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
-    const { error: uploadError } = await supabaseServer.storage
+    let fileBuffer: Buffer;
+    try {
+      fileBuffer = Buffer.from(await file.arrayBuffer());
+    } catch (bufErr) {
+      console.error('[FILES UPLOAD] Failed to read file buffer:', bufErr);
+      return NextResponse.json(
+        { success: false, error: 'فشل في قراءة بيانات الملف' },
+        { status: 400, headers: rateLimitHeaders }
+      );
+    }
+
+    console.log('[FILES UPLOAD] Uploading to storage path:', storagePath);
+    const { data: uploadData, error: uploadError } = await supabaseServer.storage
       .from(STORAGE_BUCKET)
       .upload(storagePath, fileBuffer, {
         contentType: file.type || 'application/octet-stream',
@@ -302,12 +326,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
       });
 
     if (uploadError) {
-      console.error('[FILES UPLOAD] Storage upload error:', uploadError);
+      console.error('[FILES UPLOAD] Storage upload error:', JSON.stringify({
+        message: uploadError.message,
+        name: uploadError.name,
+      }));
       return NextResponse.json(
         { success: false, error: `فشل في رفع الملف: ${uploadError.message}` },
         { status: 500, headers: rateLimitHeaders }
       );
     }
+
+    console.log('[FILES UPLOAD] Storage upload successful, path:', uploadData?.path);
 
     // Get public URL
     const { data: urlData } = supabaseServer.storage
@@ -327,21 +356,46 @@ export async function POST(request: NextRequest, context: RouteContext) {
     else if (file.type.includes('presentation') || file.type.includes('powerpoint')) fileType = 'presentation';
 
     // Save metadata to database using server client
-    const { data, error: dbError } = await supabaseServer
+    const insertPayload: Record<string, unknown> = {
+      subject_id: subjectId,
+      uploaded_by: user.id,
+      file_name: fileName,
+      file_url: fileUrl,
+      file_type: fileType,
+      file_size: file.size,
+    };
+
+    // Try inserting with visibility first (column may exist if added via migration)
+    let data;
+    let dbError;
+    const withVisibility = await supabaseServer
       .from('subject_files')
-      .insert({
-        subject_id: subjectId,
-        uploaded_by: user.id,
-        file_name: fileName,
-        file_url: fileUrl,
-        file_type: fileType,
-        file_size: file.size,
-      })
+      .insert({ ...insertPayload, visibility: 'public' })
       .select()
       .single();
 
+    if (withVisibility.error && withVisibility.error.message?.includes('visibility')) {
+      // visibility column doesn't exist — retry without it
+      console.log('[FILES UPLOAD] Retrying without visibility column');
+      const withoutVisibility = await supabaseServer
+        .from('subject_files')
+        .insert(insertPayload)
+        .select()
+        .single();
+      data = withoutVisibility.data;
+      dbError = withoutVisibility.error;
+    } else {
+      data = withVisibility.data;
+      dbError = withVisibility.error;
+    }
+
     if (dbError) {
-      console.error('[FILES UPLOAD] DB insert error:', dbError);
+      console.error('[FILES UPLOAD] DB insert error:', JSON.stringify({
+        message: dbError.message,
+        code: dbError.code,
+        details: dbError.details,
+        hint: dbError.hint,
+      }));
       // Try to clean up uploaded file
       await supabaseServer.storage.from(STORAGE_BUCKET).remove([storagePath]);
       return NextResponse.json(
@@ -356,8 +410,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
       { status: 201, headers: rateLimitHeaders }
     );
   } catch (error) {
-    console.error('[FILES UPLOAD] Unexpected error:', error);
-    return safeErrorResponse('حدث خطأ أثناء رفع الملف');
+    console.error('[FILES UPLOAD] Unexpected error:', error instanceof Error ? {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    } : error);
+    return NextResponse.json(
+      { success: false, error: `حدث خطأ أثناء رفع الملف: ${error instanceof Error ? error.message : 'خطأ غير معروف'}` },
+      { status: 500 }
+    );
   }
 }
 

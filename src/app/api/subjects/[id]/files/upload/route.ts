@@ -60,8 +60,12 @@ async function ensureBucketExists(): Promise<{ success: boolean; error?: string 
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
     if (!isSupabaseServerConfigured) {
+      console.error('[STUDENT UPLOAD] Server not configured. Env vars:', {
+        hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+        hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      });
       return NextResponse.json(
-        { success: false, error: 'خدمة التخزين غير مُعدة' },
+        { success: false, error: 'خدمة التخزين غير مُعدة. يرجى إضافة SUPABASE_SERVICE_ROLE_KEY في ملف .env' },
         { status: 500 }
       );
     }
@@ -77,6 +81,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const authResult = await getAuthenticatedUser(request);
     if (!authResult) {
+      console.error('[STUDENT UPLOAD] Authentication failed - no valid token');
       return NextResponse.json(
         { success: false, error: 'غير مصرح. يرجى تسجيل الدخول' },
         { status: 401, headers: rateLimitHeaders }
@@ -87,6 +92,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const { id: subjectId } = await context.params;
     const profile = await getUserProfile(authResult.supabase, user.id);
     if (!profile) {
+      console.error('[STUDENT UPLOAD] Profile not found for user:', user.id);
       return NextResponse.json(
         { success: false, error: 'الملف الشخصي غير موجود' },
         { status: 404, headers: rateLimitHeaders }
@@ -101,13 +107,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
       .single();
 
     if (!subject) {
+      console.error('[STUDENT UPLOAD] Subject not found:', subjectId);
       return NextResponse.json(
         { success: false, error: 'المادة غير موجودة' },
         { status: 404, headers: rateLimitHeaders }
       );
     }
 
-    const isTeacher = profile.role === 'teacher' && subject.teacher_id === user.id;
+    const isTeacher = (profile.role === 'teacher' || profile.role === 'admin') && subject.teacher_id === user.id;
     let isStudent = false;
 
     if (!isTeacher) {
@@ -119,6 +126,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         .single();
 
       if (!enrollment) {
+        console.error('[STUDENT UPLOAD] User not enrolled in subject:', user.id, 'subject:', subjectId);
         return NextResponse.json(
           { success: false, error: 'غير مصرح بالوصول لهذه المادة' },
           { status: 403, headers: rateLimitHeaders }
@@ -128,17 +136,30 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     // Parse multipart form data
-    const formData = await request.formData();
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch (formErr) {
+      console.error('[STUDENT UPLOAD] Failed to parse form data:', formErr);
+      return NextResponse.json(
+        { success: false, error: 'فشل في قراءة بيانات الطلب' },
+        { status: 400, headers: rateLimitHeaders }
+      );
+    }
+
     const file = formData.get('file') as File | null;
     const displayName = formData.get('name') as string | null;
     const visibility = formData.get('visibility') as string | null;
 
     if (!file) {
+      console.error('[STUDENT UPLOAD] No file in form data. Keys:', Array.from(formData.keys()));
       return NextResponse.json(
         { success: false, error: 'الملف مطلوب' },
         { status: 400, headers: rateLimitHeaders }
       );
     }
+
+    console.log('[STUDENT UPLOAD] File received:', file.name, 'size:', file.size, 'type:', file.type, 'isStudent:', isStudent);
 
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
@@ -175,6 +196,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     // Ensure bucket exists
     const bucketResult = await ensureBucketExists();
     if (!bucketResult.success) {
+      console.error('[STUDENT UPLOAD] Bucket check failed:', bucketResult.error);
       return NextResponse.json(
         { success: false, error: bucketResult.error || 'فشل في إعداد حاوية التخزين' },
         { status: 500, headers: rateLimitHeaders }
@@ -182,8 +204,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     // Upload to Supabase Storage
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
-    const { error: uploadError } = await supabaseServer.storage
+    let fileBuffer: Buffer;
+    try {
+      fileBuffer = Buffer.from(await file.arrayBuffer());
+    } catch (bufErr) {
+      console.error('[STUDENT UPLOAD] Failed to read file buffer:', bufErr);
+      return NextResponse.json(
+        { success: false, error: 'فشل في قراءة بيانات الملف' },
+        { status: 400, headers: rateLimitHeaders }
+      );
+    }
+
+    console.log('[STUDENT UPLOAD] Uploading to storage path:', storagePath);
+    const { data: uploadData, error: uploadError } = await supabaseServer.storage
       .from(STORAGE_BUCKET)
       .upload(storagePath, fileBuffer, {
         contentType: file.type || 'application/octet-stream',
@@ -191,12 +224,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
       });
 
     if (uploadError) {
-      console.error('[STUDENT UPLOAD] Storage upload error:', uploadError);
+      console.error('[STUDENT UPLOAD] Storage upload error:', JSON.stringify({
+        message: uploadError.message,
+        name: uploadError.name,
+      }));
       return NextResponse.json(
         { success: false, error: `فشل في رفع الملف: ${uploadError.message}` },
         { status: 500, headers: rateLimitHeaders }
       );
     }
+
+    console.log('[STUDENT UPLOAD] Storage upload successful, path:', uploadData?.path);
 
     // Get public URL
     const { data: urlData } = supabaseServer.storage
@@ -229,25 +267,36 @@ export async function POST(request: NextRequest, context: RouteContext) {
     };
 
     // Try to include visibility column (may not exist yet)
-    let { data, error: dbError } = await supabaseServer
+    let data;
+    let dbError;
+    const withVisibility = await supabaseServer
       .from('subject_files')
       .insert({ ...insertData, visibility: fileVisibility })
       .select()
       .single();
 
     // If visibility column doesn't exist, retry without it
-    if (dbError && dbError.message?.includes('visibility')) {
-      const retryResult = await supabaseServer
+    if (withVisibility.error && withVisibility.error.message?.includes('visibility')) {
+      console.log('[STUDENT UPLOAD] Retrying without visibility column');
+      const withoutVisibility = await supabaseServer
         .from('subject_files')
         .insert(insertData)
         .select()
         .single();
-      data = retryResult.data;
-      dbError = retryResult.error;
+      data = withoutVisibility.data;
+      dbError = withoutVisibility.error;
+    } else {
+      data = withVisibility.data;
+      dbError = withVisibility.error;
     }
 
     if (dbError) {
-      console.error('[STUDENT UPLOAD] DB insert error:', dbError);
+      console.error('[STUDENT UPLOAD] DB insert error:', JSON.stringify({
+        message: dbError.message,
+        code: dbError.code,
+        details: dbError.details,
+        hint: dbError.hint,
+      }));
       await supabaseServer.storage.from(STORAGE_BUCKET).remove([storagePath]);
       return NextResponse.json(
         { success: false, error: `فشل في حفظ بيانات الملف: ${dbError.message}` },
@@ -255,12 +304,20 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
+    console.log('[STUDENT UPLOAD] File uploaded successfully:', fileName);
     return NextResponse.json(
       { success: true, data },
       { status: 201, headers: rateLimitHeaders }
     );
   } catch (error) {
-    console.error('[STUDENT UPLOAD] Unexpected error:', error);
-    return safeErrorResponse('حدث خطأ أثناء رفع الملف');
+    console.error('[STUDENT UPLOAD] Unexpected error:', error instanceof Error ? {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    } : error);
+    return NextResponse.json(
+      { success: false, error: `حدث خطأ أثناء رفع الملف: ${error instanceof Error ? error.message : 'خطأ غير معروف'}` },
+      { status: 500 }
+    );
   }
 }

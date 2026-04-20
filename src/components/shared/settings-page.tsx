@@ -289,15 +289,35 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
         body: formData,
       });
 
-      const data = await response.json();
-      if (data.success) {
-        toast.success('تم تحديث الصورة الشخصية بنجاح');
-        await refreshProfile();
-      } else {
-        toast.error(data.error || 'فشل في رفع الصورة');
+      let data: { success?: boolean; error?: string; avatarUrl?: string; warning?: string };
+      try {
+        data = await response.json();
+      } catch {
+        toast.error(`فشل في رفع الصورة (HTTP ${response.status})`);
+        return;
       }
-    } catch {
-      toast.error('فشل في رفع الصورة');
+
+      if (data.success) {
+        if (data.warning) {
+          toast.warning(data.warning);
+        } else {
+          toast.success('تم تحديث الصورة الشخصية بنجاح');
+        }
+        try {
+          await refreshProfile();
+        } catch (refreshErr) {
+          console.error('[AVATAR] Failed to refresh profile after upload:', refreshErr);
+          // Upload succeeded, just the UI refresh failed — not critical
+        }
+      } else {
+        const errorMsg = data.error || `فشل في رفع الصورة (HTTP ${response.status})`;
+        console.error('[AVATAR] Upload failed:', errorMsg);
+        toast.error(errorMsg);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'خطأ غير معروف';
+      console.error('[AVATAR] Network/unexpected error:', err);
+      toast.error(`فشل في رفع الصورة: ${message}`);
     } finally {
       setUploadingAvatar(false);
     }
