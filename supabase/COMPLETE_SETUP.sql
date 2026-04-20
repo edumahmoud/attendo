@@ -941,16 +941,40 @@ CREATE TRIGGER trg_notify_lecture_start
 -- ─────────────────────────────────────────────────────
 -- Enable Realtime for important tables
 
-ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.lectures;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.lecture_attendance;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.subject_students;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.subject_files;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.subject_notes;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.quizzes;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.scores;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.subjects;
+-- Add tables to realtime publication (skip if already added)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'notifications') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'lectures') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.lectures;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'lecture_attendance') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.lecture_attendance;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'messages') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'subject_students') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.subject_students;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'subject_files') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.subject_files;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'subject_notes') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.subject_notes;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'quizzes') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.quizzes;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'scores') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.scores;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'subjects') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.subjects;
+  END IF;
+END $$;
 
 -- ─────────────────────────────────────────────────────
 -- STEP 10: Helpful Views
