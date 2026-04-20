@@ -14,15 +14,53 @@ interface RouteContext {
 const STORAGE_BUCKET = 'subject-files';
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
-async function ensureBucketExists(): Promise<{ success: boolean; error?: string }> {
+// Use the same cached visibility column check as the parent route
+// This module-level variable is scoped to this route handler
+let visibilityColumnExists: boolean | null = null;
+
+async function checkVisibilityColumn(): Promise<boolean> {
+  if (visibilityColumnExists !== null) return visibilityColumnExists;
+  try {
+    // Use anon key for column check (service_role may lack schema permissions)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseAnonKey) {
+      visibilityColumnExists = false;
+      return false;
+    }
+    const { createClient } = await import('@supabase/supabase-js');
+    const anonClient = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { error } = await anonClient
+      .from('subject_files')
+      .select('visibility')
+      .limit(1);
+    visibilityColumnExists = !error || !error.message?.includes('visibility');
+    return visibilityColumnExists;
+  } catch {
+    visibilityColumnExists = false;
+    return false;
+  }
+}
+
+async function ensureBucketExists(): Promise<{ success: boolean; error?: string; detail?: string }> {
   if (!isSupabaseServerConfigured) {
-    return { success: false, error: 'خدمة التخزين غير مُعدة. يرجى إضافة SUPABASE_SERVICE_ROLE_KEY' };
+    return {
+      success: false,
+      error: 'خدمة التخزين غير مُعدة. يرجى إضافة SUPABASE_SERVICE_ROLE_KEY',
+      detail: 'SUPABASE_SERVICE_ROLE_KEY is not configured.',
+    };
   }
 
   try {
     const { data: buckets, error: listError } = await supabaseServer.storage.listBuckets();
     if (listError) {
-      return { success: false, error: 'فشل في التحقق من التخزين' };
+      return {
+        success: false,
+        error: 'فشل في التحقق من التخزين',
+        detail: `Supabase listBuckets() failed: ${listError.message}`,
+      };
     }
 
     const bucketExists = buckets?.some((b) => b.name === STORAGE_BUCKET);
@@ -36,7 +74,11 @@ async function ensureBucketExists(): Promise<{ success: boolean; error?: string 
       if (createError) {
         const { data: recheckBuckets } = await supabaseServer.storage.listBuckets();
         if (!recheckBuckets?.some((b) => b.name === STORAGE_BUCKET)) {
-          return { success: false, error: 'فشل في إنشاء حاوية التخزين' };
+          return {
+            success: false,
+            error: 'فشل في إنشاء حاوية التخزين',
+            detail: `Could not create "${STORAGE_BUCKET}" bucket: ${createError.message}. Please create it manually or run supabase/fix_storage_complete.sql.`,
+          };
         }
       }
     }
@@ -65,7 +107,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
         hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
       });
       return NextResponse.json(
-        { success: false, error: 'خدمة التخزين غير مُعدة. يرجى إضافة SUPABASE_SERVICE_ROLE_KEY في ملف .env' },
+        {
+          success: false,
+          error: 'خدمة التخزين غير مُعدة. يرجى إضافة SUPABASE_SERVICE_ROLE_KEY في ملف .env',
+          detail: 'The SUPABASE_SERVICE_ROLE_KEY environment variable is not set.',
+        },
         { status: 500 }
       );
     }
@@ -100,7 +146,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     // Check if user has access: teacher of this subject OR enrolled student
-    const { data: subject } = await supabaseServer
+    const { data: subject } = await authResult.supabase
       .from('subjects')
       .select('teacher_id')
       .eq('id', subjectId)
@@ -118,7 +164,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     let isStudent = false;
 
     if (!isTeacher) {
-      const { data: enrollment } = await supabaseServer
+      const { data: enrollment } = await authResult.supabase
         .from('subject_students')
         .select('id')
         .eq('subject_id', subjectId)
@@ -163,7 +209,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
-        { success: false, error: 'حجم الملف يتجاوز الحد المسموح (10 ميجابايت)' },
+        {
+          success: false,
+          error: 'حجم الملف يتجاوز الحد المسموح (10 ميجابايت)',
+          detail: `File size is ${(file.size / 1024 / 1024).toFixed(2)}MB, maximum is 10MB.`,
+        },
         { status: 413, headers: rateLimitHeaders }
       );
     }
@@ -198,7 +248,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (!bucketResult.success) {
       console.error('[STUDENT UPLOAD] Bucket check failed:', bucketResult.error);
       return NextResponse.json(
-        { success: false, error: bucketResult.error || 'فشل في إعداد حاوية التخزين' },
+        { success: false, error: bucketResult.error || 'فشل في إعداد حاوية التخزين', detail: bucketResult.detail },
         { status: 500, headers: rateLimitHeaders }
       );
     }
@@ -228,8 +278,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
         message: uploadError.message,
         name: uploadError.name,
       }));
+
+      let detail = uploadError.message;
+      if (uploadError.message?.includes('not found') || uploadError.message?.includes('does not exist')) {
+        detail = `The "${STORAGE_BUCKET}" storage bucket may not exist. Please run supabase/fix_storage_complete.sql or create the bucket manually.`;
+      }
+
       return NextResponse.json(
-        { success: false, error: `فشل في رفع الملف: ${uploadError.message}` },
+        { success: false, error: `فشل في رفع الملف: ${uploadError.message}`, detail },
         { status: 500, headers: rateLimitHeaders }
       );
     }
@@ -256,7 +312,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     // Determine visibility
     const fileVisibility = (visibility === 'public' || visibility === 'private') ? visibility : (isStudent ? 'private' : 'public');
 
-    // Save metadata to database
+    // Check visibility column existence
+    const hasVisibility = await checkVisibilityColumn();
+
+    // Save metadata to database using the USER'S JWT client (respects RLS)
+    // The service_role key may not have schema permissions for public tables
     const insertData: Record<string, unknown> = {
       subject_id: subjectId,
       uploaded_by: user.id,
@@ -266,31 +326,55 @@ export async function POST(request: NextRequest, context: RouteContext) {
       file_size: file.size,
     };
 
-    // Try to include visibility column (may not exist yet)
-    let data;
-    let dbError;
-    const withVisibility = await supabaseServer
+    if (hasVisibility) {
+      insertData.visibility = fileVisibility;
+    }
+
+    const { data, error: dbError } = await authResult.supabase
       .from('subject_files')
-      .insert({ ...insertData, visibility: fileVisibility })
+      .insert(insertData)
       .select()
       .single();
 
-    // If visibility column doesn't exist, retry without it
-    if (withVisibility.error && withVisibility.error.message?.includes('visibility')) {
-      console.log('[STUDENT UPLOAD] Retrying without visibility column');
-      const withoutVisibility = await supabaseServer
-        .from('subject_files')
-        .insert(insertData)
-        .select()
-        .single();
-      data = withoutVisibility.data;
-      dbError = withoutVisibility.error;
-    } else {
-      data = withVisibility.data;
-      dbError = withVisibility.error;
-    }
-
     if (dbError) {
+      // If visibility column error, retry without it
+      if (dbError.message?.includes('visibility')) {
+        visibilityColumnExists = false;
+        console.log('[STUDENT UPLOAD] Retrying without visibility column');
+        const { data: retryData, error: retryError } = await authResult.supabase
+          .from('subject_files')
+          .insert({
+            subject_id: subjectId,
+            uploaded_by: user.id,
+            file_name: fileName,
+            file_url: fileUrl,
+            file_type: fileType,
+            file_size: file.size,
+          })
+          .select()
+          .single();
+
+        if (retryError) {
+          console.error('[STUDENT UPLOAD] DB insert retry error:', JSON.stringify({
+            message: retryError.message,
+            code: retryError.code,
+            details: retryError.details,
+            hint: retryError.hint,
+          }));
+          await supabaseServer.storage.from(STORAGE_BUCKET).remove([storagePath]);
+          return NextResponse.json(
+            { success: false, error: `فشل في حفظ بيانات الملف: ${retryError.message}` },
+            { status: 500, headers: rateLimitHeaders }
+          );
+        }
+
+        console.log('[STUDENT UPLOAD] File uploaded successfully (without visibility):', fileName);
+        return NextResponse.json(
+          { success: true, data: retryData },
+          { status: 201, headers: rateLimitHeaders }
+        );
+      }
+
       console.error('[STUDENT UPLOAD] DB insert error:', JSON.stringify({
         message: dbError.message,
         code: dbError.code,

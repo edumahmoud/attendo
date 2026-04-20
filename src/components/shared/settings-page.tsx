@@ -268,28 +268,46 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
   // ─── Handlers ───────────────────────────────────────
 
   const handleAvatarUpload = useCallback(async (file: File) => {
+    // Client-side validation with type detection fallback
     if (file.size > 2 * 1024 * 1024) {
       toast.error('حجم الصورة يجب أن يكون أقل من 2 ميجابايت');
       return;
     }
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    if (!allowedTypes.includes(file.type)) {
+    // Some browsers report empty file.type — try to detect from extension
+    const detectedType = file.type || (
+      file.name.toLowerCase().endsWith('.png') ? 'image/png'
+        : file.name.toLowerCase().endsWith('.gif') ? 'image/gif'
+          : file.name.toLowerCase().endsWith('.webp') ? 'image/webp'
+            : 'image/jpeg'
+    );
+    if (!allowedTypes.includes(detectedType)) {
       toast.error('نوع الصورة غير مدعوم. استخدم JPG أو PNG أو WebP');
       return;
     }
 
     setUploadingAvatar(true);
     try {
+      // Get the user's session token for authenticated upload
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error('يرجى تسجيل الدخول أولاً');
+        return;
+      }
+
       const formData = new FormData();
       formData.append('avatar', file);
       formData.append('userId', profile.id);
 
       const response = await fetch('/api/profile/upload-avatar', {
         method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: formData,
       });
 
-      let data: { success?: boolean; error?: string; avatarUrl?: string; warning?: string };
+      let data: { success?: boolean; error?: string; detail?: string; avatarUrl?: string; warning?: string };
       try {
         data = await response.json();
       } catch {
@@ -299,7 +317,7 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
 
       if (data.success) {
         if (data.warning) {
-          toast.warning(data.warning);
+          toast.warning(data.warning, { duration: 6000 });
         } else {
           toast.success('تم تحديث الصورة الشخصية بنجاح');
         }
@@ -311,8 +329,16 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
         }
       } else {
         const errorMsg = data.error || `فشل في رفع الصورة (HTTP ${response.status})`;
-        console.error('[AVATAR] Upload failed:', errorMsg);
-        toast.error(errorMsg);
+        console.error('[AVATAR] Upload failed:', errorMsg, data.detail);
+        // Show the main error, and log the detail for debugging
+        toast.error(errorMsg, {
+          duration: 6000,
+          description: data.detail ? 'اضغط على تفاصيل للمزيد' : undefined,
+        });
+        // Also log actionable detail to console
+        if (data.detail) {
+          console.error('[AVATAR] Detail:', data.detail);
+        }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'خطأ غير معروف';

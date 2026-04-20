@@ -701,6 +701,119 @@ ALTER TABLE public.users ADD CONSTRAINT users_role_check
   CHECK (role IN ('student', 'teacher', 'admin', 'pending'));
 `.trim();
 
+const STORAGE_AND_COLUMNS_FIX_SQL = `
+-- =====================================================
+-- Storage Buckets, Policies, and Missing Column Fixes
+-- Run this SQL in the Supabase SQL Editor (Dashboard > SQL Editor)
+-- This fixes file/image upload issues by:
+-- 1. Creating storage buckets if they don't exist
+-- 2. Setting up storage policies for uploads
+-- 3. Adding missing columns (gender, visibility)
+-- 4. Fixing service_role permissions on public schema
+-- =====================================================
+
+-- ─── Fix service_role permissions on public schema ───
+-- This is the ROOT CAUSE of "فشل في رفع الصورة" errors!
+-- The service_role needs USAGE on the public schema
+GRANT USAGE ON SCHEMA public TO service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
+
+-- ─── Create storage buckets ───
+INSERT INTO storage.buckets (id, name, public, file_size_limit)
+VALUES ('avatars', 'avatars', true, 2097152)
+ON CONFLICT (id) DO UPDATE SET public = true, file_size_limit = 2097152;
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit)
+VALUES ('subject-files', 'subject-files', true, 10485760)
+ON CONFLICT (id) DO UPDATE SET public = true, file_size_limit = 10485760;
+
+-- ─── Add missing columns ───
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS gender TEXT CHECK (gender IN ('male', 'female'));
+ALTER TABLE public.subject_files ADD COLUMN IF NOT EXISTS visibility TEXT DEFAULT 'public' CHECK (visibility IN ('public', 'private'));
+
+-- Update existing files to be public
+UPDATE public.subject_files SET visibility = 'public' WHERE visibility IS NULL;
+
+-- ─── Storage policies for avatars ───
+DROP POLICY IF EXISTS "Avatar images are publicly accessible" ON storage.objects;
+DROP POLICY IF EXISTS "Users can upload their own avatar" ON storage.objects;
+DROP POLICY IF EXISTS "Users can update their own avatar" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete their own avatar" ON storage.objects;
+
+CREATE POLICY "Avatar images are publicly accessible" ON storage.objects
+  FOR SELECT USING (bucket_id = 'avatars');
+
+CREATE POLICY "Users can upload their own avatar" ON storage.objects
+  FOR INSERT WITH CHECK (
+    bucket_id = 'avatars'
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+CREATE POLICY "Users can update their own avatar" ON storage.objects
+  FOR UPDATE USING (
+    bucket_id = 'avatars'
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+CREATE POLICY "Users can delete their own avatar" ON storage.objects
+  FOR DELETE USING (
+    bucket_id = 'avatars'
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- ─── Storage policies for subject-files ───
+DROP POLICY IF EXISTS "Anyone can view subject files" ON storage.objects;
+DROP POLICY IF EXISTS "Users can upload subject files" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete subject files" ON storage.objects;
+
+CREATE POLICY "Anyone can view subject files" ON storage.objects
+  FOR SELECT TO authenticated, anon
+  USING (bucket_id = 'subject-files');
+
+CREATE POLICY "Users can upload subject files" ON storage.objects
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    bucket_id = 'subject-files'
+    AND auth.uid()::text = (storage.foldername(name))[2]
+  );
+
+CREATE POLICY "Users can delete subject files" ON storage.objects
+  FOR DELETE TO authenticated
+  USING (
+    bucket_id = 'subject-files'
+    AND auth.uid()::text = (storage.foldername(name))[2]
+  );
+
+-- ─── Fix RLS policy for subject_files to support student uploads ───
+DROP POLICY IF EXISTS "Students can read enrolled subject files" ON public.subject_files;
+CREATE POLICY "Students can read enrolled subject files" ON public.subject_files
+  FOR SELECT USING (
+    visibility = 'public'
+    OR visibility IS NULL
+    OR uploaded_by = auth.uid()
+    OR subject_id IN (SELECT subject_id FROM public.subject_students WHERE student_id = auth.uid())
+  );
+
+DROP POLICY IF EXISTS "Students can upload to enrolled subjects" ON public.subject_files;
+CREATE POLICY "Students can upload to enrolled subjects" ON public.subject_files
+  FOR INSERT WITH CHECK (
+    uploaded_by = auth.uid()
+    AND (
+      subject_id IN (SELECT id FROM public.subjects WHERE teacher_id = auth.uid())
+      OR subject_id IN (SELECT subject_id FROM public.subject_students WHERE student_id = auth.uid())
+    )
+  );
+
+-- ─── Fix users table UPDATE policy for avatar_url ───
+-- Users should be able to update their own profile (including avatar_url)
+DROP POLICY IF EXISTS "Users can update own profile" ON public.users;
+CREATE POLICY "Users can update own profile" ON public.users
+  FOR UPDATE USING (auth.uid() = id);
+`.trim();
+
 export async function GET() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -715,6 +828,7 @@ export async function GET() {
       schema_v2: SCHEMA_V2_SQL,
       subject_code_migration: SUBJECT_CODE_MIGRATION_SQL,
       role_constraint_fix: ROLE_CONSTRAINT_FIX_SQL,
+      storage_and_columns_fix: STORAGE_AND_COLUMNS_FIX_SQL,
     },
     steps: [
       {
@@ -755,13 +869,13 @@ export async function GET() {
       },
       {
         step: 7,
-        title: 'Create Storage Bucket (Optional)',
-        description: 'Go to Supabase Dashboard > Storage and create a bucket named "subject-files" for file uploads. Set it to private.',
-        critical: false,
+        title: 'Fix Storage & Missing Columns (CRITICAL for Uploads)',
+        description: 'In the same SQL Editor, run the SQL provided in sql.storage_and_columns_fix below. This fixes: service_role permissions (root cause of upload failures), creates storage buckets, adds missing gender/visibility columns, and sets up storage policies. Run GET /api/storage/setup afterwards to verify.',
+        critical: true,
       },
       {
         step: 8,
-        title: 'Add Service Role Key (Optional)',
+        title: 'Add Service Role Key',
         description: 'Add your SUPABASE_SERVICE_ROLE_KEY to .env.local for server-side admin operations',
         critical: false,
       },
