@@ -980,7 +980,8 @@ END $$;
 -- STEP 10: Helpful Views
 -- ─────────────────────────────────────────────────────
 
-CREATE OR REPLACE VIEW public.teacher_student_performance AS
+DROP VIEW IF EXISTS public.teacher_student_performance CASCADE;
+CREATE VIEW public.teacher_student_performance AS
 SELECT
   u.id AS student_id,
   u.name AS student_name,
@@ -997,7 +998,8 @@ JOIN public.teacher_student_links tsl ON u.id = tsl.student_id
 JOIN public.scores s ON u.id = s.student_id
 WHERE s.teacher_id = tsl.teacher_id;
 
-CREATE OR REPLACE VIEW public.subject_details AS
+DROP VIEW IF EXISTS public.subject_details CASCADE;
+CREATE VIEW public.subject_details AS
 SELECT
   s.id AS subject_id,
   s.name AS subject_name,
@@ -1014,7 +1016,8 @@ SELECT
 FROM public.subjects s
 JOIN public.users u ON s.teacher_id = u.id;
 
-CREATE OR REPLACE VIEW public.lecture_details AS
+DROP VIEW IF EXISTS public.lecture_details CASCADE;
+CREATE VIEW public.lecture_details AS
 SELECT
   l.id AS lecture_id,
   l.title,
