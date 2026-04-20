@@ -268,9 +268,8 @@ export default function SubjectDetail({ subjectId, profile, onBack }: SubjectDet
   const [lectureDetailOpen, setLectureDetailOpen] = useState(false);
   const [lectureDetailData, setLectureDetailData] = useState<Lecture | null>(null);
   const [lectureNotes, setLectureNotes] = useState<Record<string, LectureNote[]>>({});
-  const [newNoteContent, setNewNoteContent] = useState('');
-  const [addingNote, setAddingNote] = useState(false);
-  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
+  const [lectureNote, setLectureNote] = useState('');
+  const [savingLectureNote, setSavingLectureNote] = useState(false);
   const [lectureDetailSearch, setLectureDetailSearch] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
