@@ -212,129 +212,45 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   // -------------------------------------------------------
-  // Data fetching
+  // Data fetching — uses server-side API with service role (bypasses RLS)
   // -------------------------------------------------------
-  const fetchUsers = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching users:', error);
-    } else {
-      setAllUsers((data as UserProfile[]) || []);
-    }
-  }, []);
-
-  const fetchSubjects = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('subjects')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching subjects:', error);
-    } else {
-      const subjects = (data as Subject[]) || [];
-      // Fetch teacher names
-      if (subjects.length > 0) {
-        const teacherIds = [...new Set(subjects.map((s) => s.teacher_id))];
-        const { data: teachers } = await supabase
-          .from('users')
-          .select('id, name')
-          .in('id', teacherIds);
-
-        const teacherMap = new Map<string, string>();
-        if (teachers) {
-          (teachers as { id: string; name: string }[]).forEach((t) => {
-            teacherMap.set(t.id, t.name);
-          });
-        }
-
-        // Fetch student counts per subject
-        const { data: studentLinks } = await supabase
-          .from('subject_students')
-          .select('subject_id');
-
-        const subjectStudentCount = new Map<string, number>();
-        if (studentLinks) {
-          (studentLinks as { subject_id: string }[]).forEach((link) => {
-            subjectStudentCount.set(
-              link.subject_id,
-              (subjectStudentCount.get(link.subject_id) || 0) + 1
-            );
-          });
-        }
-
-        const enrichedSubjects = subjects.map((s) => ({
-          ...s,
-          teacher_name: teacherMap.get(s.teacher_id) || 'غير معروف',
-          student_count: subjectStudentCount.get(s.id) || 0,
-        }));
-
-        setAllSubjects(enrichedSubjects);
-      } else {
-        setAllSubjects([]);
-      }
-    }
-  }, []);
-
-  const fetchQuizzes = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('quizzes')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching quizzes:', error);
-    } else {
-      const quizzes = (data as Quiz[]) || [];
-      // Fetch teacher names for quizzes
-      if (quizzes.length > 0) {
-        const teacherIds = [...new Set(quizzes.map((q) => q.user_id))];
-        const { data: teachers } = await supabase
-          .from('users')
-          .select('id, name')
-          .in('id', teacherIds);
-
-        const teacherMap = new Map<string, string>();
-        if (teachers) {
-          (teachers as { id: string; name: string }[]).forEach((t) => {
-            teacherMap.set(t.id, t.name);
-          });
-        }
-
-        const enrichedQuizzes = quizzes.map((q) => ({
-          ...q,
-          teacher_name: teacherMap.get(q.user_id) || 'غير معروف',
-        }));
-
-        setAllQuizzes(enrichedQuizzes as (Quiz & { teacher_name: string })[]);
-      } else {
-        setAllQuizzes([]);
-      }
-    }
-  }, []);
-
-  const fetchScores = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('scores')
-      .select('*')
-      .order('completed_at', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching scores:', error);
-    } else {
-      setAllScores((data as Score[]) || []);
-    }
-  }, []);
-
   const fetchAllData = useCallback(async () => {
     setLoadingData(true);
-    await Promise.all([fetchUsers(), fetchSubjects(), fetchQuizzes(), fetchScores()]);
-    setLoadingData(false);
-  }, [fetchUsers, fetchSubjects, fetchQuizzes, fetchScores]);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        console.error('No auth session found');
+        setLoadingData(false);
+        return;
+      }
+
+      const response = await fetch('/api/admin/dashboard', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+
+      if (!response.ok) {
+        console.error('Failed to fetch admin dashboard data:', response.status);
+        setLoadingData(false);
+        return;
+      }
+
+      const data = await response.json();
+      setAllUsers((data.users as UserProfile[]) || []);
+      setAllSubjects((data.subjects as Subject[]) || []);
+      setAllQuizzes((data.quizzes as Quiz[]) || []);
+      setAllScores((data.scores as Score[]) || []);
+    } catch (error) {
+      console.error('Error fetching admin dashboard data:', error);
+    } finally {
+      setLoadingData(false);
+    }
+  }, []);
+
+  // Individual refresh helpers (all use the same API)
+  const fetchUsers = useCallback(async () => { await fetchAllData(); }, [fetchAllData]);
+  const fetchSubjects = useCallback(async () => { await fetchAllData(); }, [fetchAllData]);
+  const fetchQuizzes = useCallback(async () => { await fetchAllData(); }, [fetchAllData]);
+  const fetchScores = useCallback(async () => { await fetchAllData(); }, [fetchAllData]);
 
   useEffect(() => {
     fetchAllData();
@@ -490,16 +406,21 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
   const handleGrantAdmin = async (user: UserProfile) => {
     setActionLoading(user.id);
     try {
-      const { error } = await supabase
-        .from('users')
-        .update({ is_admin: true, role: 'admin' })
-        .eq('id', user.id);
-
-      if (error) {
-        toast.error('حدث خطأ أثناء منح صلاحيات المشرف');
-      } else {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/admin/action', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ action: 'grant_admin', userId: user.id }),
+      });
+      const result = await response.json();
+      if (result.success) {
         toast.success(`تم منح صلاحيات المشرف لـ ${user.name}`);
         fetchUsers();
+      } else {
+        toast.error(result.error || 'حدث خطأ أثناء منح صلاحيات المشرف');
       }
     } catch {
       toast.error('حدث خطأ غير متوقع');
@@ -517,16 +438,21 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
     }
     setActionLoading(user.id);
     try {
-      const { error } = await supabase
-        .from('users')
-        .update({ is_admin: false, role: 'teacher' })
-        .eq('id', user.id);
-
-      if (error) {
-        toast.error('حدث خطأ أثناء إزالة صلاحيات المشرف');
-      } else {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/admin/action', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ action: 'revoke_admin', userId: user.id }),
+      });
+      const result = await response.json();
+      if (result.success) {
         toast.success(`تم إزالة صلاحيات المشرف من ${user.name}`);
         fetchUsers();
+      } else {
+        toast.error(result.error || 'حدث خطأ أثناء إزالة صلاحيات المشرف');
       }
     } catch {
       toast.error('حدث خطأ غير متوقع');
@@ -593,17 +519,21 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
     }
     setActionLoading(user.id);
     try {
-      // Set user role to 'disabled' to actually disable them
-      const { error } = await supabase
-        .from('users')
-        .update({ role: 'disabled', is_admin: false })
-        .eq('id', user.id);
-
-      if (error) {
-        toast.error('حدث خطأ أثناء تعطيل المستخدم');
-      } else {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/admin/action', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ action: 'disable_user', userId: user.id }),
+      });
+      const result = await response.json();
+      if (result.success) {
         toast.success(`تم تعطيل المستخدم ${user.name}`);
         fetchUsers();
+      } else {
+        toast.error(result.error || 'حدث خطأ أثناء تعطيل المستخدم');
       }
     } catch {
       toast.error('حدث خطأ غير متوقع');
