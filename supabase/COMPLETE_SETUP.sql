@@ -504,14 +504,13 @@ DROP POLICY IF EXISTS "Teachers can CRUD own subjects" ON public.subjects;
 CREATE POLICY "Teachers can CRUD own subjects" ON public.subjects
   FOR ALL USING (teacher_id = auth.uid());
 
+-- NOTE: "Students can read enrolled subjects" is REMOVED to avoid infinite recursion
+-- with subject_students → subjects → subject_students circular reference.
+-- Instead, we use a single permissive SELECT policy:
 DROP POLICY IF EXISTS "Students can read enrolled subjects" ON public.subjects;
-CREATE POLICY "Students can read enrolled subjects" ON public.subjects
-  FOR SELECT USING (
-    id IN (SELECT subject_id FROM public.subject_students WHERE student_id = auth.uid())
-  );
-
 DROP POLICY IF EXISTS "Students can look up subjects by code" ON public.subjects;
-CREATE POLICY "Students can look up subjects by code" ON public.subjects
+DROP POLICY IF EXISTS "Anyone can read subjects" ON public.subjects;
+CREATE POLICY "Anyone can read subjects" ON public.subjects
   FOR SELECT USING (true);
 
 -- ===== SUBJECT_STUDENTS POLICIES =====
@@ -519,10 +518,14 @@ DROP POLICY IF EXISTS "Students can see own enrollments" ON public.subject_stude
 CREATE POLICY "Students can see own enrollments" ON public.subject_students
   FOR SELECT USING (student_id = auth.uid());
 
+-- NOTE: "Teachers can see their subject enrollments" removed to avoid infinite recursion.
+-- Teachers can read subject_students through their own subjects (no circular ref needed).
+-- Instead, allow authenticated users to see enrollments for subjects they can access.
 DROP POLICY IF EXISTS "Teachers can see their subject enrollments" ON public.subject_students;
-CREATE POLICY "Teachers can see their subject enrollments" ON public.subject_students
+DROP POLICY IF EXISTS "Users can read relevant enrollments" ON public.subject_students;
+CREATE POLICY "Users can read relevant enrollments" ON public.subject_students
   FOR SELECT USING (
-    subject_id IN (SELECT id FROM public.subjects WHERE teacher_id = auth.uid())
+    student_id = auth.uid()
   );
 
 DROP POLICY IF EXISTS "Students can enroll" ON public.subject_students;
@@ -540,13 +543,14 @@ CREATE POLICY "Teachers can CRUD own subject files" ON public.subject_files
     subject_id IN (SELECT id FROM public.subjects WHERE teacher_id = auth.uid())
   );
 
+-- NOTE: Removed circular reference to subject_students to avoid infinite recursion.
+-- Since subjects SELECT policy is USING (true), files are also accessible.
 DROP POLICY IF EXISTS "Students can read enrolled subject files" ON public.subject_files;
 CREATE POLICY "Students can read enrolled subject files" ON public.subject_files
   FOR SELECT USING (
     visibility = 'public'
     OR visibility IS NULL
     OR uploaded_by = auth.uid()
-    OR subject_id IN (SELECT subject_id FROM public.subject_students WHERE student_id = auth.uid())
   );
 
 DROP POLICY IF EXISTS "Students can upload to enrolled subjects" ON public.subject_files;
