@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowRight,
@@ -45,6 +45,11 @@ import {
   Copy,
   BarChart3,
   Pencil,
+  Globe,
+  Lock,
+  Share2,
+  Filter,
+  Presentation,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '@/lib/supabase';
@@ -285,6 +290,18 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
   const [lectureNote, setLectureNote] = useState('');
   const [savingLectureNote, setSavingLectureNote] = useState(false);
   const [lectureDetailSearch, setLectureDetailSearch] = useState('');
+
+  // ─── Files tab state ───
+  const [fileTypeFilter, setFileTypeFilter] = useState<string>('all');
+  const [fileSourceFilter, setFileSourceFilter] = useState<'all' | 'teacher' | 'students'>('all');
+  const [previewFile, setPreviewFile] = useState<SubjectFile | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [sharingFile, setSharingFile] = useState<SubjectFile | null>(null);
+  const [shareEmail, setShareEmail] = useState('');
+  const [sharingInProgress, setSharingInProgress] = useState(false);
+  const [togglingVisibilityId, setTogglingVisibilityId] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -319,40 +336,56 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
   }, []);
 
   const fetchStudents = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('subject_students')
-      .select('id, subject_id, student_id, enrolled_at')
-      .eq('subject_id', subjectId);
-
-    if (error) {
-      console.error('Error fetching students:', error);
-      return;
-    }
-
-    if (data && data.length > 0) {
-      const studentIds = data.map((s: { student_id: string }) => s.student_id);
-      const { data: profiles, error: profilesError } = await supabase
-        .from('users')
-        .select('id, name, email')
-        .in('id', studentIds);
-
-      if (profilesError) {
-        console.error('Error fetching student profiles:', profilesError);
-      } else {
-        const enriched = data.map((s: { id: string; subject_id: string; student_id: string; enrolled_at: string }) => {
-          const p = (profiles as { id: string; name: string; email: string }[])?.find((pr) => pr.id === s.student_id);
-          return {
-            ...s,
-            student_name: p?.name || 'طالب',
-            student_email: p?.email || '',
-          } as SubjectStudent;
-        });
-        setStudents(enriched);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setStudents([]);
+        return;
       }
-    } else {
+
+      if (isTeacher) {
+        // Teacher: use API endpoint (service role bypasses RLS) to get full student list
+        const response = await fetch(`/api/subjects/${subjectId}/students`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const result = await response.json();
+        if (result.success && Array.isArray(result.data)) {
+          setStudents(result.data as SubjectStudent[]);
+        } else {
+          setStudents([]);
+        }
+      } else {
+        // Student: just get count, don't need full list
+        const { data, error } = await supabase
+          .from('subject_students')
+          .select('id, subject_id, student_id, enrolled_at')
+          .eq('subject_id', subjectId);
+
+        if (!error && data && data.length > 0) {
+          const studentIds = data.map((s: { student_id: string }) => s.student_id);
+          const { data: profiles } = await supabase
+            .from('users')
+            .select('id, name, email')
+            .in('id', studentIds);
+
+          const enriched = data.map((s: { id: string; subject_id: string; student_id: string; enrolled_at: string }) => {
+            const p = (profiles as { id: string; name: string; email: string }[])?.find((pr) => pr.id === s.student_id);
+            return {
+              ...s,
+              student_name: p?.name || 'طالب',
+              student_email: p?.email || '',
+            } as SubjectStudent;
+          });
+          setStudents(enriched);
+        } else {
+          setStudents([]);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching students:', error);
       setStudents([]);
     }
-  }, [subjectId]);
+  }, [subjectId, isTeacher]);
 
   const fetchFiles = useCallback(async () => {
     if (isTeacher) {
@@ -1553,11 +1586,130 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
   };
 
   // =====================================================
+  // Files Tab: Categorization & Filtering
+  // =====================================================
+  const fileTypeCategories: Record<string, string> = {
+    pdf: 'PDF',
+    image: 'صور',
+    video: 'فيديو',
+    audio: 'صوتيات',
+    document: 'مستندات',
+    spreadsheet: 'جداول',
+    presentation: 'عروض',
+    other: 'أخرى',
+  };
+
+  const availableCategories = useMemo(() => {
+    const cats = new Set<string>();
+    files.forEach(f => {
+      if (f.file_type) cats.add(f.file_type);
+    });
+    return Array.from(cats).sort();
+  }, [files]);
+
+  const filteredFiles = useMemo(() => {
+    let result = files;
+
+    // Filter by source (teacher vs students)
+    if (fileSourceFilter === 'teacher') {
+      result = result.filter(f => f.uploaded_by === subject?.teacher_id);
+    } else if (fileSourceFilter === 'students') {
+      result = result.filter(f => f.uploaded_by !== subject?.teacher_id);
+    }
+
+    // Filter by file type
+    if (fileTypeFilter !== 'all') {
+      result = result.filter(f => f.file_type === fileTypeFilter);
+    }
+
+    return result;
+  }, [files, fileTypeFilter, fileSourceFilter, subject?.teacher_id]);
+
+  // ─── Toggle file visibility (public/private) ───
+  const handleToggleVisibility = async (file: SubjectFile) => {
+    const newVisibility = file.visibility === 'public' ? 'private' : 'public';
+    setTogglingVisibilityId(file.id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error('يرجى تسجيل الدخول أولاً');
+        return;
+      }
+      const response = await fetch(`/api/subjects/${subjectId}/files/visibility`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ fileId: file.id, visibility: newVisibility }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        toast.error(result.error || 'حدث خطأ أثناء تغيير رؤية الملف');
+      } else {
+        toast.success(newVisibility === 'public' ? 'تم جعل الملف عاماً' : 'تم جعل الملف خاصاً');
+        fetchFiles();
+      }
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setTogglingVisibilityId(null);
+    }
+  };
+
+  // ─── Share file with user by email ───
+  const handleShareFile = async () => {
+    if (!sharingFile || !shareEmail.trim()) return;
+    setSharingInProgress(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error('يرجى تسجيل الدخول أولاً');
+        return;
+      }
+      const response = await fetch(`/api/subjects/${subjectId}/files/share`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ fileId: sharingFile.id, email: shareEmail.trim() }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        toast.error(result.error || 'حدث خطأ أثناء مشاركة الملف');
+      } else {
+        toast.success(`تمت مشاركة الملف مع ${result.sharedWith || shareEmail}`);
+        setShareEmail('');
+        setShareDialogOpen(false);
+        setSharingFile(null);
+      }
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setSharingInProgress(false);
+    }
+  };
+
+  // ─── Open share dialog ───
+  const handleOpenShareDialog = (file: SubjectFile) => {
+    setSharingFile(file);
+    setShareEmail('');
+    setShareDialogOpen(true);
+  };
+
+  // ─── Open preview dialog ───
+  const handleOpenPreview = (file: SubjectFile) => {
+    setPreviewFile(file);
+    setPreviewOpen(true);
+  };
+
+  // =====================================================
   // Render: Files Tab
   // =====================================================
   const renderFiles = () => (
     <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
-      {/* Header */}
+      {/* Header with upload button */}
       <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h3 className="text-xl font-bold text-foreground">ملفات المادة</h3>
@@ -1586,6 +1738,60 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
         </div>
       </motion.div>
 
+      {/* Source filter: All / Course Files / Student Files */}
+      <motion.div variants={itemVariants} className="flex items-center gap-2 flex-wrap">
+        <Filter className="h-4 w-4 text-muted-foreground" />
+        <Button
+          variant={fileSourceFilter === 'all' ? 'default' : 'outline'}
+          size="sm"
+          className={`text-xs h-8 ${fileSourceFilter === 'all' ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`}
+          onClick={() => setFileSourceFilter('all')}
+        >
+          الكل
+        </Button>
+        <Button
+          variant={fileSourceFilter === 'teacher' ? 'default' : 'outline'}
+          size="sm"
+          className={`text-xs h-8 ${fileSourceFilter === 'teacher' ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`}
+          onClick={() => setFileSourceFilter('teacher')}
+        >
+          ملفات المقرر
+        </Button>
+        <Button
+          variant={fileSourceFilter === 'students' ? 'default' : 'outline'}
+          size="sm"
+          className={`text-xs h-8 ${fileSourceFilter === 'students' ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`}
+          onClick={() => setFileSourceFilter('students')}
+        >
+          ملفات الطلاب
+        </Button>
+      </motion.div>
+
+      {/* File type sub-tabs */}
+      {files.length > 0 && (
+        <motion.div variants={itemVariants} className="flex items-center gap-2 flex-wrap border-b pb-3">
+          <Button
+            variant={fileTypeFilter === 'all' ? 'secondary' : 'ghost'}
+            size="sm"
+            className={`text-xs h-7 rounded-full ${fileTypeFilter === 'all' ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : ''}`}
+            onClick={() => setFileTypeFilter('all')}
+          >
+            الكل
+          </Button>
+          {availableCategories.map(cat => (
+            <Button
+              key={cat}
+              variant={fileTypeFilter === cat ? 'secondary' : 'ghost'}
+              size="sm"
+              className={`text-xs h-7 rounded-full ${fileTypeFilter === cat ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : ''}`}
+              onClick={() => setFileTypeFilter(cat)}
+            >
+              {fileTypeCategories[cat] || cat}
+            </Button>
+          ))}
+        </motion.div>
+      )}
+
       {/* Files grid */}
       {files.length === 0 ? (
         renderEmpty(
@@ -1593,9 +1799,15 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
           'لا توجد ملفات',
           'لم يتم رفع أي ملفات بعد'
         )
+      ) : filteredFiles.length === 0 ? (
+        renderEmpty(
+          <FolderOpen className="h-8 w-8 text-emerald-600" />,
+          'لا توجد ملفات مطابقة',
+          'جرّب تغيير الفلتر لعرض الملفات'
+        )
       ) : (
         <motion.div variants={containerVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {files.map((file) => (
+          {filteredFiles.map((file) => (
             <motion.div key={file.id} variants={itemVariants} {...cardHover}>
               <Card className="group shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="p-4">
@@ -1604,44 +1816,109 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
                       {getFileIcon(file.file_type)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium text-foreground text-sm truncate" title={file.file_name}>
-                        {file.file_name}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-foreground text-sm truncate" title={file.file_name}>
+                          {file.file_name}
+                        </p>
+                        {/* Visibility badge */}
+                        {file.visibility === 'private' ? (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 border-amber-300 text-amber-700 bg-amber-50 shrink-0 gap-0.5">
+                            <Lock className="h-2.5 w-2.5" />
+                            خاص
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 border-emerald-300 text-emerald-700 bg-emerald-50 shrink-0 gap-0.5">
+                            <Globe className="h-2.5 w-2.5" />
+                            عام
+                          </Badge>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2 mt-1.5">
                         <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                          {file.file_type?.split('/').pop() || 'ملف'}
+                          {fileTypeCategories[file.file_type || ''] || file.file_type || 'ملف'}
                         </Badge>
                         <span className="text-xs text-muted-foreground">{formatFileSize(file.file_size)}</span>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1.5">{formatDate(file.created_at)}</p>
+                      {/* Uploader info */}
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {file.uploaded_by === subject?.teacher_id ? 'ملف المقرر' : 'ملف طالب'} • {formatDate(file.created_at)}
+                      </p>
                     </div>
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center gap-2 mt-3 pt-3 border-t">
+                  <div className="flex items-center gap-1 mt-3 pt-3 border-t flex-wrap">
+                    {/* Preview */}
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="gap-1.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 text-xs h-8"
+                      className="gap-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 text-xs h-8 px-2"
+                      onClick={() => handleOpenPreview(file)}
+                      title="معاينة"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">معاينة</span>
+                    </Button>
+                    {/* Download */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 text-xs h-8 px-2"
                       onClick={() => handleFileDownload(file)}
+                      title="تحميل"
                     >
                       <Download className="h-3.5 w-3.5" />
-                      تحميل
+                      <span className="hidden sm:inline">تحميل</span>
                     </Button>
+                    {/* Share (teachers only) */}
+                    {isTeacher && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1 text-teal-600 hover:text-teal-700 hover:bg-teal-50 text-xs h-8 px-2"
+                        onClick={() => handleOpenShareDialog(file)}
+                        title="مشاركة"
+                      >
+                        <Share2 className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">مشاركة</span>
+                      </Button>
+                    )}
+                    {/* Visibility toggle (teachers on their own files) */}
+                    {isTeacher && file.uploaded_by === subject?.teacher_id && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={`gap-1 text-xs h-8 px-2 ${file.visibility === 'public' ? 'text-amber-600 hover:text-amber-700 hover:bg-amber-50' : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50'}`}
+                        onClick={() => handleToggleVisibility(file)}
+                        disabled={togglingVisibilityId === file.id}
+                        title={file.visibility === 'public' ? 'جعل الملف خاصاً' : 'جعل الملف عاماً'}
+                      >
+                        {togglingVisibilityId === file.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : file.visibility === 'public' ? (
+                          <Lock className="h-3.5 w-3.5" />
+                        ) : (
+                          <Globe className="h-3.5 w-3.5" />
+                        )}
+                        <span className="hidden sm:inline">{file.visibility === 'public' ? 'خاص' : 'عام'}</span>
+                      </Button>
+                    )}
+                    {/* Delete */}
                     {(isTeacher || file.uploaded_by === profile.id) && (
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="gap-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 text-xs h-8 mr-auto"
+                        className="gap-1 text-rose-600 hover:text-rose-700 hover:bg-rose-50 text-xs h-8 px-2 mr-auto"
                         onClick={() => handleFileDelete(file.id)}
                         disabled={deletingFileId === file.id}
+                        title="حذف"
                       >
                         {deletingFileId === file.id ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
                           <Trash2 className="h-3.5 w-3.5" />
                         )}
-                        حذف
+                        <span className="hidden sm:inline">حذف</span>
                       </Button>
                     )}
                   </div>
@@ -1651,6 +1928,144 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
           ))}
         </motion.div>
       )}
+
+      {/* Preview Dialog */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {previewFile && getFileIcon(previewFile.file_type)}
+              {previewFile?.file_name || 'معاينة الملف'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="overflow-auto max-h-[65vh]">
+            {previewFile && (
+              <>
+                {/* Image preview */}
+                {(previewFile.file_type === 'image' || (previewFile.file_url && /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(previewFile.file_url))) && (
+                  <div className="flex items-center justify-center p-4">
+                    <img
+                      src={previewFile.file_url}
+                      alt={previewFile.file_name}
+                      className="max-w-full max-h-[60vh] object-contain rounded-lg"
+                    />
+                  </div>
+                )}
+                {/* PDF preview */}
+                {previewFile.file_type === 'pdf' && (
+                  <iframe
+                    src={previewFile.file_url}
+                    className="w-full h-[60vh] rounded-lg border"
+                    title={previewFile.file_name}
+                  />
+                )}
+                {/* Other files: show metadata */}
+                {previewFile.file_type !== 'image' && previewFile.file_type !== 'pdf' && !(previewFile.file_url && /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(previewFile.file_url)) && (
+                  <div className="space-y-4 p-4">
+                    <div className="flex items-center justify-center p-8 bg-muted/50 rounded-xl">
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+                          {getFileIcon(previewFile.file_type)}
+                        </div>
+                        <p className="text-sm text-muted-foreground">لا يمكن معاينة هذا الملف مباشرة</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="bg-muted/30 rounded-lg p-3">
+                        <p className="text-muted-foreground text-xs mb-1">اسم الملف</p>
+                        <p className="font-medium truncate" title={previewFile.file_name}>{previewFile.file_name}</p>
+                      </div>
+                      <div className="bg-muted/30 rounded-lg p-3">
+                        <p className="text-muted-foreground text-xs mb-1">النوع</p>
+                        <p className="font-medium">{fileTypeCategories[previewFile.file_type || ''] || previewFile.file_type || 'غير معروف'}</p>
+                      </div>
+                      <div className="bg-muted/30 rounded-lg p-3">
+                        <p className="text-muted-foreground text-xs mb-1">الحجم</p>
+                        <p className="font-medium">{formatFileSize(previewFile.file_size)}</p>
+                      </div>
+                      <div className="bg-muted/30 rounded-lg p-3">
+                        <p className="text-muted-foreground text-xs mb-1">تاريخ الرفع</p>
+                        <p className="font-medium">{formatDate(previewFile.created_at)}</p>
+                      </div>
+                      <div className="bg-muted/30 rounded-lg p-3">
+                        <p className="text-muted-foreground text-xs mb-1">الرؤية</p>
+                        <p className="font-medium">{previewFile.visibility === 'private' ? 'خاص' : 'عام'}</p>
+                      </div>
+                    </div>
+                    <Button
+                      className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700"
+                      onClick={() => handleFileDownload(previewFile)}
+                    >
+                      <Download className="h-4 w-4" />
+                      تحميل الملف
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Share Dialog */}
+      <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+        <DialogContent className="max-w-md" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Share2 className="h-5 w-5 text-teal-600" />
+              مشاركة ملف
+            </DialogTitle>
+          </DialogHeader>
+          {sharingFile && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-100">
+                  {getFileIcon(sharingFile.file_type)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm truncate" title={sharingFile.file_name}>
+                    {sharingFile.file_name}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{formatFileSize(sharingFile.file_size)}</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">البريد الإلكتروني للمستخدم</label>
+                <Input
+                  type="email"
+                  placeholder="أدخل البريد الإلكتروني..."
+                  value={shareEmail}
+                  onChange={(e) => setShareEmail(e.target.value)}
+                  dir="ltr"
+                  className="text-left"
+                />
+                <p className="text-xs text-muted-foreground">سيتم إرسال إشعار للمستخدم بمشاركة الملف معه</p>
+              </div>
+              <DialogFooter className="gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setShareDialogOpen(false)}
+                  disabled={sharingInProgress}
+                >
+                  إلغاء
+                </Button>
+                <Button
+                  className="gap-2 bg-teal-600 hover:bg-teal-700"
+                  onClick={handleShareFile}
+                  disabled={sharingInProgress || !shareEmail.trim()}
+                >
+                  {sharingInProgress ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Share2 className="h-4 w-4" />
+                  )}
+                  مشاركة
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 

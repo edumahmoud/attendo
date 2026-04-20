@@ -470,38 +470,21 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
     }
     setActionLoading(user.id);
     try {
-      // Delete user's related data first
-      await supabase.from('scores').delete().eq('student_id', user.id);
-      await supabase.from('scores').delete().eq('teacher_id', user.id);
-      await supabase.from('teacher_student_links').delete().eq('student_id', user.id);
-      await supabase.from('teacher_student_links').delete().eq('teacher_id', user.id);
-      await supabase.from('subject_students').delete().eq('student_id', user.id);
-      await supabase.from('notifications').delete().eq('user_id', user.id);
-      await supabase.from('quizzes').delete().eq('user_id', user.id);
-      await supabase.from('summaries').delete().eq('user_id', user.id);
-
-      // Delete auth user via API to prevent re-creation on login
-      const deleteResponse = await fetch('/api/admin/delete-user', {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/admin/action', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ action: 'delete_user', userId: user.id }),
       });
-      const deleteData = await deleteResponse.json();
-
-      if (!deleteData.success) {
-        toast.error(deleteData.error || 'فشل في حذف حساب المصادقة');
-        return;
-      }
-
-      const { error } = await supabase.from('users').delete().eq('id', user.id);
-
-      if (error) {
-        toast.error('حدث خطأ أثناء حذف بيانات المستخدم');
-      } else {
+      const result = await response.json();
+      if (result.success) {
         toast.success(`تم حذف المستخدم ${user.name} بنجاح`);
-        fetchUsers();
-        fetchQuizzes();
-        fetchScores();
+        fetchAllData();
+      } else {
+        toast.error(result.error || 'حدث خطأ أثناء حذف المستخدم');
       }
     } catch {
       toast.error('حدث خطأ غير متوقع');
@@ -549,17 +532,21 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
   const handleDeleteSubject = async (subject: Subject) => {
     setActionLoading(subject.id);
     try {
-      await supabase.from('subject_students').delete().eq('subject_id', subject.id);
-      await supabase.from('subject_files').delete().eq('subject_id', subject.id);
-      await supabase.from('subject_notes').delete().eq('subject_id', subject.id);
-
-      const { error } = await supabase.from('subjects').delete().eq('id', subject.id);
-
-      if (error) {
-        toast.error('حدث خطأ أثناء حذف المادة');
-      } else {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/admin/action', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ action: 'delete_subject', subjectId: subject.id }),
+      });
+      const result = await response.json();
+      if (result.success) {
         toast.success(`تم حذف المادة "${subject.name}" بنجاح`);
-        fetchSubjects();
+        fetchAllData();
+      } else {
+        toast.error(result.error || 'حدث خطأ أثناء حذف المادة');
       }
     } catch {
       toast.error('حدث خطأ غير متوقع');
@@ -575,15 +562,21 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
   const handleDeleteQuiz = async (quiz: Quiz) => {
     setActionLoading(quiz.id);
     try {
-      await supabase.from('scores').delete().eq('quiz_id', quiz.id);
-      const { error } = await supabase.from('quizzes').delete().eq('id', quiz.id);
-
-      if (error) {
-        toast.error('حدث خطأ أثناء حذف الاختبار');
-      } else {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/admin/action', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ action: 'delete_quiz', quizId: quiz.id }),
+      });
+      const result = await response.json();
+      if (result.success) {
         toast.success(`تم حذف الاختبار "${quiz.title}" بنجاح`);
-        fetchQuizzes();
-        fetchScores();
+        fetchAllData();
+      } else {
+        toast.error(result.error || 'حدث خطأ أثناء حذف الاختبار');
       }
     } catch {
       toast.error('حدث خطأ غير متوقع');
@@ -597,24 +590,22 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
     setViewingQuizResults(quiz);
     setLoadingResults(true);
     try {
-      const { data: quizScores, error } = await supabase
-        .from('scores')
-        .select('*')
-        .eq('quiz_id', quiz.id)
-        .order('completed_at', { ascending: false });
-      if (!error && quizScores) {
-        setQuizResultsScores(quizScores as Score[]);
-        const studentIds = [...new Set((quizScores as Score[]).map(s => s.student_id))];
-        if (studentIds.length > 0) {
-          const { data: studentProfiles } = await supabase
-            .from('users')
-            .select('*')
-            .in('id', studentIds);
-          if (studentProfiles) {
-            const map: Record<string, UserProfile> = {};
-            (studentProfiles as UserProfile[]).forEach(p => { map[p.id] = p; });
-            setQuizResultsStudents(map);
-          }
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/admin/action', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ action: 'view_quiz_results', quizId: quiz.id }),
+      });
+      const result = await response.json();
+      if (result.scores) {
+        setQuizResultsScores(result.scores as Score[]);
+        if (result.students) {
+          const map: Record<string, UserProfile> = {};
+          (result.students as UserProfile[]).forEach((p: UserProfile) => { map[p.id] = p; });
+          setQuizResultsStudents(map);
         } else {
           setQuizResultsStudents({});
         }
