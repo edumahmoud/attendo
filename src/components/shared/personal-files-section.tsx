@@ -27,6 +27,12 @@ import {
   StickyNote,
   BookOpen,
   CheckCircle2,
+  Video,
+  Music,
+  MonitorPlay,
+  FileVideo,
+  Headphones,
+  Presentation,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
@@ -117,6 +123,18 @@ interface UserLookupResult {
 }
 
 // =====================================================
+// File type category constants
+// =====================================================
+const FILE_CATEGORY_ALL = 'الكل';
+const FILE_CATEGORY_DOCUMENTS = 'مستندات';
+const FILE_CATEGORY_IMAGES = 'صور';
+const FILE_CATEGORY_VIDEOS = 'فيديو';
+const FILE_CATEGORY_AUDIO = 'صوتيات';
+const FILE_CATEGORY_SPREADSHEETS = 'جداول';
+const FILE_CATEGORY_PRESENTATIONS = 'عروض';
+const FILE_CATEGORY_OTHER = 'أخرى';
+
+// =====================================================
 // Animation variants
 // =====================================================
 const containerVariants = {
@@ -132,6 +150,72 @@ const itemVariants = {
 // =====================================================
 // Helpers
 // =====================================================
+
+/** Detect file type category from MIME type and/or file name */
+function getFileTypeCategory(fileType?: string | null, fileName?: string): string {
+  const ext = fileName ? fileName.split('.').pop()?.toLowerCase() : '';
+
+  // Check by MIME type first
+  if (fileType) {
+    const t = fileType.toLowerCase();
+    if (t.includes('pdf')) return FILE_CATEGORY_DOCUMENTS;
+    if (t.includes('image') || t.includes('png') || t.includes('jpg') || t.includes('jpeg') || t.includes('gif') || t.includes('webp') || t.includes('svg') || t.includes('bmp'))
+      return FILE_CATEGORY_IMAGES;
+    if (t.includes('video') || t.includes('mp4') || t.includes('webm') || t.includes('mov') || t.includes('avi'))
+      return FILE_CATEGORY_VIDEOS;
+    if (t.includes('audio') || t.includes('mp3') || t.includes('wav') || t.includes('ogg') || t.includes('m4a') || t.includes('flac'))
+      return FILE_CATEGORY_AUDIO;
+    if (t.includes('sheet') || t.includes('excel') || t.includes('csv') || t.includes('spreadsheet'))
+      return FILE_CATEGORY_SPREADSHEETS;
+    if (t.includes('presentation') || t.includes('powerpoint') || t.includes('ppt'))
+      return FILE_CATEGORY_PRESENTATIONS;
+    if (t.includes('word') || t.includes('doc') || t.includes('text/plain') || t.includes('rtf'))
+      return FILE_CATEGORY_DOCUMENTS;
+  }
+
+  // Fall back to file extension
+  if (ext) {
+    const docExts = ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt', 'pages'];
+    const imgExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tiff', 'tif', 'avif'];
+    const vidExts = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv', 'm4v', '3gp'];
+    const audExts = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'wma', 'opus'];
+    const sheetExts = ['xls', 'xlsx', 'csv', 'ods', 'numbers'];
+    const presExts = ['ppt', 'pptx', 'odp', 'key'];
+
+    if (docExts.includes(ext)) return FILE_CATEGORY_DOCUMENTS;
+    if (imgExts.includes(ext)) return FILE_CATEGORY_IMAGES;
+    if (vidExts.includes(ext)) return FILE_CATEGORY_VIDEOS;
+    if (audExts.includes(ext)) return FILE_CATEGORY_AUDIO;
+    if (sheetExts.includes(ext)) return FILE_CATEGORY_SPREADSHEETS;
+    if (presExts.includes(ext)) return FILE_CATEGORY_PRESENTATIONS;
+  }
+
+  return FILE_CATEGORY_OTHER;
+}
+
+/** Get tab icon for a file type category */
+function getCategoryIcon(category: string, size: 'sm' | 'lg' = 'sm'): React.ReactNode {
+  const sz = size === 'lg' ? 'h-7 w-7' : 'h-4 w-4';
+  switch (category) {
+    case FILE_CATEGORY_ALL:
+      return <FolderOpen className={`${sz} text-emerald-600`} />;
+    case FILE_CATEGORY_DOCUMENTS:
+      return <FileText className={`${sz} text-rose-500`} />;
+    case FILE_CATEGORY_IMAGES:
+      return <ImageIcon className={`${sz} text-purple-500`} />;
+    case FILE_CATEGORY_VIDEOS:
+      return <Video className={`${sz} text-sky-500`} />;
+    case FILE_CATEGORY_AUDIO:
+      return <Headphones className={`${sz} text-orange-500`} />;
+    case FILE_CATEGORY_SPREADSHEETS:
+      return <FileSpreadsheet className={`${sz} text-emerald-500`} />;
+    case FILE_CATEGORY_PRESENTATIONS:
+      return <Presentation className={`${sz} text-amber-600`} />;
+    case FILE_CATEGORY_OTHER:
+    default:
+      return <File className={`${sz} text-muted-foreground`} />;
+  }
+}
 
 /** Format a date string into Arabic locale with date and time */
 function formatArabicDate(dateStr: string): string {
@@ -182,8 +266,14 @@ function getFileIcon(type?: string | null, size: 'sm' | 'lg' = 'sm'): React.Reac
   if (t.includes('pdf')) return <FileText className={`${sz} text-rose-500`} />;
   if (t.includes('image') || t.includes('png') || t.includes('jpg') || t.includes('jpeg'))
     return <ImageIcon className={`${sz} text-purple-500`} />;
+  if (t.includes('video') || t.includes('mp4') || t.includes('webm') || t.includes('mov'))
+    return <FileVideo className={`${sz} text-sky-500`} />;
+  if (t.includes('audio') || t.includes('mp3') || t.includes('wav') || t.includes('ogg'))
+    return <Music className={`${sz} text-orange-500`} />;
   if (t.includes('sheet') || t.includes('excel') || t.includes('csv'))
     return <FileSpreadsheet className={`${sz} text-emerald-500`} />;
+  if (t.includes('presentation') || t.includes('powerpoint') || t.includes('ppt'))
+    return <MonitorPlay className={`${sz} text-amber-600`} />;
   if (t.includes('word') || t.includes('doc'))
     return <FilePlus className={`${sz} text-blue-500`} />;
   return <File className={`${sz} text-muted-foreground`} />;
@@ -196,8 +286,14 @@ function getFileIconBg(type?: string | null): string {
   if (t.includes('pdf')) return 'bg-rose-50 border-rose-200';
   if (t.includes('image') || t.includes('png') || t.includes('jpg') || t.includes('jpeg'))
     return 'bg-purple-50 border-purple-200';
+  if (t.includes('video') || t.includes('mp4') || t.includes('webm') || t.includes('mov'))
+    return 'bg-sky-50 border-sky-200';
+  if (t.includes('audio') || t.includes('mp3') || t.includes('wav') || t.includes('ogg'))
+    return 'bg-orange-50 border-orange-200';
   if (t.includes('sheet') || t.includes('excel') || t.includes('csv'))
     return 'bg-emerald-50 border-emerald-200';
+  if (t.includes('presentation') || t.includes('powerpoint') || t.includes('ppt'))
+    return 'bg-amber-50 border-amber-200';
   if (t.includes('word') || t.includes('doc'))
     return 'bg-blue-50 border-blue-200';
   return 'bg-slate-50 border-slate-200';
@@ -270,7 +366,7 @@ function matchesDateKeyword(dateStr: string, keyword: string): boolean {
 // =====================================================
 export default function PersonalFilesSection({ profile }: PersonalFilesSectionProps) {
   // ─── Active tab state ───
-  const [activeTab, setActiveTab] = useState<string>('__general__');
+  const [activeTab, setActiveTab] = useState<string>(FILE_CATEGORY_ALL);
 
   // ─── Data state ───
   const [allUserFiles, setAllUserFiles] = useState<UserFile[]>([]);
@@ -505,43 +601,61 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
     return items;
   }, [allUserFiles, subjectFilesMap, sharedFiles, profile.id, profile.role]);
 
-  // ─── Compute file counts per tab ───
-  const tabFileCounts = useMemo(() => {
+  // ─── Compute file type category counts ───
+  const categoryFileCounts = useMemo(() => {
     const counts: Record<string, number> = {};
+    counts[FILE_CATEGORY_ALL] = unifiedFiles.length;
 
-    // General tab: files NOT linked to any subject + shared files
-    counts['__general__'] = unifiedFiles.filter(
-      (f) => (!f.subject_id || f.source === 'shared') && f.source !== 'subject_file'
-    ).length;
+    const allCategories = [
+      FILE_CATEGORY_DOCUMENTS,
+      FILE_CATEGORY_IMAGES,
+      FILE_CATEGORY_VIDEOS,
+      FILE_CATEGORY_AUDIO,
+      FILE_CATEGORY_SPREADSHEETS,
+      FILE_CATEGORY_PRESENTATIONS,
+      FILE_CATEGORY_OTHER,
+    ];
 
-    // Subject tabs
-    subjects.forEach((subject) => {
-      counts[subject.id] = unifiedFiles.filter(
-        (f) => f.subject_id === subject.id || f.subjectFileSubjectId === subject.id
-      ).length;
+    allCategories.forEach((cat) => {
+      counts[cat] = 0;
+    });
+
+    unifiedFiles.forEach((f) => {
+      const cat = getFileTypeCategory(f.file_type, f.file_name);
+      counts[cat] = (counts[cat] || 0) + 1;
     });
 
     return counts;
-  }, [unifiedFiles, subjects]);
+  }, [unifiedFiles]);
+
+  // ─── Compute which tabs to show (only those with files, plus "الكل") ───
+  const visibleTabs = useMemo(() => {
+    const tabs = [FILE_CATEGORY_ALL];
+    const allCategories = [
+      FILE_CATEGORY_DOCUMENTS,
+      FILE_CATEGORY_IMAGES,
+      FILE_CATEGORY_VIDEOS,
+      FILE_CATEGORY_AUDIO,
+      FILE_CATEGORY_SPREADSHEETS,
+      FILE_CATEGORY_PRESENTATIONS,
+      FILE_CATEGORY_OTHER,
+    ];
+    allCategories.forEach((cat) => {
+      if ((categoryFileCounts[cat] || 0) > 0) {
+        tabs.push(cat);
+      }
+    });
+    return tabs;
+  }, [categoryFileCounts]);
 
   // ─── Filtered files for current tab ───
   const filteredFiles = useMemo(() => {
     let files = unifiedFiles;
 
-    // Filter by tab (subject)
-    if (activeTab === '__general__') {
-      // General tab: files NOT linked to any subject + shared files
+    // Filter by file type category tab
+    if (activeTab !== FILE_CATEGORY_ALL) {
       files = files.filter(
-        (f) =>
-          (!f.subject_id || f.source === 'shared') &&
-          f.source !== 'subject_file'
-      );
-    } else {
-      // Subject tab: user_files with that subject_id + subject_files for that subject
-      files = files.filter(
-        (f) =>
-          f.subject_id === activeTab ||
-          f.subjectFileSubjectId === activeTab
+        (f) => getFileTypeCategory(f.file_type, f.file_name) === activeTab
       );
     }
 
@@ -998,19 +1112,22 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
   // Render: Skeleton Loader
   // =====================================================
   const renderSkeletons = () => (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="space-y-3">
       {[1, 2, 3, 4, 5, 6].map((i) => (
         <Card key={i} className="rounded-xl shadow-sm">
-          <CardContent className="p-5 space-y-3">
+          <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <Skeleton className="h-11 w-11 rounded-xl" />
+              <Skeleton className="h-10 w-10 rounded-lg shrink-0" />
               <div className="flex-1 space-y-2">
-                <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="h-3 w-1/3" />
+                <Skeleton className="h-4 w-3/5" />
+                <Skeleton className="h-3 w-2/5" />
+              </div>
+              <div className="hidden sm:flex gap-1">
+                <Skeleton className="h-8 w-8 rounded-md" />
+                <Skeleton className="h-8 w-8 rounded-md" />
+                <Skeleton className="h-8 w-8 rounded-md" />
               </div>
             </div>
-            <Skeleton className="h-3 w-full" />
-            <Skeleton className="h-3 w-1/2" />
           </CardContent>
         </Card>
       ))}
@@ -1033,7 +1150,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
   );
 
   // =====================================================
-  // Render: File Card (Redesigned Vertical Layout)
+  // Render: File Card (Compact Horizontal List-style)
   // =====================================================
   const renderFileCard = (file: UnifiedFileItem) => {
     const isDeleting = deletingFileId === file.id;
@@ -1041,19 +1158,19 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
 
     return (
       <motion.div variants={itemVariants} layout>
-        <Card className="rounded-xl shadow-sm hover:shadow-lg transition-all duration-200 group border border-border/60 overflow-hidden">
-          <CardContent className="p-5">
-            {/* ── Top Row: Icon + Name + Visibility Badge ── */}
-            <div className="flex items-start gap-3 mb-3">
-              {/* File type icon (large, colored, with background) */}
-              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${getFileIconBg(file.file_type)}`}>
-                {getFileIcon(file.file_type, 'lg')}
+        <Card className="rounded-xl shadow-sm hover:shadow-md transition-all duration-200 group border border-border/60 overflow-hidden">
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-3">
+              {/* ── Left: File type icon ── */}
+              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${getFileIconBg(file.file_type)}`}>
+                {getFileIcon(file.file_type, 'sm')}
               </div>
 
-              {/* File name + visibility badge */}
+              {/* ── Middle: File info ── */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h4 className="text-sm font-semibold text-foreground truncate max-w-[180px] sm:max-w-[220px]" title={file.file_name}>
+                {/* File name row */}
+                <div className="flex items-center gap-2 mb-0.5">
+                  <h4 className="text-sm font-semibold text-foreground line-clamp-1 flex-1 min-w-0" title={file.file_name}>
                     {file.file_name}
                   </h4>
                   {/* Visibility badge */}
@@ -1074,111 +1191,159 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                     </Badge>
                   )}
                 </div>
-              </div>
-            </div>
 
-            {/* ── Subject badge (if applicable) ── */}
-            {file.subject_id && subjectNameMap[file.subject_id] && (
-              <div className="mb-2">
-                <Badge variant="secondary" className="text-[10px] px-2 py-0.5 bg-teal-100 text-teal-700 border-0">
-                  <BookOpen className="h-2.5 w-2.5 ml-1" />
-                  {subjectNameMap[file.subject_id]}
-                </Badge>
-              </div>
-            )}
-            {/* Source badge for subject files when not in that subject's tab */}
-            {file.source === 'subject_file' && activeTab === '__general__' && file.subjectFileSubjectId && subjectNameMap[file.subjectFileSubjectId] && (
-              <div className="mb-2">
-                <Badge variant="secondary" className="text-[10px] px-2 py-0.5 bg-teal-100 text-teal-700 border-0">
-                  <BookOpen className="h-2.5 w-2.5 ml-1" />
-                  مقرر: {subjectNameMap[file.subjectFileSubjectId]}
-                </Badge>
-              </div>
-            )}
-
-            {/* ── Shared-by info (if shared file) ── */}
-            {file.source === 'shared' && file.shared_by_name && (
-              <div className="flex items-center gap-1.5 mb-2">
-                <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-100">
-                  <User className="h-2.5 w-2.5 text-blue-600" />
+                {/* Metadata row: size • date • subject badge */}
+                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
+                  <span>{formatFileSize(file.file_size)}</span>
+                  <span className="text-muted-foreground/40">•</span>
+                  <span className="flex items-center gap-0.5">
+                    <Clock className="h-2.5 w-2.5" />
+                    {formatArabicDateShort(file.created_at)}
+                  </span>
+                  {/* Subject badge inline */}
+                  {file.subject_id && subjectNameMap[file.subject_id] && (
+                    <>
+                      <span className="text-muted-foreground/40">•</span>
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-teal-100 text-teal-700 border-0">
+                        <BookOpen className="h-2.5 w-2.5 ml-0.5" />
+                        {subjectNameMap[file.subject_id]}
+                      </Badge>
+                    </>
+                  )}
+                  {file.source === 'subject_file' && file.subjectFileSubjectId && subjectNameMap[file.subjectFileSubjectId] && (
+                    <>
+                      <span className="text-muted-foreground/40">•</span>
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-teal-100 text-teal-700 border-0">
+                        <BookOpen className="h-2.5 w-2.5 ml-0.5" />
+                        {subjectNameMap[file.subjectFileSubjectId]}
+                      </Badge>
+                    </>
+                  )}
+                  {/* Shared by info inline */}
+                  {file.source === 'shared' && file.shared_by_name && (
+                    <>
+                      <span className="text-muted-foreground/40">•</span>
+                      <span className="text-blue-600 font-medium">
+                        شاركه {file.shared_by_name}
+                      </span>
+                    </>
+                  )}
                 </div>
-                <p className="text-xs text-blue-600 font-medium">
-                  شاركه {file.shared_by_name}
-                </p>
               </div>
-            )}
 
-            {/* ── Description (truncated to 2 lines) ── */}
-            {file.description && (
-              <p className="text-xs text-muted-foreground line-clamp-2 mb-2 leading-relaxed">
-                {file.description}
-              </p>
-            )}
+              {/* ── Right: Action buttons (desktop) ── */}
+              <div className="hidden sm:flex items-center gap-0.5 shrink-0">
+                {/* Preview */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-emerald-700 hover:bg-emerald-50"
+                  onClick={() => handlePreview(file)}
+                  title="معاينة"
+                >
+                  <Eye className="h-4 w-4" />
+                </Button>
 
-            {/* ── Notes (truncated to 1 line, with icon) ── */}
-            {file.notes && (
-              <div className="flex items-center gap-1.5 mb-3">
-                <StickyNote className="h-3 w-3 text-teal-500 shrink-0" />
-                <p className="text-xs text-teal-600 line-clamp-1 flex-1 min-w-0">{file.notes}</p>
+                {/* Download */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-teal-700 hover:bg-teal-50"
+                  onClick={() => handleDownload(file.file_url, file.file_name)}
+                  title="تحميل"
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+
+                {/* Share (only own files) */}
+                {file.isOwn && file.source !== 'shared' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-blue-700 hover:bg-blue-50"
+                    onClick={() => handleShareClick(file.id)}
+                    title="مشاركة"
+                  >
+                    <Share2 className="h-4 w-4" />
+                  </Button>
+                )}
+
+                {/* Visibility Toggle */}
+                {file.isOwn && file.source !== 'shared' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 hover:bg-emerald-50"
+                    onClick={() => handleVisibilityToggle(file)}
+                    disabled={isToggling}
+                    title={file.visibility === 'private' ? 'تغيير إلى عام' : 'تغيير إلى خاص'}
+                  >
+                    {isToggling ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
+                    ) : file.visibility === 'private' ? (
+                      <Lock className="h-4 w-4 text-amber-500" />
+                    ) : (
+                      <Globe className="h-4 w-4 text-emerald-500" />
+                    )}
+                  </Button>
+                )}
+
+                {/* Delete (only own files) */}
+                {file.isOwn && file.source !== 'shared' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-600 hover:bg-rose-50"
+                    onClick={() => handleDeleteClick(file)}
+                    disabled={isDeleting}
+                    title="حذف"
+                  >
+                    {isDeleting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                  </Button>
+                )}
               </div>
-            )}
-
-            {/* ── Bottom metadata row: file size • date/time ── */}
-            <div className="flex items-center gap-2 text-[11px] text-muted-foreground mb-4">
-              <span>{formatFileSize(file.file_size)}</span>
-              <span className="text-muted-foreground/40">•</span>
-              <span className="flex items-center gap-1">
-                <Clock className="h-2.5 w-2.5" />
-                {formatArabicDateShort(file.created_at)}
-              </span>
             </div>
 
-            {/* ── Separator ── */}
-            <Separator className="mb-3" />
-
-            {/* ── Action buttons row ── */}
-            <div className="flex items-center gap-1 flex-wrap">
-              {/* Preview */}
+            {/* ── Mobile: Action buttons row ── */}
+            <div className="flex sm:hidden items-center gap-1 mt-2 pt-2 border-t border-border/40">
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 px-2.5 text-xs text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
+                className="h-7 px-2 text-xs text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
                 onClick={() => handlePreview(file)}
               >
                 <Eye className="h-3.5 w-3.5 ml-1" />
                 معاينة
               </Button>
-
-              {/* Download */}
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 px-2.5 text-xs text-teal-700 hover:text-teal-800 hover:bg-teal-50"
+                className="h-7 px-2 text-xs text-teal-700 hover:text-teal-800 hover:bg-teal-50"
                 onClick={() => handleDownload(file.file_url, file.file_name)}
               >
                 <Download className="h-3.5 w-3.5 ml-1" />
                 تحميل
               </Button>
-
-              {/* Share (only own files) */}
               {file.isOwn && file.source !== 'shared' && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 px-2.5 text-xs text-blue-700 hover:text-blue-800 hover:bg-blue-50"
+                  className="h-7 px-2 text-xs text-blue-700 hover:text-blue-800 hover:bg-blue-50"
                   onClick={() => handleShareClick(file.id)}
                 >
                   <Share2 className="h-3.5 w-3.5 ml-1" />
                   مشاركة
                 </Button>
               )}
-
-              {/* Visibility Toggle */}
               {file.isOwn && file.source !== 'shared' && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 px-2.5 text-xs hover:bg-emerald-50"
+                  className="h-7 px-2 text-xs hover:bg-emerald-50"
                   onClick={() => handleVisibilityToggle(file)}
                   disabled={isToggling}
                   title={file.visibility === 'private' ? 'تغيير إلى عام' : 'تغيير إلى خاص'}
@@ -1198,13 +1363,11 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                   )}
                 </Button>
               )}
-
-              {/* Delete (only own files, pushed to the end) */}
               {file.isOwn && file.source !== 'shared' && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 px-2.5 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 mr-auto"
+                  className="h-7 px-2 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 mr-auto"
                   onClick={() => handleDeleteClick(file)}
                   disabled={isDeleting}
                 >
@@ -1213,7 +1376,6 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                   ) : (
                     <Trash2 className="h-3.5 w-3.5 ml-1" />
                   )}
-                  حذف
                 </Button>
               )}
             </div>
@@ -1874,82 +2036,62 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
         )}
       </div>
 
-      {/* ── Subject tabs (horizontally scrollable) ── */}
-      <div className="overflow-x-auto pb-1 -mb-px [&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20">
-        <div className="flex gap-1 min-w-max">
-          {/* General tab */}
-          <button
-            onClick={() => setActiveTab('__general__')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all whitespace-nowrap rounded-t-lg ${
-              activeTab === '__general__'
-                ? 'border-emerald-500 text-emerald-700 bg-emerald-50/50'
-                : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
-            }`}
-          >
-            <FolderOpen className="h-3.5 w-3.5" />
-            <span>عامة</span>
-            <Badge
-              variant="secondary"
-              className={`text-[10px] px-1.5 py-0 h-4 min-w-[20px] flex items-center justify-center border-0 ${
-                activeTab === '__general__'
-                  ? 'bg-emerald-200 text-emerald-800'
-                  : 'bg-muted text-muted-foreground'
-              }`}
-            >
-              {tabFileCounts['__general__'] || 0}
-            </Badge>
-          </button>
+      {/* ── File type tabs (pill buttons, horizontally scrollable) ── */}
+      <div className="overflow-x-auto pb-1 [&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20">
+        <div className="flex gap-2 min-w-max">
+          {visibleTabs.map((tab) => {
+            const isActive = activeTab === tab;
+            const count = categoryFileCounts[tab] || 0;
 
-          {/* Subject tabs */}
-          {subjects.map((subject) => (
-            <button
-              key={subject.id}
-              onClick={() => setActiveTab(subject.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all whitespace-nowrap rounded-t-lg ${
-                activeTab === subject.id
-                  ? 'border-emerald-500 text-emerald-700 bg-emerald-50/50'
-                  : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
-              }`}
-            >
-              <BookOpen className="h-3.5 w-3.5" />
-              <span>{subject.name}</span>
-              <Badge
-                variant="secondary"
-                className={`text-[10px] px-1.5 py-0 h-4 min-w-[20px] flex items-center justify-center border-0 ${
-                  activeTab === subject.id
-                    ? 'bg-emerald-200 text-emerald-800'
-                    : 'bg-muted text-muted-foreground'
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-full transition-all whitespace-nowrap border ${
+                  isActive
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                    : 'bg-background text-muted-foreground border-border hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50/50'
                 }`}
               >
-                {tabFileCounts[subject.id] || 0}
-              </Badge>
-            </button>
-          ))}
+                <span className={isActive ? 'text-white' : ''}>
+                  {getCategoryIcon(tab, 'sm')}
+                </span>
+                <span>{tab}</span>
+                <span className={`text-[10px] px-1.5 py-0 rounded-full min-w-[20px] flex items-center justify-center ${
+                  isActive
+                    ? 'bg-white/20 text-white'
+                    : 'bg-muted text-muted-foreground'
+                }`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* ── File grid ── */}
+      {/* ── File list ── */}
       {loading ? (
         renderSkeletons()
       ) : filteredFiles.length === 0 ? (
         renderEmptyState(
           searchQuery
             ? 'لا توجد نتائج مطابقة للبحث'
-            : activeTab === '__general__'
-              ? 'لا توجد ملفات عامة بعد. ارفع ملفاً جديداً للبدء.'
-              : `لا توجد ملفات في "${subjectNameMap[activeTab] || 'هذا المقرر'}".`,
+            : activeTab === FILE_CATEGORY_ALL
+              ? 'لا توجد ملفات بعد. ارفع ملفاً جديداً للبدء.'
+              : `لا توجد ملفات من نوع "${activeTab}".`,
           searchQuery
             ? <Search className="h-8 w-8 text-muted-foreground" />
-            : activeTab === '__general__'
+            : activeTab === FILE_CATEGORY_ALL
               ? <FolderOpen className="h-8 w-8 text-emerald-500" />
-              : <BookOpen className="h-8 w-8 text-emerald-500" />
+              : getCategoryIcon(activeTab, 'lg')
         )
       ) : (
         <motion.div
           variants={containerVariants}
           initial="hidden"
           animate="visible"
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+          className="space-y-3"
         >
           {filteredFiles.map((file) => renderFileCard(file))}
         </motion.div>
