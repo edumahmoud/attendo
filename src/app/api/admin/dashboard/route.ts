@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch all data in parallel using service role (bypasses RLS)
-    const [usersResult, subjectsResult, quizzesResult, scoresResult, subjectStudentsResult, filesResult] =
+    const [usersResult, subjectsResult, quizzesResult, scoresResult, subjectStudentsResult, subjectFilesResult, userFilesResult] =
       await Promise.all([
         supabaseServer.from('users').select('*').order('created_at', { ascending: false }),
         supabaseServer.from('subjects').select('*').order('created_at', { ascending: false }),
@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
         supabaseServer.from('scores').select('*').order('completed_at', { ascending: false }),
         supabaseServer.from('subject_students').select('subject_id, student_id'),
         supabaseServer.from('subject_files').select('*', { count: 'exact', head: true }),
+        supabaseServer.from('user_files').select('*', { count: 'exact', head: true }),
       ]);
 
     if (usersResult.error) {
@@ -51,8 +52,11 @@ export async function GET(request: NextRequest) {
     if (subjectStudentsResult.error) {
       console.error('Error fetching subject_students:', subjectStudentsResult.error);
     }
-    if (filesResult.error) {
-      console.error('Error fetching files count:', filesResult.error);
+    if (subjectFilesResult.error) {
+      console.error('Error fetching subject_files count:', subjectFilesResult.error);
+    }
+    if (userFilesResult.error) {
+      console.error('Error fetching user_files count:', userFilesResult.error);
     }
 
     const users = usersResult.data || [];
@@ -60,7 +64,7 @@ export async function GET(request: NextRequest) {
     const quizzes = quizzesResult.data || [];
     const scores = scoresResult.data || [];
     const subjectStudents = subjectStudentsResult.data || [];
-    const filesCount = filesResult.count || 0;
+    const filesCount = (subjectFilesResult.count || 0) + (userFilesResult.count || 0);
 
     // Build teacher name map
     const teacherMap = new Map<string, string>();

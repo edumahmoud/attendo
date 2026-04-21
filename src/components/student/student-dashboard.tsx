@@ -187,6 +187,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
 
   // ─── Student files section ───
   const [studentFiles, setStudentFiles] = useState<SubjectFile[]>([]);
+  const [myFilesCount, setMyFilesCount] = useState(0);
   const [enrolledSubjects, setEnrolledSubjects] = useState<Subject[]>([]);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [uploadSubjectId, setUploadSubjectId] = useState<string | null>(null);
@@ -439,6 +440,21 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
     }
   }, [profile.id]);
 
+  // ─── Fetch student's own files count (user_files) ───
+  const fetchMyFilesCount = useCallback(async () => {
+    try {
+      const { count, error } = await supabase
+        .from('user_files')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', profile.id);
+      if (!error && count !== null) {
+        setMyFilesCount(count);
+      }
+    } catch {
+      // silently ignore
+    }
+  }, [profile.id]);
+
   // ─── Handle file upload ───
   const handleFileUpload = async (file: File) => {
     if (!uploadSubjectId) {
@@ -517,10 +533,10 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
   const initialLoadDone = useRef(false);
   const fetchAllData = useCallback(async (showLoading = false) => {
     if (showLoading || !initialLoadDone.current) setLoadingData(true);
-    await Promise.allSettled([fetchSummaries(), fetchQuizzes(), fetchScores(), fetchLinkedTeachers(), fetchSubjectsCount(), fetchStudentFiles()]);
+    await Promise.allSettled([fetchSummaries(), fetchQuizzes(), fetchScores(), fetchLinkedTeachers(), fetchSubjectsCount(), fetchStudentFiles(), fetchMyFilesCount()]);
     setLoadingData(false);
     initialLoadDone.current = true;
-  }, [fetchSummaries, fetchQuizzes, fetchScores, fetchLinkedTeachers, fetchSubjectsCount, fetchStudentFiles]);
+  }, [fetchSummaries, fetchQuizzes, fetchScores, fetchLinkedTeachers, fetchSubjectsCount, fetchStudentFiles, fetchMyFilesCount]);
 
   useEffect(() => {
     fetchAllData(true);
@@ -545,9 +561,9 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
 
   // Full data refresh for polling fallback
   const refreshAllData = useCallback(async () => {
-    await Promise.allSettled([fetchSummaries(), fetchQuizzes(), fetchScores(), fetchLinkedTeachers(), fetchSubjectsCount(), fetchStudentFiles()]);
+    await Promise.allSettled([fetchSummaries(), fetchQuizzes(), fetchScores(), fetchLinkedTeachers(), fetchSubjectsCount(), fetchStudentFiles(), fetchMyFilesCount()]);
     markUpdated();
-  }, [fetchSummaries, fetchQuizzes, fetchScores, fetchLinkedTeachers, fetchSubjectsCount, fetchStudentFiles, markUpdated]);
+  }, [fetchSummaries, fetchQuizzes, fetchScores, fetchLinkedTeachers, fetchSubjectsCount, fetchStudentFiles, fetchMyFilesCount, markUpdated]);
 
   // Auto-refresh every 60 seconds as fallback
   useAutoRefresh(refreshAllData, 60000);
@@ -1045,7 +1061,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
         <StatCard
           icon={<FolderOpen className="h-6 w-6" />}
           label="عدد الملفات"
-          value={studentFiles.length}
+          value={myFilesCount}
           color="rose"
         />
       </motion.div>

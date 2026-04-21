@@ -334,21 +334,31 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
         .order('created_at', { ascending: false });
       if (!error && data) {
         setTeacherSubjects(data as Subject[]);
-
-        // Fetch total files count across all teacher's subjects
-        if (data.length > 0) {
-          const subjectIds = data.map((s: Subject) => s.id);
-          const { count, error: countError } = await supabase
-            .from('subject_files')
-            .select('*', { count: 'exact', head: true })
-            .in('subject_id', subjectIds);
-          if (!countError && count !== null) {
-            setTotalFilesCount(count);
-          }
-        } else {
-          setTotalFilesCount(0);
-        }
       }
+
+      // Fetch total files count: subject_files uploaded by teacher + user_files owned by teacher
+      let subjectFilesCount = 0;
+      let userFilesCount = 0;
+
+      // Count subject files uploaded by this teacher
+      const { count: sfCount, error: sfError } = await supabase
+        .from('subject_files')
+        .select('*', { count: 'exact', head: true })
+        .eq('uploaded_by', profile.id);
+      if (!sfError && sfCount !== null) {
+        subjectFilesCount = sfCount;
+      }
+
+      // Count personal user files
+      const { count: ufCount, error: ufError } = await supabase
+        .from('user_files')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', profile.id);
+      if (!ufError && ufCount !== null) {
+        userFilesCount = ufCount;
+      }
+
+      setTotalFilesCount(subjectFilesCount + userFilesCount);
     } catch {
       // silently ignore
     }
