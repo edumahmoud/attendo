@@ -34,6 +34,7 @@ import {
   Headphones,
   MonitorPlay,
   FileVideo,
+  MoreVertical,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -46,6 +47,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import {
   Dialog,
   DialogContent,
@@ -874,81 +882,55 @@ export default function CourseFilesSection({
                 </div>
               </div>
 
-              {/* Desktop actions */}
-              <div className="hidden sm:flex items-center gap-0.5 shrink-0">
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" onClick={() => { setPreviewFile(file); setPreviewOpen(true); }} title="معاينة">
-                  <Eye className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-teal-600 hover:text-teal-700 hover:bg-teal-50" onClick={() => handleFileDownload(file)} title="تحميل">
-                  <Download className="h-4 w-4" />
-                </Button>
-                {isTeacher && (
-                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => { setSharingFile(file); setShareEmail(''); setLookupResult(null); setShareDialogOpen(true); }} title="مشاركة">
-                    <Share2 className="h-4 w-4" />
+              {/* Actions dropdown menu */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                    <MoreVertical className="h-4 w-4" />
                   </Button>
-                )}
-                {isTeacher && file.uploaded_by === subject.teacher_id && (
-                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-emerald-50" onClick={() => handleToggleVisibility(file)} disabled={isToggling} title={file.visibility === 'public' ? 'جعل خاصاً' : 'جعل عاماً'}>
-                    {isToggling ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
-                    ) : file.visibility === 'public' ? (
-                      <Lock className="h-4 w-4 text-amber-500" />
-                    ) : (
-                      <Globe className="h-4 w-4 text-emerald-500" />
-                    )}
-                  </Button>
-                )}
-                {(isTeacher || file.uploaded_by === profile.id) && (
-                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50" onClick={() => handleFileDelete(file.id)} disabled={isDeleting} title="حذف">
-                    {isDeleting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4" />
-                    )}
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* Mobile actions row */}
-            <div className="flex sm:hidden items-center gap-1 mt-2 pt-2 border-t border-border/40 flex-wrap">
-              <Button variant="ghost" size="sm" className="gap-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 text-xs h-7 px-2" onClick={() => { setPreviewFile(file); setPreviewOpen(true); }}>
-                <Eye className="h-3.5 w-3.5" />
-                معاينة
-              </Button>
-              <Button variant="ghost" size="sm" className="gap-1 text-teal-600 hover:text-teal-700 hover:bg-teal-50 text-xs h-7 px-2" onClick={() => handleFileDownload(file)}>
-                <Download className="h-3.5 w-3.5" />
-                تحميل
-              </Button>
-              {isTeacher && (
-                <Button variant="ghost" size="sm" className="gap-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50 text-xs h-7 px-2" onClick={() => { setSharingFile(file); setShareEmail(''); setLookupResult(null); setShareDialogOpen(true); }}>
-                  <Share2 className="h-3.5 w-3.5" />
-                  مشاركة
-                </Button>
-              )}
-              {isTeacher && file.uploaded_by === subject.teacher_id && (
-                <Button variant="ghost" size="sm" className="gap-1 text-xs h-7 px-2 hover:bg-emerald-50" onClick={() => handleToggleVisibility(file)} disabled={isToggling}>
-                  {isToggling ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : file.visibility === 'public' ? (
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem onClick={() => { setPreviewFile(file); setPreviewOpen(true); }}>
+                    <Eye className="h-4 w-4 ml-2 text-emerald-600" />
+                    معاينة
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleFileDownload(file)}>
+                    <Download className="h-4 w-4 ml-2 text-teal-600" />
+                    تحميل
+                  </DropdownMenuItem>
+                  {isTeacher && (
+                    <DropdownMenuItem onClick={() => { setSharingFile(file); setShareEmail(''); setLookupResult(null); setShareDialogOpen(true); }}>
+                      <Share2 className="h-4 w-4 ml-2 text-blue-600" />
+                      مشاركة
+                    </DropdownMenuItem>
+                  )}
+                  {isTeacher && file.uploaded_by === subject.teacher_id && (
+                    <DropdownMenuItem onClick={() => handleToggleVisibility(file)} disabled={isToggling}>
+                      {isToggling ? (
+                        <Loader2 className="h-4 w-4 ml-2 animate-spin text-emerald-600" />
+                      ) : file.visibility === 'public' ? (
+                        <Lock className="h-4 w-4 ml-2 text-amber-500" />
+                      ) : (
+                        <Globe className="h-4 w-4 ml-2 text-emerald-500" />
+                      )}
+                      {isToggling ? 'جاري التغيير...' : file.visibility === 'public' ? 'جعل خاصاً' : 'جعل عاماً'}
+                    </DropdownMenuItem>
+                  )}
+                  {(isTeacher || file.uploaded_by === profile.id) && (
                     <>
-                      <Lock className="h-3.5 w-3.5 text-amber-500" />
-                      <span className="text-amber-600">خاص</span>
-                    </>
-                  ) : (
-                    <>
-                      <Globe className="h-3.5 w-3.5 text-emerald-500" />
-                      <span className="text-emerald-600">عام</span>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => handleFileDelete(file.id)} disabled={isDeleting} className="text-rose-500 focus:text-rose-500">
+                        {isDeleting ? (
+                          <Loader2 className="h-4 w-4 ml-2 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4 ml-2" />
+                        )}
+                        {isDeleting ? 'جاري الحذف...' : 'حذف'}
+                      </DropdownMenuItem>
                     </>
                   )}
-                </Button>
-              )}
-              {(isTeacher || file.uploaded_by === profile.id) && (
-                <Button variant="ghost" size="sm" className="gap-1 text-rose-500 hover:text-rose-600 hover:bg-rose-50 text-xs h-7 px-2 mr-auto" onClick={() => handleFileDelete(file.id)} disabled={isDeleting}>
-                  {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                  حذف
-                </Button>
-              )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </CardContent>
         </Card>

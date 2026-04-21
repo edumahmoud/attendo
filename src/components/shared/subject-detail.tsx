@@ -81,6 +81,7 @@ import {
 } from '@/components/ui/tabs';
 import AssignmentsSection from '@/components/shared/assignments-section';
 import PersonalFilesSection from '@/components/shared/personal-files-section';
+import CourseFilesSection from '@/components/shared/course-files-section';
 import type {
   UserProfile,
   Subject,
@@ -3517,7 +3518,16 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
 
         <TabsContent value="overview">{renderOverview()}</TabsContent>
         <TabsContent value="notes">{renderNotes()}</TabsContent>
-        <TabsContent value="files">{renderFiles()}</TabsContent>
+        <TabsContent value="files">
+          {subject && (
+            <CourseFilesSection
+              subjectId={subjectId}
+              profile={profile}
+              isTeacher={isTeacher}
+              subject={subject}
+            />
+          )}
+        </TabsContent>
         <TabsContent value="quizzes">{renderQuizzes()}</TabsContent>
         <TabsContent value="lectures">{renderLectures()}</TabsContent>
         <TabsContent value="assignments">

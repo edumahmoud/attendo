@@ -33,6 +33,7 @@ import {
   FileVideo,
   Headphones,
   Presentation,
+  MoreVertical,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
@@ -60,6 +61,13 @@ import {
   DialogFooter,
   DialogDescription,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import { supabase } from '@/lib/supabase';
 import type { UserProfile, UserFile, FileShare, SubjectFile } from '@/lib/types';
 
@@ -413,6 +421,12 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
 
   // ─── Visibility toggle state ───
   const [togglingVisibilityId, setTogglingVisibilityId] = useState<string | null>(null);
+
+  // ─── Assign to subject state ───
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [assigningFile, setAssigningFile] = useState<UnifiedFileItem | null>(null);
+  const [assignSubjectId, setAssignSubjectId] = useState<string>('');
+  const [assigningInProgress, setAssigningInProgress] = useState(false);
 
   // ─── Debounce ref for share search ───
   const shareSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1108,6 +1122,65 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
     }
   };
 
+  // ─── Handle assign to subject ───
+  const handleAssignToSubject = async () => {
+    if (!assigningFile || !assignSubjectId) {
+      toast.error('يرجى اختيار مقرر');
+      return;
+    }
+
+    setAssigningInProgress(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error('يرجى تسجيل الدخول أولاً');
+        return;
+      }
+
+      const response = await fetch('/api/user-files/assign-subject', {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileId: assigningFile.id,
+          subjectId: assignSubjectId === '__none__' ? null : assignSubjectId,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        toast.error(result.error || 'حدث خطأ أثناء اسناد الملف للمقرر');
+      } else {
+        const subjectName = assignSubjectId === '__none__' ? '' : subjectNameMap[assignSubjectId] || '';
+        toast.success(assignSubjectId === '__none__' ? 'تم إلغاء اسناد الملف' : `تم اسناد الملف لمقرر ${subjectName}`);
+        setAssignDialogOpen(false);
+        setAssigningFile(null);
+        setAssignSubjectId('');
+        // Update local state
+        setAllUserFiles((prev) =>
+          prev.map((f) =>
+            f.id === assigningFile.id
+              ? { ...f, subject_id: assignSubjectId === '__none__' ? null : assignSubjectId }
+              : f
+          )
+        );
+      }
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setAssigningInProgress(false);
+    }
+  };
+
+  // ─── Handle open assign dialog ───
+  const handleOpenAssignDialog = (file: UnifiedFileItem) => {
+    setAssigningFile(file);
+    setAssignSubjectId(file.subject_id || '');
+    setAssignDialogOpen(true);
+  };
+
   // =====================================================
   // Render: Skeleton Loader
   // =====================================================
@@ -1231,153 +1304,72 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                 </div>
               </div>
 
-              {/* ── Right: Action buttons (desktop) ── */}
-              <div className="hidden sm:flex items-center gap-0.5 shrink-0">
-                {/* Preview */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 w-8 p-0 text-muted-foreground hover:text-emerald-700 hover:bg-emerald-50"
-                  onClick={() => handlePreview(file)}
-                  title="معاينة"
-                >
-                  <Eye className="h-4 w-4" />
-                </Button>
-
-                {/* Download */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 w-8 p-0 text-muted-foreground hover:text-teal-700 hover:bg-teal-50"
-                  onClick={() => handleDownload(file.file_url, file.file_name)}
-                  title="تحميل"
-                >
-                  <Download className="h-4 w-4" />
-                </Button>
-
-                {/* Share (only own files) */}
-                {file.isOwn && file.source !== 'shared' && (
+              {/* ── Right: Action dropdown menu ── */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-blue-700 hover:bg-blue-50"
-                    onClick={() => handleShareClick(file.id)}
-                    title="مشاركة"
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
                   >
-                    <Share2 className="h-4 w-4" />
+                    <MoreVertical className="h-4 w-4" />
                   </Button>
-                )}
-
-                {/* Visibility Toggle */}
-                {file.isOwn && file.source !== 'shared' && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0 hover:bg-emerald-50"
-                    onClick={() => handleVisibilityToggle(file)}
-                    disabled={isToggling}
-                    title={file.visibility === 'private' ? 'تغيير إلى عام' : 'تغيير إلى خاص'}
-                  >
-                    {isToggling ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
-                    ) : file.visibility === 'private' ? (
-                      <Lock className="h-4 w-4 text-amber-500" />
-                    ) : (
-                      <Globe className="h-4 w-4 text-emerald-500" />
-                    )}
-                  </Button>
-                )}
-
-                {/* Delete (only own files) */}
-                {file.isOwn && file.source !== 'shared' && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-600 hover:bg-rose-50"
-                    onClick={() => handleDeleteClick(file)}
-                    disabled={isDeleting}
-                    title="حذف"
-                  >
-                    {isDeleting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4" />
-                    )}
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* ── Mobile: Action buttons row ── */}
-            <div className="flex sm:hidden items-center gap-1 mt-2 pt-2 border-t border-border/40">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
-                onClick={() => handlePreview(file)}
-              >
-                <Eye className="h-3.5 w-3.5 ml-1" />
-                معاينة
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs text-teal-700 hover:text-teal-800 hover:bg-teal-50"
-                onClick={() => handleDownload(file.file_url, file.file_name)}
-              >
-                <Download className="h-3.5 w-3.5 ml-1" />
-                تحميل
-              </Button>
-              {file.isOwn && file.source !== 'shared' && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs text-blue-700 hover:text-blue-800 hover:bg-blue-50"
-                  onClick={() => handleShareClick(file.id)}
-                >
-                  <Share2 className="h-3.5 w-3.5 ml-1" />
-                  مشاركة
-                </Button>
-              )}
-              {file.isOwn && file.source !== 'shared' && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs hover:bg-emerald-50"
-                  onClick={() => handleVisibilityToggle(file)}
-                  disabled={isToggling}
-                  title={file.visibility === 'private' ? 'تغيير إلى عام' : 'تغيير إلى خاص'}
-                >
-                  {isToggling ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-600" />
-                  ) : file.visibility === 'private' ? (
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" dir="rtl">
+                  <DropdownMenuItem onClick={() => handlePreview(file)}>
+                    <Eye className="h-4 w-4 ml-2" />
+                    معاينة
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleDownload(file.file_url, file.file_name)}>
+                    <Download className="h-4 w-4 ml-2" />
+                    تحميل
+                  </DropdownMenuItem>
+                  {file.isOwn && file.source !== 'shared' && (
+                    <DropdownMenuItem onClick={() => handleShareClick(file.id)}>
+                      <Share2 className="h-4 w-4 ml-2" />
+                      مشاركة
+                    </DropdownMenuItem>
+                  )}
+                  {file.isOwn && file.source === 'user_file' && (
+                    <DropdownMenuItem onClick={() => handleOpenAssignDialog(file)}>
+                      <BookOpen className="h-4 w-4 ml-2" />
+                      اسناد لمقرر
+                    </DropdownMenuItem>
+                  )}
+                  {file.isOwn && file.source !== 'shared' && (
+                    <DropdownMenuItem
+                      onClick={() => handleVisibilityToggle(file)}
+                      disabled={isToggling}
+                    >
+                      {isToggling ? (
+                        <Loader2 className="h-4 w-4 ml-2 animate-spin" />
+                      ) : file.visibility === 'private' ? (
+                        <Globe className="h-4 w-4 ml-2" />
+                      ) : (
+                        <Lock className="h-4 w-4 ml-2" />
+                      )}
+                      {file.visibility === 'private' ? 'جعل عاماً' : 'جعل خاصاً'}
+                    </DropdownMenuItem>
+                  )}
+                  {file.isOwn && file.source !== 'shared' && (
                     <>
-                      <Lock className="h-3.5 w-3.5 ml-1 text-amber-500" />
-                      <span className="text-amber-600">خاص</span>
-                    </>
-                  ) : (
-                    <>
-                      <Globe className="h-3.5 w-3.5 ml-1 text-emerald-500" />
-                      <span className="text-emerald-600">عام</span>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => handleDeleteClick(file)}
+                        disabled={isDeleting}
+                        className="text-rose-500 focus:text-rose-500"
+                      >
+                        {isDeleting ? (
+                          <Loader2 className="h-4 w-4 ml-2 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4 ml-2" />
+                        )}
+                        حذف
+                      </DropdownMenuItem>
                     </>
                   )}
-                </Button>
-              )}
-              {file.isOwn && file.source !== 'shared' && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 mr-auto"
-                  onClick={() => handleDeleteClick(file)}
-                  disabled={isDeleting}
-                >
-                  {isDeleting ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-3.5 w-3.5 ml-1" />
-                  )}
-                </Button>
-              )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </CardContent>
         </Card>
@@ -1989,6 +1981,83 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
   );
 
   // =====================================================
+  // Render: Assign to Subject Dialog
+  // =====================================================
+  const renderAssignDialog = () => (
+    <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
+      <DialogContent className="sm:max-w-md" dir="rtl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-right">
+            <BookOpen className="h-5 w-5 text-emerald-600" />
+            اسناد الملف لمقرر
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            اسناد الملف {assigningFile?.file_name} لمقرر دراسي
+          </DialogDescription>
+        </DialogHeader>
+
+        {assigningFile && (
+          <div className="space-y-4">
+            {/* File info */}
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+              <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${getFileIconBg(assigningFile.file_type)}`}>
+                {getFileIcon(assigningFile.file_type, 'sm')}
+              </div>
+              <p className="text-sm font-medium truncate">{assigningFile.file_name}</p>
+            </div>
+
+            {/* Current assignment */}
+            {assigningFile.subject_id && subjectNameMap[assigningFile.subject_id] && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>الاسناد الحالي:</span>
+                <Badge variant="secondary" className="bg-teal-100 text-teal-700 border-0">
+                  <BookOpen className="h-3 w-3 ml-0.5" />
+                  {subjectNameMap[assigningFile.subject_id]}
+                </Badge>
+              </div>
+            )}
+
+            {/* Subject selector */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">اختر المقرر</Label>
+              <Select value={assignSubjectId} onValueChange={setAssignSubjectId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="اختر مقرر للاسناد" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">بدون اسناد</SelectItem>
+                  {subjects.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={() => setAssignDialogOpen(false)} size="sm">
+            إلغاء
+          </Button>
+          <Button
+            onClick={handleAssignToSubject}
+            disabled={assigningInProgress || !assignSubjectId}
+            className="bg-emerald-600 hover:bg-emerald-700"
+            size="sm"
+          >
+            {assigningInProgress ? (
+              <Loader2 className="h-4 w-4 animate-spin ml-1.5" />
+            ) : (
+              <BookOpen className="h-4 w-4 ml-1.5" />
+            )}
+            {assignSubjectId === '__none__' ? 'إلغاء الاسناد' : 'اسناد'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  // =====================================================
   // Main Render
   // =====================================================
   return (
@@ -2102,6 +2171,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
       {renderUploadDialog()}
       {renderShareDialog()}
       {renderDeleteDialog()}
+      {renderAssignDialog()}
     </div>
   );
 }

@@ -1,6 +1,31 @@
 # Examy Worklog
 
 ---
+Task ID: 4
+Agent: Main Agent
+Task: Restore course files tab, add assign-to-subject action, merge action buttons into single dropdown
+
+Work Log:
+- Created new API endpoint: PATCH /api/user-files/assign-subject for assigning user_files to subjects post-upload
+- Updated subject-detail.tsx to import and use CourseFilesSection component instead of inline renderFiles()
+- Updated personal-files-section.tsx:
+  - Replaced individual action buttons (desktop + mobile) with single DropdownMenu (MoreVertical trigger)
+  - Added "اسناد لمقرر" (Assign to Subject) action in the dropdown for user_file source files
+  - Added assign dialog with subject selector and current assignment display
+  - Added handleAssignToSubject handler calling the new API endpoint
+  - Removed separate mobile action row since DropdownMenu works on all screen sizes
+- Updated course-files-section.tsx:
+  - Replaced individual action buttons (desktop + mobile) with single DropdownMenu
+  - Removed separate mobile action row
+- All changes pass lint with 0 errors
+
+Stage Summary:
+- Course files tab restored using CourseFilesSection component with file-type tabs, search, and multi-file upload
+- New "اسناد لمقرر" action allows assigning already-uploaded files to subjects after upload
+- All file card action buttons consolidated into single dropdown menu for cleaner UI
+- API endpoint: PATCH /api/user-files/assign-subject accepts { fileId, subjectId }
+
+---
 Task ID: 1
 Agent: Main Agent
 Task: Redesign PersonalFilesSection, remove course files section, fix rate limiting
