@@ -294,8 +294,10 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
   const [lectureDetailData, setLectureDetailData] = useState<Lecture | null>(null);
   const [lectureNotes, setLectureNotes] = useState<Record<string, LectureNote[]>>({});
   const [lectureNote, setLectureNote] = useState('');
+  const [lectureNoteVisibility, setLectureNoteVisibility] = useState<'public' | 'private'>('public');
   const [savingLectureNote, setSavingLectureNote] = useState(false);
   const [lectureDetailSearch, setLectureDetailSearch] = useState('');
+  const [expandedStudentLectureId, setExpandedStudentLectureId] = useState<string | null>(null);
 
   // ─── Files tab state ───
   const [fileTypeFilter, setFileTypeFilter] = useState<string>('all');
@@ -597,6 +599,35 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
     }
   }, [subjectId, profile.id, isTeacher]);
 
+  // Fetch notes for all lectures at once
+  const fetchAllLectureNotes = useCallback(async (lectureIds: string[]) => {
+    if (lectureIds.length === 0) return;
+    try {
+      // Students only see public notes; teachers see all
+      let query = supabase
+        .from('lecture_notes')
+        .select('id, lecture_id, teacher_id, content, visibility, created_at')
+        .in('lecture_id', lectureIds)
+        .order('created_at', { ascending: true });
+
+      if (!isTeacher) {
+        query = query.eq('visibility', 'public');
+      }
+
+      const { data, error } = await query;
+      if (!error && data) {
+        const grouped: Record<string, LectureNote[]> = {};
+        for (const note of (data as LectureNote[])) {
+          if (!grouped[note.lecture_id]) grouped[note.lecture_id] = [];
+          grouped[note.lecture_id].push(note);
+        }
+        setLectureNotes(grouped);
+      }
+    } catch {
+      // silently ignore
+    }
+  }, [isTeacher]);
+
   const fetchLectures = useCallback(async () => {
     const { data, error } = await supabase
       .from('lectures')
@@ -608,8 +639,12 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
       console.error('Error fetching lectures:', error);
     } else {
       setLectures((data as Lecture[]) || []);
+      // Fetch notes for all lectures after loading
+      if (data && data.length > 0) {
+        fetchAllLectureNotes(data.map((l: Lecture) => l.id));
+      }
     }
-  }, [subjectId]);
+  }, [subjectId, fetchAllLectureNotes]);
 
   const fetchLectureAttendance = useCallback(async (lectureId: string) => {
     const { data, error } = await supabase
@@ -647,7 +682,7 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
   const fetchLectureNotes = useCallback(async (lectureId: string) => {
     const { data, error } = await supabase
       .from('lecture_notes')
-      .select('*')
+      .select('id, lecture_id, teacher_id, content, visibility, created_at')
       .eq('lecture_id', lectureId)
       .order('created_at', { ascending: true });
 
@@ -1272,9 +1307,10 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
 
       if (error) {
         if (error.code === '23505') {
-          toast.error('تم تسجيل حضورك بالفعل في هذه المحاضرة');
+          toast.info('تم تسجيل حضورك بالفعل في هذه المحاضرة');
           // Still update local state to show the indicator
           setMyAttendanceIds((prev) => new Set(prev).add(scannerLecture.id));
+          fetchMyAttendance();
         } else {
           toast.error('حدث خطأ أثناء تسجيل الحضور');
           console.error('Attendance error:', error);
@@ -1283,9 +1319,10 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
         toast.success('تم تسجيل الحضور بنجاح! ✅');
         // Update local state immediately
         setMyAttendanceIds((prev) => new Set(prev).add(scannerLecture.id));
-        // Refresh attendance count and lectures
+        // Refresh attendance count, lectures, and my attendance from server
         fetchAttendanceCounts();
         fetchLectures();
+        fetchMyAttendance();
       }
     } catch {
       toast.error('حدث خطأ غير متوقع أثناء تسجيل الحضور');
@@ -1346,18 +1383,22 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
 
   // ─── Save lecture note ───
   const handleSaveLectureNote = async () => {
-    if (!lectureDetailData) return;
+    if (!lectureDetailData || !lectureNote.trim()) return;
     setSavingLectureNote(true);
     try {
-      const { error } = await supabase
-        .from('lectures')
-        .update({ description: lectureNote.trim() || null })
-        .eq('id', lectureDetailData.id);
+      const { error } = await supabase.from('lecture_notes').insert({
+        lecture_id: lectureDetailData.id,
+        teacher_id: profile.id,
+        content: lectureNote.trim(),
+        visibility: lectureNoteVisibility,
+      });
       if (error) {
         toast.error('حدث خطأ أثناء حفظ الملاحظة');
+        console.error('Save lecture note error:', error);
       } else {
         toast.success('تم حفظ الملاحظة بنجاح');
-        fetchLectures();
+        setLectureNote('');
+        fetchLectureNotes(lectureDetailData.id);
       }
     } catch {
       toast.error('حدث خطأ غير متوقع');
@@ -1415,10 +1456,12 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
   // ─── Open lecture detail ───
   const openLectureDetail = (lecture: Lecture) => {
     setLectureDetailData(lecture);
-    setLectureNote(lecture.description || '');
+    setLectureNote('');
+    setLectureNoteVisibility('public');
     setLectureDetailSearch('');
     setLectureDetailOpen(true);
     fetchLectureAttendance(lecture.id);
+    fetchLectureNotes(lecture.id);
   };
 
   // =====================================================
@@ -2597,7 +2640,10 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
                 <Card className={`shadow-sm hover:shadow-md transition-shadow cursor-pointer ${
                   amAttending ? 'border-emerald-400 ring-2 ring-emerald-200 bg-emerald-50/30' :
                   lecture.is_active ? 'border-emerald-300 ring-1 ring-emerald-200' : ''
-                }`} onClick={() => isTeacher && openLectureDetail(lecture)}>
+                }`} onClick={() => {
+                  if (isTeacher) openLectureDetail(lecture);
+                  else setExpandedStudentLectureId(expandedStudentLectureId === lecture.id ? null : lecture.id);
+                }}>
                   <CardContent className="p-5">
                     <div className="flex items-start gap-3">
                       <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${
@@ -2644,6 +2690,29 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
                         {lecture.description && (
                           <p className="text-sm text-muted-foreground mt-1 line-clamp-1 break-words">{lecture.description}</p>
                         )}
+                        {/* Student notes preview */}
+                        {(() => {
+                          const lectureNotesList = lectureNotes[lecture.id] || [];
+                          const publicNotes = isTeacher
+                            ? lectureNotesList.filter(n => n.visibility === 'public')
+                            : lectureNotesList;
+                          if (publicNotes.length === 0) return null;
+                          const visibleNotes = publicNotes.slice(0, 2);
+                          const remaining = publicNotes.length - 2;
+                          return (
+                            <div className="mt-2 space-y-1">
+                              {visibleNotes.map((note) => (
+                                <div key={note.id} className="flex items-start gap-1.5 rounded-md bg-amber-50 border border-amber-100 px-2 py-1.5 text-xs">
+                                  <StickyNote className="h-3 w-3 text-amber-500 mt-0.5 shrink-0" />
+                                  <p className="text-foreground whitespace-pre-wrap break-words line-clamp-2">{note.content}</p>
+                                </div>
+                              ))}
+                              {remaining > 0 && (
+                                <p className="text-[10px] text-muted-foreground">+{remaining} ملاحظات أخرى</p>
+                              )}
+                            </div>
+                          );
+                        })()}
                         <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
                           {lecture.started_at && (
                             <span className="flex items-center gap-1">
@@ -2812,6 +2881,48 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
                                 </table>
                               </div>
                             )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Student expanded notes view */}
+                    <AnimatePresence>
+                      {!isTeacher && expandedStudentLectureId === lecture.id && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="mt-3 pt-3 border-t space-y-2">
+                            {(() => {
+                              const allNotes = lectureNotes[lecture.id] || [];
+                              return (
+                                <>
+                                  <p className="text-xs font-medium text-amber-700 flex items-center gap-1.5">
+                                    <StickyNote className="h-3 w-3" />
+                                    ملاحظات المحاضرة ({allNotes.length})
+                                  </p>
+                                  {allNotes.length === 0 ? (
+                                    <p className="text-sm text-muted-foreground text-center py-2">لا توجد ملاحظات بعد</p>
+                                  ) : (
+                                    <div className="space-y-1.5">
+                                      {allNotes.map((note) => (
+                                        <div key={note.id} className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-100 p-2.5 text-sm">
+                                          <StickyNote className="h-3.5 w-3.5 text-amber-500 mt-0.5 shrink-0" />
+                                          <div>
+                                            <p className="text-foreground whitespace-pre-wrap break-words">{note.content}</p>
+                                            <p className="text-[10px] text-muted-foreground mt-1">{formatDate(note.created_at)} - {formatTime(note.created_at)}</p>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         </motion.div>
                       )}
@@ -3066,33 +3177,130 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
                   </div>
 
                   {/* Notes Section */}
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <label className="text-sm font-medium text-foreground flex items-center gap-2">
                       <StickyNote className="h-4 w-4 text-amber-500" />
                       ملاحظات المحاضرة
                     </label>
-                    <Textarea
-                      value={lectureNote}
-                      onChange={(e) => setLectureNote(e.target.value)}
-                      placeholder="أضف ملاحظة على المحاضرة..."
-                      rows={3}
-                      dir="rtl"
-                      className="resize-none"
-                      disabled={savingLectureNote}
-                    />
-                    <Button
-                      size="sm"
-                      onClick={handleSaveLectureNote}
-                      disabled={savingLectureNote}
-                      className="gap-2 bg-amber-600 hover:bg-amber-700"
-                    >
-                      {savingLectureNote ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <StickyNote className="h-3.5 w-3.5" />
-                      )}
-                      حفظ الملاحظة
-                    </Button>
+
+                    {/* Existing notes list */}
+                    {(() => {
+                      const notes = lectureNotes[lectureDetailData.id] || [];
+                      const publicNotes = notes.filter(n => n.visibility === 'public');
+                      const privateNotes = notes.filter(n => n.visibility === 'private');
+                      return (
+                        <>
+                          {notes.length > 0 && (
+                            <div className="space-y-2">
+                              {publicNotes.length > 0 && (
+                                <div className="space-y-1.5">
+                                  <p className="text-xs font-medium text-emerald-700 flex items-center gap-1.5">
+                                    <Globe className="h-3 w-3" />
+                                    ملاحظات للطلاب ({publicNotes.length})
+                                  </p>
+                                  {publicNotes.map((note) => (
+                                    <div key={note.id} className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-2.5 text-sm">
+                                      <Globe className="h-3.5 w-3.5 text-emerald-500 mt-0.5 shrink-0" />
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-foreground whitespace-pre-wrap break-words">{note.content}</p>
+                                        <p className="text-[10px] text-muted-foreground mt-1">{formatDate(note.created_at)} - {formatTime(note.created_at)}</p>
+                                      </div>
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-6 w-6 shrink-0 text-rose-400 hover:text-rose-600 hover:bg-rose-50"
+                                        onClick={async () => {
+                                          const { error } = await supabase.from('lecture_notes').delete().eq('id', note.id);
+                                          if (error) { toast.error('فشل حذف الملاحظة'); }
+                                          else { fetchLectureNotes(lectureDetailData.id); }
+                                        }}
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {privateNotes.length > 0 && (
+                                <div className="space-y-1.5">
+                                  <p className="text-xs font-medium text-rose-700 flex items-center gap-1.5">
+                                    <Lock className="h-3 w-3" />
+                                    ملاحظات خاصة ({privateNotes.length})
+                                  </p>
+                                  {privateNotes.map((note) => (
+                                    <div key={note.id} className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50/50 p-2.5 text-sm">
+                                      <Lock className="h-3.5 w-3.5 text-rose-500 mt-0.5 shrink-0" />
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-foreground whitespace-pre-wrap break-words">{note.content}</p>
+                                        <p className="text-[10px] text-muted-foreground mt-1">{formatDate(note.created_at)} - {formatTime(note.created_at)}</p>
+                                      </div>
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-6 w-6 shrink-0 text-rose-400 hover:text-rose-600 hover:bg-rose-50"
+                                        onClick={async () => {
+                                          const { error } = await supabase.from('lecture_notes').delete().eq('id', note.id);
+                                          if (error) { toast.error('فشل حذف الملاحظة'); }
+                                          else { fetchLectureNotes(lectureDetailData.id); }
+                                        }}
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+
+                    {/* Add new note */}
+                    <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant={lectureNoteVisibility === 'public' ? 'default' : 'outline'}
+                          className={`gap-1.5 h-7 text-xs ${lectureNoteVisibility === 'public' ? 'bg-emerald-600 hover:bg-emerald-700' : 'border-emerald-200 text-emerald-700'}`}
+                          onClick={() => setLectureNoteVisibility('public')}
+                        >
+                          <Globe className="h-3 w-3" />
+                          للطلاب
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={lectureNoteVisibility === 'private' ? 'default' : 'outline'}
+                          className={`gap-1.5 h-7 text-xs ${lectureNoteVisibility === 'private' ? 'bg-rose-600 hover:bg-rose-700' : 'border-rose-200 text-rose-700'}`}
+                          onClick={() => setLectureNoteVisibility('private')}
+                        >
+                          <Lock className="h-3 w-3" />
+                          خاصة
+                        </Button>
+                      </div>
+                      <Textarea
+                        value={lectureNote}
+                        onChange={(e) => setLectureNote(e.target.value)}
+                        placeholder={lectureNoteVisibility === 'public' ? 'أضف ملاحظة مرئية للطلاب...' : 'أضف ملاحظة خاصة بك...'}
+                        rows={2}
+                        dir="rtl"
+                        className="resize-none"
+                        disabled={savingLectureNote}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={handleSaveLectureNote}
+                        disabled={savingLectureNote || !lectureNote.trim()}
+                        className={`gap-2 ${lectureNoteVisibility === 'public' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}
+                      >
+                        {savingLectureNote ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Plus className="h-3.5 w-3.5" />
+                        )}
+                        إضافة ملاحظة
+                      </Button>
+                    </div>
                   </div>
 
                   <Separator />

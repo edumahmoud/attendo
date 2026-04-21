@@ -254,6 +254,7 @@ export interface LectureNote {
   lecture_id: string;
   teacher_id: string;
   content: string;
+  visibility: 'public' | 'private';
   created_at: string;
 }
 
