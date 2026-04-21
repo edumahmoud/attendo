@@ -163,21 +163,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const shareRecords = newTargets.map((targetId) => {
-      const targetProfile = profileMap.get(targetId);
-      return {
+    const shareRecords = newTargets.map((targetId) => ({
         file_id: fileId,
         file_type: 'user_file',
         shared_by: user.id,
         shared_with: targetId,
-        shared_with_name: targetProfile?.name || null,
-        shared_with_email: targetProfile?.email || null,
-        shared_with_role: targetProfile?.role || null,
-        shared_by_name: profile.name,
-        file_name: (fileRecord as Record<string, unknown>).file_name as string,
-        file_url: (fileRecord as Record<string, unknown>).file_url as string,
-      };
-    });
+      }));
 
     const { error: shareError } = await supabaseServer
       .from('file_shares')
