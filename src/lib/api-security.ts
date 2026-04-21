@@ -14,7 +14,7 @@ interface RateLimitEntry {
 const rateLimitMap = new Map<string, RateLimitEntry>();
 
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-const RATE_LIMIT_MAX_REQUESTS = 10;
+const RATE_LIMIT_MAX_REQUESTS = 60;
 
 /** Check rate limit by IP. Returns { allowed, remaining, retryAfterMs } */
 export function checkRateLimit(request: NextRequest): {

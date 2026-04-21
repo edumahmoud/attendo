@@ -198,7 +198,6 @@ interface TabConfig {
 
 const teacherTabs: TabConfig[] = [
   { id: 'overview', label: 'نظرة عامة', icon: <BookOpen className="h-4 w-4" /> },
-  { id: 'files', label: 'الملفات', icon: <FolderOpen className="h-4 w-4" /> },
   { id: 'notes', label: 'الملاحظات', icon: <StickyNote className="h-4 w-4" /> },
   { id: 'quizzes', label: 'الاختبارات', icon: <ClipboardList className="h-4 w-4" /> },
   { id: 'assignments', label: 'المهام', icon: <ClipboardCheck className="h-4 w-4" /> },
@@ -209,7 +208,6 @@ const teacherTabs: TabConfig[] = [
 
 const studentTabs: TabConfig[] = [
   { id: 'overview', label: 'نظرة عامة', icon: <BookOpen className="h-4 w-4" /> },
-  { id: 'files', label: 'الملفات', icon: <FolderOpen className="h-4 w-4" /> },
   { id: 'notes', label: 'الملاحظات', icon: <StickyNote className="h-4 w-4" /> },
   { id: 'quizzes', label: 'الاختبارات', icon: <ClipboardList className="h-4 w-4" /> },
   { id: 'assignments', label: 'المهام', icon: <ClipboardCheck className="h-4 w-4" /> },
@@ -3516,9 +3514,6 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
         </TabsList>
 
         <TabsContent value="overview">{renderOverview()}</TabsContent>
-        <TabsContent value="files">
-          <PersonalFilesSection profile={profile} />
-        </TabsContent>
         <TabsContent value="notes">{renderNotes()}</TabsContent>
         <TabsContent value="quizzes">{renderQuizzes()}</TabsContent>
         <TabsContent value="lectures">{renderLectures()}</TabsContent>

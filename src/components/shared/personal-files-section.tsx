@@ -27,7 +27,6 @@ import {
   StickyNote,
   BookOpen,
   CheckCircle2,
-  ChevronLeft,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
@@ -104,6 +103,7 @@ interface UnifiedFileItem {
   isOwn: boolean;
   subjectFileSubjectId?: string; // for subject_files, the subject_id
   shared_by_name?: string;
+  uploader_name?: string;
 }
 
 // =====================================================
@@ -121,17 +121,19 @@ interface UserLookupResult {
 // =====================================================
 const containerVariants = {
   hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { staggerChildren: 0.05 } },
+  visible: { opacity: 1, transition: { staggerChildren: 0.04 } },
 };
 
 const itemVariants = {
-  hidden: { opacity: 0, y: 12 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } },
+  hidden: { opacity: 0, y: 16 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' as const } },
 };
 
 // =====================================================
 // Helpers
 // =====================================================
+
+/** Format a date string into Arabic locale with date and time */
 function formatArabicDate(dateStr: string): string {
   try {
     const date = new Date(dateStr);
@@ -148,6 +150,23 @@ function formatArabicDate(dateStr: string): string {
   }
 }
 
+/** Format a short Arabic date (without time) for compact display */
+function formatArabicDateShort(dateStr: string): string {
+  try {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('ar-SA', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
+/** Format file size from bytes to human-readable string */
 function formatFileSize(bytes?: number | null): string {
   if (!bytes) return '—';
   if (bytes < 1024) return `${bytes} B`;
@@ -155,17 +174,33 @@ function formatFileSize(bytes?: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function getFileIcon(type?: string | null): React.ReactNode {
-  if (!type) return <File className="h-5 w-5 text-muted-foreground" />;
+/** Get a colored icon for a file type */
+function getFileIcon(type?: string | null, size: 'sm' | 'lg' = 'sm'): React.ReactNode {
+  const sz = size === 'lg' ? 'h-7 w-7' : 'h-5 w-5';
+  if (!type) return <File className={`${sz} text-muted-foreground`} />;
   const t = type.toLowerCase();
-  if (t.includes('pdf')) return <FileText className="h-5 w-5 text-rose-500" />;
+  if (t.includes('pdf')) return <FileText className={`${sz} text-rose-500`} />;
   if (t.includes('image') || t.includes('png') || t.includes('jpg') || t.includes('jpeg'))
-    return <ImageIcon className="h-5 w-5 text-purple-500" />;
+    return <ImageIcon className={`${sz} text-purple-500`} />;
   if (t.includes('sheet') || t.includes('excel') || t.includes('csv'))
-    return <FileSpreadsheet className="h-5 w-5 text-emerald-500" />;
+    return <FileSpreadsheet className={`${sz} text-emerald-500`} />;
   if (t.includes('word') || t.includes('doc'))
-    return <FilePlus className="h-5 w-5 text-blue-500" />;
-  return <File className="h-5 w-5 text-muted-foreground" />;
+    return <FilePlus className={`${sz} text-blue-500`} />;
+  return <File className={`${sz} text-muted-foreground`} />;
+}
+
+/** Get icon background class based on file type */
+function getFileIconBg(type?: string | null): string {
+  if (!type) return 'bg-slate-50 border-slate-200';
+  const t = type.toLowerCase();
+  if (t.includes('pdf')) return 'bg-rose-50 border-rose-200';
+  if (t.includes('image') || t.includes('png') || t.includes('jpg') || t.includes('jpeg'))
+    return 'bg-purple-50 border-purple-200';
+  if (t.includes('sheet') || t.includes('excel') || t.includes('csv'))
+    return 'bg-emerald-50 border-emerald-200';
+  if (t.includes('word') || t.includes('doc'))
+    return 'bg-blue-50 border-blue-200';
+  return 'bg-slate-50 border-slate-200';
 }
 
 function isImageType(type?: string | null): boolean {
@@ -295,24 +330,25 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      // Fetch user files (all types at once)
-      const [privateRes, publicRes, sharedRes] = await Promise.all([
-        fetch('/api/user-files?type=private', {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        }),
-        fetch('/api/user-files?type=public', {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        }),
-        fetch('/api/user-files?type=shared', {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        }),
-      ]);
+      // Fetch user files sequentially to avoid rate limiting
+      const privateRes = await fetch('/api/user-files?type=private', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const privateData = await privateRes.json();
 
-      const [privateData, publicData, sharedData] = await Promise.all([
-        privateRes.json(),
-        publicRes.json(),
-        sharedRes.json(),
-      ]);
+      await new Promise((r) => setTimeout(r, 100)); // small delay to avoid 429
+
+      const publicRes = await fetch('/api/user-files?type=public', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const publicData = await publicRes.json();
+
+      await new Promise((r) => setTimeout(r, 100));
+
+      const sharedRes = await fetch('/api/user-files?type=shared', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const sharedData = await sharedRes.json();
 
       const allFiles: UserFile[] = [
         ...(privateData.success && Array.isArray(privateData.data) ? privateData.data : []),
@@ -327,16 +363,17 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
         setSharedFiles(sharedData.data as FileShare[]);
       }
 
-      // Fetch subject files for each subject
+      // Fetch subject files sequentially with delay to avoid rate limiting
       const sfMap: Record<string, SubjectFile[]> = {};
-      for (const subject of subjects) {
+      for (let i = 0; i < subjects.length; i++) {
+        if (i > 0) await new Promise((r) => setTimeout(r, 150));
         try {
-          const res = await fetch(`/api/subjects/${subject.id}/files`, {
+          const res = await fetch(`/api/subjects/${subjects[i].id}/files`, {
             headers: { Authorization: `Bearer ${session.access_token}` },
           });
           const result = await res.json();
           if (result.success && Array.isArray(result.data)) {
-            sfMap[subject.id] = result.data as SubjectFile[];
+            sfMap[subjects[i].id] = result.data as SubjectFile[];
           }
         } catch {
           // Skip failed subject file fetches
@@ -377,7 +414,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
           .eq('student_id', profile.id);
         if (!error && data) {
           const opts: SubjectOption[] = [];
-          (data as { subject_id: string; subjects: { id: string; name: string } | null }[]).forEach((row) => {
+          (data as unknown as { subject_id: string; subjects: { id: string; name: string } | null }[]).forEach((row) => {
             if (row.subjects) {
               opts.push({ id: row.subjects.id, name: row.subjects.name });
               nameMap[row.subjects.id] = row.subjects.name;
@@ -398,56 +435,8 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
   }, [fetchSubjects]);
 
   useEffect(() => {
-    if (subjects.length > 0) {
-      fetchAllData();
-    }
-  }, [subjects, fetchAllData]);
-
-  // Initial data load even without subjects
-  useEffect(() => {
-    const doInitial = async () => {
-      setLoading(true);
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return;
-
-        const [privateRes, publicRes, sharedRes] = await Promise.all([
-          fetch('/api/user-files?type=private', {
-            headers: { Authorization: `Bearer ${session.access_token}` },
-          }),
-          fetch('/api/user-files?type=public', {
-            headers: { Authorization: `Bearer ${session.access_token}` },
-          }),
-          fetch('/api/user-files?type=shared', {
-            headers: { Authorization: `Bearer ${session.access_token}` },
-          }),
-        ]);
-
-        const [privateData, publicData, sharedData] = await Promise.all([
-          privateRes.json(),
-          publicRes.json(),
-          sharedRes.json(),
-        ]);
-
-        const allFiles: UserFile[] = [
-          ...(privateData.success && Array.isArray(privateData.data) ? privateData.data : []),
-          ...(publicData.success && Array.isArray(publicData.data) ? publicData.data : []),
-        ];
-        const fileMap = new Map<string, UserFile>();
-        allFiles.forEach((f: UserFile) => fileMap.set(f.id, f));
-        setAllUserFiles(Array.from(fileMap.values()));
-
-        if (sharedData.success && Array.isArray(sharedData.data)) {
-          setSharedFiles(sharedData.data as FileShare[]);
-        }
-      } catch (err) {
-        console.error('Initial fetch error:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    doInitial();
-  }, []);
+    fetchAllData();
+  }, [fetchAllData]);
 
   // =====================================================
   // Unified file list computation
@@ -476,8 +465,6 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
     // Subject files
     Object.entries(subjectFilesMap).forEach(([subjectId, files]) => {
       files.forEach((f) => {
-        // For students: show public + own private
-        // For teachers: show all
         const isOwn = f.uploaded_by === profile.id;
         if (profile.role === 'teacher' || f.visibility === 'public' || isOwn) {
           items.push({
@@ -493,6 +480,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
             source: 'subject_file',
             isOwn,
             subjectFileSubjectId: subjectId,
+            uploader_name: f.uploader_name,
           });
         }
       });
@@ -516,6 +504,25 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
 
     return items;
   }, [allUserFiles, subjectFilesMap, sharedFiles, profile.id, profile.role]);
+
+  // ─── Compute file counts per tab ───
+  const tabFileCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+
+    // General tab: files NOT linked to any subject + shared files
+    counts['__general__'] = unifiedFiles.filter(
+      (f) => (!f.subject_id || f.source === 'shared') && f.source !== 'subject_file'
+    ).length;
+
+    // Subject tabs
+    subjects.forEach((subject) => {
+      counts[subject.id] = unifiedFiles.filter(
+        (f) => f.subject_id === subject.id || f.subjectFileSubjectId === subject.id
+      ).length;
+    });
+
+    return counts;
+  }, [unifiedFiles, subjects]);
 
   // ─── Filtered files for current tab ───
   const filteredFiles = useMemo(() => {
@@ -542,13 +549,9 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       files = files.filter((f) => {
-        // Search by file name
         if (f.file_name.toLowerCase().includes(q)) return true;
-        // Search by description
         if (f.description?.toLowerCase().includes(q)) return true;
-        // Search by notes
         if (f.notes?.toLowerCase().includes(q)) return true;
-        // Search by date keyword
         if (matchesDateKeyword(f.created_at, q)) return true;
         return false;
       });
@@ -775,7 +778,6 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
           toast.error(result.error || 'حدث خطأ أثناء تحديث الظهور');
         } else {
           toast.success(newVisibility === 'public' ? 'تم تغيير الملف إلى عام' : 'تم تغيير الملف إلى خاص');
-          // Optimistic update
           setAllUserFiles((prev) =>
             prev.map((f) => (f.id === file.id ? { ...f, visibility: newVisibility } : f))
           );
@@ -795,7 +797,6 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
           toast.error(result.error || 'حدث خطأ أثناء تحديث الظهور');
         } else {
           toast.success(newVisibility === 'public' ? 'تم تغيير الملف إلى عام' : 'تم تغيير الملف إلى خاص');
-          // Update subject files map
           setSubjectFilesMap((prev) => {
             const updated = { ...prev };
             if (updated[file.subjectFileSubjectId!]) {
@@ -840,7 +841,6 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
       } else if (deleteTarget.source === 'subject_file') {
-        // Find the subject_id for this file
         let subjectId = '';
         for (const [sid, files] of Object.entries(subjectFilesMap)) {
           if (files.some((f) => f.id === deleteTarget.id)) {
@@ -921,7 +921,6 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
         });
         const result = await response.json();
         if (result.success && Array.isArray(result.data)) {
-          // Filter out already selected users
           const selectedIds = new Set(selectedShareUsers.map((u) => u.id));
           setShareSearchResults(
             (result.data as UserLookupResult[]).filter((u) => !selectedIds.has(u.id))
@@ -1001,16 +1000,17 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
   const renderSkeletons = () => (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {[1, 2, 3, 4, 5, 6].map((i) => (
-        <Card key={i} className="shadow-sm">
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              <Skeleton className="h-10 w-10 rounded-lg" />
+        <Card key={i} className="rounded-xl shadow-sm">
+          <CardContent className="p-5 space-y-3">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-11 w-11 rounded-xl" />
               <div className="flex-1 space-y-2">
                 <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="h-3 w-1/2" />
                 <Skeleton className="h-3 w-1/3" />
               </div>
             </div>
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-1/2" />
           </CardContent>
         </Card>
       ))}
@@ -1023,171 +1023,205 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
   const renderEmptyState = (message: string, icon: React.ReactNode) => (
     <motion.div
       variants={itemVariants}
-      className="flex flex-col items-center justify-center py-16 text-center"
+      className="flex flex-col items-center justify-center py-20 text-center"
     >
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 mb-4">
+      <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-emerald-50 border border-emerald-100 mb-5">
         {icon}
       </div>
-      <p className="text-muted-foreground text-sm">{message}</p>
+      <p className="text-muted-foreground text-sm max-w-xs">{message}</p>
     </motion.div>
   );
 
   // =====================================================
-  // Render: File Card (unified)
+  // Render: File Card (Redesigned Vertical Layout)
   // =====================================================
-  const renderFileCard = (file: UnifiedFileItem) => (
-    <motion.div variants={itemVariants}>
-      <Card className="shadow-sm hover:shadow-md transition-shadow group">
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            {/* File icon */}
-            <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${
-              file.source === 'shared'
-                ? 'bg-blue-50 border-blue-100'
-                : 'bg-emerald-50 border-emerald-100'
-            }`}>
-              {getFileIcon(file.file_type)}
-            </div>
+  const renderFileCard = (file: UnifiedFileItem) => {
+    const isDeleting = deletingFileId === file.id;
+    const isToggling = togglingVisibilityId === file.id;
 
-            {/* File info */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <h4 className="text-sm font-semibold text-foreground truncate">{file.file_name}</h4>
-                {/* Visibility badge */}
-                {file.source === 'shared' ? (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-100 text-blue-700 shrink-0">
-                    <Share2 className="h-2.5 w-2.5 ml-0.5" />
-                    مشارك
-                  </Badge>
-                ) : file.visibility === 'private' ? (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-700 shrink-0">
-                    <Lock className="h-2.5 w-2.5 ml-0.5" />
-                    خاصة
-                  </Badge>
-                ) : (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-emerald-100 text-emerald-700 shrink-0">
-                    <Globe className="h-2.5 w-2.5 ml-0.5" />
-                    عام
-                  </Badge>
-                )}
-                {/* Subject badge */}
-                {file.subject_id && subjectNameMap[file.subject_id] && activeTab === '__general__' && (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-teal-100 text-teal-700 shrink-0">
-                    <BookOpen className="h-2.5 w-2.5 ml-0.5" />
-                    {subjectNameMap[file.subject_id]}
-                  </Badge>
-                )}
-                {/* Source badge for subject files */}
-                {file.source === 'subject_file' && (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-teal-100 text-teal-700 shrink-0">
-                    <BookOpen className="h-2.5 w-2.5 ml-0.5" />
-                    مقرر
-                  </Badge>
-                )}
+    return (
+      <motion.div variants={itemVariants} layout>
+        <Card className="rounded-xl shadow-sm hover:shadow-lg transition-all duration-200 group border border-border/60 overflow-hidden">
+          <CardContent className="p-5">
+            {/* ── Top Row: Icon + Name + Visibility Badge ── */}
+            <div className="flex items-start gap-3 mb-3">
+              {/* File type icon (large, colored, with background) */}
+              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${getFileIconBg(file.file_type)}`}>
+                {getFileIcon(file.file_type, 'lg')}
               </div>
 
-              {file.source === 'shared' && file.shared_by_name && (
-                <div className="flex items-center gap-1 mb-1">
-                  <User className="h-3 w-3 text-blue-500 shrink-0" />
-                  <p className="text-xs text-blue-600">
-                    شاركه {file.shared_by_name}
-                  </p>
+              {/* File name + visibility badge */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-sm font-semibold text-foreground truncate max-w-[180px] sm:max-w-[220px]" title={file.file_name}>
+                    {file.file_name}
+                  </h4>
+                  {/* Visibility badge */}
+                  {file.source === 'shared' ? (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5 bg-blue-100 text-blue-700 shrink-0 border-0">
+                      <Share2 className="h-2.5 w-2.5 ml-0.5" />
+                      مشارك
+                    </Badge>
+                  ) : file.visibility === 'private' ? (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5 bg-amber-100 text-amber-700 shrink-0 border-0">
+                      <Lock className="h-2.5 w-2.5 ml-0.5" />
+                      خاصة
+                    </Badge>
+                  ) : (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5 bg-emerald-100 text-emerald-700 shrink-0 border-0">
+                      <Globe className="h-2.5 w-2.5 ml-0.5" />
+                      عام
+                    </Badge>
+                  )}
                 </div>
-              )}
-
-              {file.description && (
-                <p className="text-xs text-muted-foreground line-clamp-1 mb-0.5">{file.description}</p>
-              )}
-
-              {file.notes && (
-                <div className="flex items-center gap-1 mb-1">
-                  <StickyNote className="h-3 w-3 text-teal-500 shrink-0" />
-                  <p className="text-xs text-teal-600 line-clamp-1">{file.notes}</p>
-                </div>
-              )}
-
-              <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                <span>{formatFileSize(file.file_size)}</span>
-                <span className="flex items-center gap-0.5">
-                  <Clock className="h-2.5 w-2.5" />
-                  {formatArabicDate(file.created_at)}
-                </span>
               </div>
             </div>
 
-            {/* Visibility toggle button */}
-            {file.isOwn && file.source !== 'shared' && (
+            {/* ── Subject badge (if applicable) ── */}
+            {file.subject_id && subjectNameMap[file.subject_id] && (
+              <div className="mb-2">
+                <Badge variant="secondary" className="text-[10px] px-2 py-0.5 bg-teal-100 text-teal-700 border-0">
+                  <BookOpen className="h-2.5 w-2.5 ml-1" />
+                  {subjectNameMap[file.subject_id]}
+                </Badge>
+              </div>
+            )}
+            {/* Source badge for subject files when not in that subject's tab */}
+            {file.source === 'subject_file' && activeTab === '__general__' && file.subjectFileSubjectId && subjectNameMap[file.subjectFileSubjectId] && (
+              <div className="mb-2">
+                <Badge variant="secondary" className="text-[10px] px-2 py-0.5 bg-teal-100 text-teal-700 border-0">
+                  <BookOpen className="h-2.5 w-2.5 ml-1" />
+                  مقرر: {subjectNameMap[file.subjectFileSubjectId]}
+                </Badge>
+              </div>
+            )}
+
+            {/* ── Shared-by info (if shared file) ── */}
+            {file.source === 'shared' && file.shared_by_name && (
+              <div className="flex items-center gap-1.5 mb-2">
+                <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-100">
+                  <User className="h-2.5 w-2.5 text-blue-600" />
+                </div>
+                <p className="text-xs text-blue-600 font-medium">
+                  شاركه {file.shared_by_name}
+                </p>
+              </div>
+            )}
+
+            {/* ── Description (truncated to 2 lines) ── */}
+            {file.description && (
+              <p className="text-xs text-muted-foreground line-clamp-2 mb-2 leading-relaxed">
+                {file.description}
+              </p>
+            )}
+
+            {/* ── Notes (truncated to 1 line, with icon) ── */}
+            {file.notes && (
+              <div className="flex items-center gap-1.5 mb-3">
+                <StickyNote className="h-3 w-3 text-teal-500 shrink-0" />
+                <p className="text-xs text-teal-600 line-clamp-1 flex-1 min-w-0">{file.notes}</p>
+              </div>
+            )}
+
+            {/* ── Bottom metadata row: file size • date/time ── */}
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground mb-4">
+              <span>{formatFileSize(file.file_size)}</span>
+              <span className="text-muted-foreground/40">•</span>
+              <span className="flex items-center gap-1">
+                <Clock className="h-2.5 w-2.5" />
+                {formatArabicDateShort(file.created_at)}
+              </span>
+            </div>
+
+            {/* ── Separator ── */}
+            <Separator className="mb-3" />
+
+            {/* ── Action buttons row ── */}
+            <div className="flex items-center gap-1 flex-wrap">
+              {/* Preview */}
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8 p-0 shrink-0 hover:bg-emerald-50"
-                onClick={() => handleVisibilityToggle(file)}
-                disabled={togglingVisibilityId === file.id}
-                title={file.visibility === 'private' ? 'تغيير إلى عام' : 'تغيير إلى خاص'}
+                className="h-8 px-2.5 text-xs text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
+                onClick={() => handlePreview(file)}
               >
-                {togglingVisibilityId === file.id ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
-                ) : file.visibility === 'private' ? (
-                  <Lock className="h-4 w-4 text-amber-500" />
-                ) : (
-                  <Globe className="h-4 w-4 text-emerald-500" />
-                )}
+                <Eye className="h-3.5 w-3.5 ml-1" />
+                معاينة
               </Button>
-            )}
-          </div>
 
-          {/* Actions */}
-          <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-border/50">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
-              onClick={() => handlePreview(file)}
-            >
-              <Eye className="h-3.5 w-3.5 ml-1" />
-              معاينة
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-teal-700 hover:text-teal-800 hover:bg-teal-50"
-              onClick={() => handleDownload(file.file_url, file.file_name)}
-            >
-              <Download className="h-3.5 w-3.5 ml-1" />
-              تحميل
-            </Button>
-            {file.isOwn && file.source !== 'shared' && (
-              <>
+              {/* Download */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2.5 text-xs text-teal-700 hover:text-teal-800 hover:bg-teal-50"
+                onClick={() => handleDownload(file.file_url, file.file_name)}
+              >
+                <Download className="h-3.5 w-3.5 ml-1" />
+                تحميل
+              </Button>
+
+              {/* Share (only own files) */}
+              {file.isOwn && file.source !== 'shared' && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 px-2 text-xs text-blue-700 hover:text-blue-800 hover:bg-blue-50"
+                  className="h-8 px-2.5 text-xs text-blue-700 hover:text-blue-800 hover:bg-blue-50"
                   onClick={() => handleShareClick(file.id)}
                 >
                   <Share2 className="h-3.5 w-3.5 ml-1" />
                   مشاركة
                 </Button>
+              )}
+
+              {/* Visibility Toggle */}
+              {file.isOwn && file.source !== 'shared' && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 px-2 text-xs text-rose-700 hover:text-rose-800 hover:bg-rose-50 mr-auto"
-                  onClick={() => handleDeleteClick(file)}
-                  disabled={deletingFileId === file.id}
+                  className="h-8 px-2.5 text-xs hover:bg-emerald-50"
+                  onClick={() => handleVisibilityToggle(file)}
+                  disabled={isToggling}
+                  title={file.visibility === 'private' ? 'تغيير إلى عام' : 'تغيير إلى خاص'}
                 >
-                  {deletingFileId === file.id ? (
+                  {isToggling ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-600" />
+                  ) : file.visibility === 'private' ? (
+                    <>
+                      <Lock className="h-3.5 w-3.5 ml-1 text-amber-500" />
+                      <span className="text-amber-600">خاص</span>
+                    </>
+                  ) : (
+                    <>
+                      <Globe className="h-3.5 w-3.5 ml-1 text-emerald-500" />
+                      <span className="text-emerald-600">عام</span>
+                    </>
+                  )}
+                </Button>
+              )}
+
+              {/* Delete (only own files, pushed to the end) */}
+              {file.isOwn && file.source !== 'shared' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2.5 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 mr-auto"
+                  onClick={() => handleDeleteClick(file)}
+                  disabled={isDeleting}
+                >
+                  {isDeleting ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <Trash2 className="h-3.5 w-3.5 ml-1" />
                   )}
                   حذف
                 </Button>
-              </>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </motion.div>
-  );
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+    );
+  };
 
   // =====================================================
   // Render: Preview Dialog
@@ -1195,48 +1229,48 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
   const renderPreviewDialog = () => {
     if (!previewFile) return null;
 
-    const { fileUrl, fileType, fileName, fileSize, description, notes, visibility, subject_id } = previewFile;
+    const { file_url, file_type, file_name, file_size, description, notes, visibility, subject_id } = previewFile;
 
     return (
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="sm:max-w-2xl max-h-[85vh]" dir="rtl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-right">
-              {getFileIcon(fileType)}
-              <span className="truncate">{fileName}</span>
+              {getFileIcon(file_type)}
+              <span className="truncate">{file_name}</span>
             </DialogTitle>
             <DialogDescription className="sr-only">
-              معاينة الملف {fileName}
+              معاينة الملف {file_name}
             </DialogDescription>
           </DialogHeader>
 
           {/* Preview content */}
           <div className="overflow-auto max-h-[55vh] rounded-lg border bg-muted/30">
-            {isImageType(fileType) && fileUrl ? (
+            {isImageType(file_type) && file_url ? (
               <div className="flex items-center justify-center p-4">
                 <img
-                  src={fileUrl}
-                  alt={fileName}
+                  src={file_url}
+                  alt={file_name}
                   className="max-w-full max-h-[50vh] object-contain rounded"
                 />
               </div>
-            ) : isPdfType(fileType) && fileUrl ? (
+            ) : isPdfType(file_type) && file_url ? (
               <iframe
-                src={fileUrl}
+                src={file_url}
                 className="w-full h-[50vh] rounded"
-                title={fileName}
+                title={file_name}
               />
             ) : (
               <div className="flex flex-col items-center justify-center py-12 gap-4">
                 <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-emerald-50 border border-emerald-100">
-                  {getFileIcon(fileType)}
+                  {getFileIcon(file_type, 'lg')}
                 </div>
                 <div className="text-center space-y-1">
-                  <p className="text-sm font-medium text-foreground">{fileName}</p>
-                  <p className="text-xs text-muted-foreground">{formatFileSize(fileSize)}</p>
+                  <p className="text-sm font-medium text-foreground">{file_name}</p>
+                  <p className="text-xs text-muted-foreground">{formatFileSize(file_size)}</p>
                 </div>
                 <Button
-                  onClick={() => handleDownload(fileUrl, fileName)}
+                  onClick={() => handleDownload(file_url, file_name)}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white"
                   size="sm"
                 >
@@ -1263,7 +1297,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
               </div>
             )}
             <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
-              <span>الحجم: {formatFileSize(fileSize)}</span>
+              <span>الحجم: {formatFileSize(file_size)}</span>
               {visibility && (
                 <span className="flex items-center gap-1">
                   {visibility === 'private' ? <Lock className="h-3 w-3" /> : <Globe className="h-3 w-3" />}
@@ -1277,6 +1311,10 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                 </span>
               )}
             </div>
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Clock className="h-3 w-3" />
+              <span>{formatArabicDate(previewFile.created_at)}</span>
+            </div>
           </div>
 
           <DialogFooter>
@@ -1288,7 +1326,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
               إغلاق
             </Button>
             <Button
-              onClick={() => handleDownload(fileUrl, fileName)}
+              onClick={() => handleDownload(file_url, file_name)}
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
               size="sm"
             >
@@ -1334,12 +1372,12 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
               <div className="space-y-2">
                 <Label className="text-sm font-medium">الملفات</Label>
                 <div
-                  className="border-2 border-dashed border-emerald-200 rounded-xl p-4 text-center cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/50 transition-colors"
+                  className="border-2 border-dashed border-emerald-200 rounded-xl p-6 text-center cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/50 transition-colors"
                   onClick={() => !isUploading && fileInputRef.current?.click()}
                 >
-                  <div className="space-y-1">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 mx-auto">
-                      <Upload className="h-5 w-5 text-emerald-600" />
+                  <div className="space-y-2">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100 mx-auto">
+                      <Upload className="h-6 w-6 text-emerald-600" />
                     </div>
                     <p className="text-sm text-muted-foreground">اضغط لاختيار ملفات أو اسحبها هنا</p>
                     <p className="text-xs text-muted-foreground">الحد الأقصى لكل ملف: 10 ميجابايت</p>
@@ -1357,7 +1395,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
 
               {/* File list */}
               {hasAnyFiles && (
-                <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
+                <div className="space-y-2 max-h-60 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20">
                   <AnimatePresence mode="popLayout">
                     {uploadItems.map((item) => (
                       <motion.div
@@ -1367,7 +1405,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                         exit={{ opacity: 0, x: 20 }}
                         transition={{ duration: 0.2 }}
                       >
-                        <Card className={`border ${
+                        <Card className={`rounded-xl border ${
                           item.status === 'done' ? 'border-emerald-200 bg-emerald-50/30' :
                           item.status === 'error' ? 'border-rose-200 bg-rose-50/30' :
                           item.status === 'uploading' ? 'border-amber-200 bg-amber-50/30' :
@@ -1447,7 +1485,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                         type="button"
                         onClick={() => setUploadVisibility('private')}
                         disabled={isUploading}
-                        className={`flex-1 flex items-center justify-center gap-2 rounded-lg border-2 p-2.5 text-sm font-medium transition-all ${
+                        className={`flex-1 flex items-center justify-center gap-2 rounded-xl border-2 p-3 text-sm font-medium transition-all ${
                           uploadVisibility === 'private'
                             ? 'border-amber-400 bg-amber-50 text-amber-700'
                             : 'border-muted bg-background text-muted-foreground hover:border-muted-foreground/30'
@@ -1460,7 +1498,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                         type="button"
                         onClick={() => setUploadVisibility('public')}
                         disabled={isUploading}
-                        className={`flex-1 flex items-center justify-center gap-2 rounded-lg border-2 p-2.5 text-sm font-medium transition-all ${
+                        className={`flex-1 flex items-center justify-center gap-2 rounded-xl border-2 p-3 text-sm font-medium transition-all ${
                           uploadVisibility === 'public'
                             ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
                             : 'border-muted bg-background text-muted-foreground hover:border-muted-foreground/30'
@@ -1543,7 +1581,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
 
               {/* All done message */}
               {allDone && !isUploading && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-50 border border-emerald-200">
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200">
                   <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
                   <p className="text-sm text-emerald-700">
                     تم الانتهاء من رفع الملفات
@@ -1594,7 +1632,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
   };
 
   // =====================================================
-  // Render: Enhanced Share Dialog (Multi-select)
+  // Render: Share Dialog (Multi-select)
   // =====================================================
   const renderShareDialog = () => (
     <Dialog open={shareDialogOpen} onOpenChange={(open) => {
@@ -1638,7 +1676,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
 
           {/* Search results */}
           {shareSearchResults.length > 0 && (
-            <div className="max-h-40 overflow-y-auto custom-scrollbar space-y-1 border rounded-lg p-2">
+            <div className="max-h-40 overflow-y-auto space-y-1 border rounded-xl p-2 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20">
               {shareSearchResults.map((user) => (
                 <button
                   key={user.id}
@@ -1652,7 +1690,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                     <p className="text-sm font-medium text-foreground truncate">{user.name}</p>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <span dir="ltr">{user.email}</span>
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 border-0">
                         {user.role === 'teacher' ? 'معلم' :
                          user.role === 'student' ? 'طالب' :
                          user.role === 'admin' ? 'مدير' : user.role}
@@ -1792,21 +1830,23 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
   // Main Render
   // =====================================================
   return (
-    <div className="space-y-4" dir="rtl">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100">
-            <FolderOpen className="h-4 w-4 text-emerald-600" />
+    <div className="space-y-5" dir="rtl">
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100 border border-emerald-200">
+            <FolderOpen className="h-4.5 w-4.5 text-emerald-600" />
           </div>
-          <h3 className="text-lg font-bold text-foreground">ملفاتي</h3>
-          <Badge variant="secondary" className="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-700">
-            {unifiedFiles.length} ملف
-          </Badge>
+          <div>
+            <h3 className="text-lg font-bold text-foreground">ملفاتي</h3>
+            <p className="text-[11px] text-muted-foreground">
+              {unifiedFiles.length} ملف إجمالي
+            </p>
+          </div>
         </div>
         <Button
           onClick={() => setUploadDialogOpen(true)}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8"
+          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 rounded-xl shadow-sm"
           size="sm"
         >
           <Plus className="h-3.5 w-3.5 ml-1" />
@@ -1814,40 +1854,50 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
         </Button>
       </div>
 
-      {/* Search bar */}
+      {/* ── Search bar ── */}
       <div className="relative">
-        <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="ابحث بالاسم، التاريخ (اليوم، أمس، هذا الأسبوع)..."
-          className="pr-9 text-sm h-10 border-emerald-200 focus:border-emerald-400"
+          placeholder="ابحث بالاسم، الوصف، الملاحظات، التاريخ (اليوم، أمس، هذا الأسبوع، هذا الشهر)..."
+          className="pr-10 text-sm h-11 rounded-xl border-emerald-200 focus:border-emerald-400 focus:ring-emerald-200"
           dir="rtl"
         />
         {searchQuery && (
           <button
             onClick={() => setSearchQuery('')}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
           >
             <X className="h-4 w-4" />
           </button>
         )}
       </div>
 
-      {/* Subject tabs */}
-      <div className="border-b overflow-x-auto custom-scrollbar">
-        <div className="flex gap-1 min-w-max pb-px">
+      {/* ── Subject tabs (horizontally scrollable) ── */}
+      <div className="overflow-x-auto pb-1 -mb-px [&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20">
+        <div className="flex gap-1 min-w-max">
           {/* General tab */}
           <button
             onClick={() => setActiveTab('__general__')}
-            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all whitespace-nowrap rounded-t-lg ${
               activeTab === '__general__'
-                ? 'border-emerald-500 text-emerald-700'
-                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30'
+                ? 'border-emerald-500 text-emerald-700 bg-emerald-50/50'
+                : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
             }`}
           >
             <FolderOpen className="h-3.5 w-3.5" />
-            عام
+            <span>عامة</span>
+            <Badge
+              variant="secondary"
+              className={`text-[10px] px-1.5 py-0 h-4 min-w-[20px] flex items-center justify-center border-0 ${
+                activeTab === '__general__'
+                  ? 'bg-emerald-200 text-emerald-800'
+                  : 'bg-muted text-muted-foreground'
+              }`}
+            >
+              {tabFileCounts['__general__'] || 0}
+            </Badge>
           </button>
 
           {/* Subject tabs */}
@@ -1855,20 +1905,30 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
             <button
               key={subject.id}
               onClick={() => setActiveTab(subject.id)}
-              className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all whitespace-nowrap rounded-t-lg ${
                 activeTab === subject.id
-                  ? 'border-emerald-500 text-emerald-700'
-                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30'
+                  ? 'border-emerald-500 text-emerald-700 bg-emerald-50/50'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
               }`}
             >
               <BookOpen className="h-3.5 w-3.5" />
-              {subject.name}
+              <span>{subject.name}</span>
+              <Badge
+                variant="secondary"
+                className={`text-[10px] px-1.5 py-0 h-4 min-w-[20px] flex items-center justify-center border-0 ${
+                  activeTab === subject.id
+                    ? 'bg-emerald-200 text-emerald-800'
+                    : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                {tabFileCounts[subject.id] || 0}
+              </Badge>
             </button>
           ))}
         </div>
       </div>
 
-      {/* File grid */}
+      {/* ── File grid ── */}
       {loading ? (
         renderSkeletons()
       ) : filteredFiles.length === 0 ? (
@@ -1877,12 +1937,12 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
             ? 'لا توجد نتائج مطابقة للبحث'
             : activeTab === '__general__'
               ? 'لا توجد ملفات عامة بعد. ارفع ملفاً جديداً للبدء.'
-              : `لا توجد ملفات في ${subjectNameMap[activeTab] || 'هذا المقرر'}.`,
+              : `لا توجد ملفات في "${subjectNameMap[activeTab] || 'هذا المقرر'}".`,
           searchQuery
-            ? <Search className="h-7 w-7 text-muted-foreground" />
+            ? <Search className="h-8 w-8 text-muted-foreground" />
             : activeTab === '__general__'
-              ? <FolderOpen className="h-7 w-7 text-emerald-500" />
-              : <BookOpen className="h-7 w-7 text-emerald-500" />
+              ? <FolderOpen className="h-8 w-8 text-emerald-500" />
+              : <BookOpen className="h-8 w-8 text-emerald-500" />
         )
       ) : (
         <motion.div
@@ -1895,7 +1955,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
         </motion.div>
       )}
 
-      {/* Dialogs */}
+      {/* ── Dialogs ── */}
       {renderPreviewDialog()}
       {renderUploadDialog()}
       {renderShareDialog()}
