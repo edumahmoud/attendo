@@ -788,7 +788,7 @@ export default function AssignmentsSection({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
-                  <CardTitle className="text-base font-bold truncate">
+                  <CardTitle className="text-base font-bold line-clamp-2">
                     {assignment.title}
                   </CardTitle>
                   {renderDeadlineBadge(assignment.deadline)}
@@ -1020,7 +1020,7 @@ export default function AssignmentsSection({
                           <div className="flex items-center justify-between rounded-md bg-white/60 px-3 py-2">
                             <div className="flex items-center gap-2 min-w-0">
                               <FileText className="h-4 w-4 text-emerald-600 shrink-0" />
-                              <span className="text-sm truncate">{sub.file_name}</span>
+                              <span className="text-sm line-clamp-2">{sub.file_name}</span>
                               {sub.file_size && (
                                 <span className="text-xs text-muted-foreground shrink-0">
                                   ({formatFileSize(sub.file_size)})
@@ -1072,10 +1072,10 @@ export default function AssignmentsSection({
                             </AvatarFallback>
                           </Avatar>
                           <div className="min-w-0">
-                            <p className="text-sm font-medium text-foreground truncate">
+                            <p className="text-sm font-medium text-foreground line-clamp-2">
                               {student.student_name || 'طالب'}
                             </p>
-                            <p className="text-xs text-muted-foreground truncate">
+                            <p className="text-xs text-muted-foreground line-clamp-2">
                               {student.student_email || ''}
                             </p>
                           </div>
@@ -1369,7 +1369,7 @@ export default function AssignmentsSection({
                 {submitFile ? (
                   <div className="flex items-center justify-center gap-2">
                     <FileText className="h-5 w-5 text-emerald-600" />
-                    <span className="text-sm font-medium text-foreground truncate max-w-[200px]">
+                    <span className="text-sm font-medium text-foreground line-clamp-2 max-w-[200px]">
                       {submitFile.name}
                     </span>
                     <span className="text-xs text-muted-foreground">

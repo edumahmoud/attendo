@@ -1457,10 +1457,10 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
       className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
     >
       <div>
-        <h2 className="text-2xl font-bold text-foreground">أهلاً بك، د. {profile.name}</h2>
-        <p className="text-muted-foreground mt-1">لوحة تحكم المعلم</p>
+        <h2 className="text-lg sm:text-2xl font-bold text-foreground">أهلاً بك، د. {profile.name}</h2>
+        <p className="text-xs sm:text-sm text-muted-foreground mt-1">لوحة تحكم المعلم</p>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
         <RealtimeStatus
           status={rtStatusValue}
           lastUpdated={rtLastUpdated}
@@ -1471,12 +1471,13 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
             onClick={handleCopyTeacherCode}
-            className="flex items-center gap-2 rounded-xl border-2 border-emerald-200 bg-emerald-50 px-5 py-3 text-sm font-bold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100 hover:border-emerald-300"
+            className="flex items-center gap-1.5 sm:gap-2 rounded-xl border-2 border-emerald-200 bg-emerald-50 px-3 sm:px-5 py-2 sm:py-3 text-xs sm:text-sm font-bold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100 hover:border-emerald-300"
             title="انقر للنسخ"
           >
-            <Copy className="h-4 w-4" />
-            <span>كود المعلم:</span>
-            <span className="font-mono text-base tracking-wider">{profile.teacher_code}</span>
+            <Copy className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <span className="hidden sm:inline">كود المعلم:</span>
+            <span className="sm:hidden">الكود:</span>
+            <span className="font-mono text-sm sm:text-base tracking-wider">{profile.teacher_code}</span>
           </motion.button>
         )}
       </div>
@@ -1487,11 +1488,11 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
   // Render: Dashboard Section
   // -------------------------------------------------------
   const renderDashboard = () => (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4 sm:space-y-6">
       {renderHeader()}
 
       {/* Stats row */}
-      <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <motion.div variants={itemVariants} className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
         <StatCard
           icon={<BookOpen className="h-6 w-6" />}
           label="المقررات"
@@ -1519,12 +1520,12 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
       </motion.div>
 
       {/* Two columns */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-6">
         {/* Student overview table (2/3) */}
         <motion.div variants={itemVariants} className="lg:col-span-2">
           <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between border-b p-4">
-              <h3 className="font-semibold text-foreground flex items-center gap-2">
+            <div className="flex items-center justify-between border-b p-3 sm:p-4">
+              <h3 className="text-sm sm:text-base font-semibold text-foreground flex items-center gap-2">
                 <Users className="h-4 w-4 text-emerald-600" />
                 نظرة عامة على الطلاب
               </h3>
@@ -1544,10 +1545,10 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
               ) : (
                 <table className="w-full">
                   <thead className="bg-muted/50 sticky top-0">
-                    <tr className="text-xs text-muted-foreground">
-                      <th className="text-right font-medium p-3">اسم الطالب</th>
-                      <th className="text-right font-medium p-3">آخر نتيجة</th>
-                      <th className="text-right font-medium p-3">تفاصيل</th>
+                    <tr className="text-[10px] sm:text-xs text-muted-foreground">
+                      <th className="text-right font-medium p-2 sm:p-3">اسم الطالب</th>
+                      <th className="text-right font-medium p-2 sm:p-3">آخر نتيجة</th>
+                      <th className="text-right font-medium p-2 sm:p-3">تفاصيل</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -1556,32 +1557,32 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                       const pct = lastScore ? scorePercentage(lastScore.score, lastScore.total) : null;
                       return (
                         <tr key={student.id} className="hover:bg-muted/30 transition-colors">
-                          <td className="p-3">
+                          <td className="p-2 sm:p-3">
                             <div className="flex items-center gap-2">
-                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
+                              <div className="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-[10px] sm:text-xs font-bold">
                                 {student.name.charAt(0)}
                               </div>
-                              <span className="text-sm font-medium text-foreground truncate">{student.name}</span>
+                              <span className="text-xs sm:text-sm font-medium text-foreground line-clamp-2">{student.name}</span>
                             </div>
                           </td>
-                          <td className="p-3">
+                          <td className="p-2 sm:p-3">
                             {pct !== null ? (
-                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${pctColorClass(pct)}`}>
+                              <span className={`inline-flex rounded-full px-2 py-0.5 sm:px-2.5 text-[10px] sm:text-xs font-bold ${pctColorClass(pct)}`}>
                                 {pct}%
                               </span>
                             ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
+                              <span className="text-[10px] sm:text-xs text-muted-foreground">—</span>
                             )}
                           </td>
-                          <td className="p-3">
+                          <td className="p-2 sm:p-3">
                             <button
                               onClick={() => {
                                 setSelectedStudent(student);
                                 setStudentDetailOpen(true);
                               }}
-                              className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                              className="flex items-center gap-1 text-[10px] sm:text-xs text-emerald-600 hover:text-emerald-700 font-medium"
                             >
-                              <Eye className="h-3.5 w-3.5" />
+                              <Eye className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                               عرض
                             </button>
                           </td>
@@ -1598,8 +1599,8 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
         {/* Performance alerts (1/3) */}
         <motion.div variants={itemVariants}>
           <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between border-b p-4">
-              <h3 className="font-semibold text-foreground flex items-center gap-2">
+            <div className="flex items-center justify-between border-b p-3 sm:p-4">
+              <h3 className="text-sm sm:text-base font-semibold text-foreground flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-amber-600" />
                 تنبيهات الأداء
               </h3>
@@ -1622,21 +1623,21 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                     const pct = scorePercentage(score.score, score.total);
                     const student = students.find((s) => s.id === score.student_id);
                     return (
-                      <div key={score.id} className="flex items-center gap-3 p-3">
+                      <div key={score.id} className="flex items-center gap-2 sm:gap-3 p-2.5 sm:p-3">
                         <div
                           className={`h-2.5 w-2.5 shrink-0 rounded-full ${
                             pct >= 90 ? 'bg-emerald-500' : pct >= 75 ? 'bg-teal-500' : pct >= 60 ? 'bg-amber-500' : 'bg-rose-500'
                           }`}
                         />
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-foreground truncate">
+                          <p className="text-xs sm:text-sm font-medium text-foreground line-clamp-1">
                             {student?.name || 'طالب'}
                           </p>
-                          <p className="text-xs text-muted-foreground truncate">
+                          <p className="text-[10px] sm:text-xs text-muted-foreground line-clamp-1">
                             {score.quiz_title}
                           </p>
                         </div>
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${pctColorClass(pct)}`}>
+                        <span className={`shrink-0 rounded-full px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs font-bold ${pctColorClass(pct)}`}>
                           {pct}%
                         </span>
                       </div>
@@ -1655,14 +1656,14 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
   // Render: Students Section
   // -------------------------------------------------------
   const renderStudents = () => (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">الطلاب</h2>
-          <p className="text-muted-foreground mt-1">إدارة الطلاب المسجلين لديك</p>
+          <h2 className="text-lg sm:text-2xl font-bold text-foreground">الطلاب</h2>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">إدارة الطلاب المسجلين لديك</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <div className="relative">
             <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -1670,16 +1671,17 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
               value={studentSearch}
               onChange={(e) => setStudentSearch(e.target.value)}
               placeholder="بحث عن طالب..."
-              className="rounded-lg border bg-background pr-10 pl-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-colors w-48"
+              className="rounded-lg border bg-background pr-10 pl-3 py-2 text-xs sm:text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-colors w-36 sm:w-48"
               dir="rtl"
             />
           </div>
           <button
             onClick={handleExportSummaries}
-            className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700"
+            className="flex items-center gap-1.5 sm:gap-2 rounded-lg bg-emerald-600 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700"
           >
-            <Download className="h-4 w-4" />
-            تصدير الملخصات (Excel)
+            <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <span className="hidden sm:inline">تصدير الملخصات (Excel)</span>
+            <span className="sm:hidden">تصدير Excel</span>
           </button>
         </div>
       </motion.div>
@@ -1701,7 +1703,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
           </p>
         </motion.div>
       ) : (
-        <motion.div variants={containerVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <motion.div variants={containerVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {filteredStudents.map((student) => {
             const lastScore = getStudentLastScore(student.id);
             const pct = lastScore ? scorePercentage(lastScore.score, lastScore.total) : null;
@@ -1709,41 +1711,41 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
             return (
               <motion.div key={student.id} variants={itemVariants} {...cardHover}>
                 <div
-                  className="group rounded-xl border bg-card p-5 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                  className="group rounded-xl border bg-card p-3 sm:p-5 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
                   onClick={() => {
                     setSelectedStudent(student);
                     setStudentDetailOpen(true);
                   }}
                 >
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-sm font-bold transition-transform group-hover:scale-110">
+                  <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3">
+                    <div className="flex h-9 w-9 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs sm:text-sm font-bold transition-transform group-hover:scale-110">
                       {student.name.charAt(0)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-foreground truncate">{student.name}</h3>
-                      <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                        <Mail className="h-3 w-3" />
+                      <h3 className="text-sm sm:text-base font-semibold text-foreground line-clamp-2">{student.name}</h3>
+                      <p className="text-[10px] sm:text-xs text-muted-foreground line-clamp-1 flex items-center gap-1">
+                        <Mail className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
                         {student.email}
                       </p>
                     </div>
                   </div>
                   {/* Performance metrics */}
-                  <div className="grid grid-cols-3 gap-2 mb-3">
-                    <div className="rounded-lg border bg-muted/30 p-2 text-center">
-                      <p className="text-xs text-muted-foreground">متوسط الدرجات</p>
-                      <p className={`text-sm font-bold ${perf.avgScore !== null ? (perf.avgScore >= 75 ? 'text-emerald-700' : perf.avgScore >= 60 ? 'text-amber-700' : 'text-rose-700') : 'text-muted-foreground'}`}>
+                  <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mb-2 sm:mb-3">
+                    <div className="rounded-lg border bg-muted/30 p-1.5 sm:p-2 text-center">
+                      <p className="text-[10px] sm:text-xs text-muted-foreground">متوسط الدرجات</p>
+                      <p className={`text-xs sm:text-sm font-bold ${perf.avgScore !== null ? (perf.avgScore >= 75 ? 'text-emerald-700' : perf.avgScore >= 60 ? 'text-amber-700' : 'text-rose-700') : 'text-muted-foreground'}`}>
                         {perf.avgScore !== null ? `${perf.avgScore}%` : 'لا توجد بيانات'}
                       </p>
                     </div>
-                    <div className="rounded-lg border bg-muted/30 p-2 text-center">
-                      <p className="text-xs text-muted-foreground">الحضور</p>
-                      <p className={`text-sm font-bold ${perf.attendanceRate !== null ? (perf.attendanceRate >= 75 ? 'text-emerald-700' : perf.attendanceRate >= 50 ? 'text-amber-700' : 'text-rose-700') : 'text-muted-foreground'}`}>
+                    <div className="rounded-lg border bg-muted/30 p-1.5 sm:p-2 text-center">
+                      <p className="text-[10px] sm:text-xs text-muted-foreground">الحضور</p>
+                      <p className={`text-xs sm:text-sm font-bold ${perf.attendanceRate !== null ? (perf.attendanceRate >= 75 ? 'text-emerald-700' : perf.attendanceRate >= 50 ? 'text-amber-700' : 'text-rose-700') : 'text-muted-foreground'}`}>
                         {perf.attendanceRate !== null ? `${perf.attendanceRate}%` : 'لا توجد بيانات'}
                       </p>
                     </div>
-                    <div className="rounded-lg border bg-muted/30 p-2 text-center">
-                      <p className="text-xs text-muted-foreground">الاختبارات</p>
-                      <p className="text-sm font-bold text-foreground">
+                    <div className="rounded-lg border bg-muted/30 p-1.5 sm:p-2 text-center">
+                      <p className="text-[10px] sm:text-xs text-muted-foreground">الاختبارات</p>
+                      <p className="text-xs sm:text-sm font-bold text-foreground">
                         {perf.totalQuizzes > 0 ? perf.totalQuizzes : 'لا توجد بيانات'}
                       </p>
                     </div>
@@ -1755,14 +1757,14 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                         setPerformanceStudent(student);
                         setPerformanceDialogOpen(true);
                       }}
-                      className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+                      className="flex items-center gap-1 sm:gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
                     >
-                      <BarChart3 className="h-3.5 w-3.5" />
+                      <BarChart3 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                       عرض الأداء
                     </button>
                     <div className="flex-1" />
                     {pct !== null && (
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-[10px] sm:text-xs text-muted-foreground">
                         آخر نتيجة: <span className={`font-bold ${pctColorClass(pct)}`}>{pct}%</span>
                       </span>
                     )}
@@ -1790,7 +1792,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
               exit={{ scale: 0.95, opacity: 0, y: 10 }}
               transition={{ type: 'spring', stiffness: 400, damping: 30 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-lg rounded-2xl border bg-background shadow-xl"
+              className="w-full max-w-lg rounded-2xl border bg-background shadow-xl max-h-[85vh] overflow-y-auto"
               dir="rtl"
             >
               {/* Header */}
@@ -1813,7 +1815,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
               </div>
 
               {/* Scores list */}
-              <div className="p-5 space-y-3 max-h-72 overflow-y-auto custom-scrollbar">
+              <div className="p-3 sm:p-5 space-y-3 max-h-72 overflow-y-auto custom-scrollbar">
                 {getStudentScores(selectedStudent.id).length === 0 ? (
                   <div className="text-center py-6 text-muted-foreground text-sm">
                     لا توجد نتائج لهذا الطالب
@@ -1822,13 +1824,13 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                   getStudentScores(selectedStudent.id).map((score) => {
                     const pct = scorePercentage(score.score, score.total);
                     return (
-                      <div key={score.id} className="flex items-center gap-3 rounded-lg border p-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal-50">
-                          <ClipboardList className="h-4 w-4 text-teal-600" />
+                      <div key={score.id} className="flex items-center gap-2 sm:gap-3 rounded-lg border p-2 sm:p-3">
+                        <div className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-lg bg-teal-50">
+                          <ClipboardList className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-teal-600" />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-foreground truncate">{score.quiz_title}</p>
-                          <p className="text-xs text-muted-foreground">{score.score}/{score.total} · {formatDate(score.completed_at)}</p>
+                          <p className="text-xs sm:text-sm font-medium text-foreground line-clamp-2">{score.quiz_title}</p>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground">{score.score}/{score.total} · {formatDate(score.completed_at)}</p>
                         </div>
                         <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${pctColorClass(pct)}`}>
                           {pct}%
@@ -1840,7 +1842,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
               </div>
 
               {/* Footer */}
-              <div className="flex items-center gap-3 border-t p-5">
+              <div className="flex items-center gap-2 sm:gap-3 border-t p-3 sm:p-5">
                 <button
                   onClick={() => handleResetStudent(selectedStudent.id)}
                   disabled={resettingStudent}
@@ -1881,7 +1883,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
               exit={{ scale: 0.95, opacity: 0, y: 10 }}
               transition={{ type: 'spring', stiffness: 400, damping: 30 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-2xl rounded-2xl border bg-background shadow-xl max-h-[90vh] overflow-y-auto"
+              className="w-full max-w-2xl rounded-2xl border bg-background shadow-xl max-h-[85vh] overflow-y-auto"
               dir="rtl"
             >
               {(() => {
@@ -2012,7 +2014,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                                 return (
                                   <div key={score.id} className="flex items-center gap-3 p-3 hover:bg-muted/30 transition-colors">
                                     <div className="flex-1 min-w-0">
-                                      <p className="text-sm font-medium text-foreground truncate">{score.quiz_title}</p>
+                                      <p className="text-sm font-medium text-foreground line-clamp-2">{score.quiz_title}</p>
                                       <p className="text-xs text-muted-foreground">{score.score}/{score.total} · {formatDate(score.completed_at)}</p>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -2120,29 +2122,29 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
     const displayedQuizzes = quizTab === 'open' ? openQuizzes : closedQuizzes;
 
     return (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4 sm:space-y-6">
       {/* Header */}
       <motion.div variants={itemVariants}>
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-foreground">الاختبارات</h2>
-            <p className="text-muted-foreground mt-1">عرض وإدارة الاختبارات - أنشئ اختبارات من داخل المقررات</p>
+            <h2 className="text-lg sm:text-2xl font-bold text-foreground">الاختبارات</h2>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1">عرض وإدارة الاختبارات - أنشئ اختبارات من داخل المقررات</p>
           </div>
         </div>
       </motion.div>
 
       {/* Tabs */}
       <motion.div variants={itemVariants}>
-        <div className="flex gap-2">
+        <div className="flex gap-2 overflow-x-auto">
           <button
             onClick={() => setQuizTab('open')}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
+            className={`flex items-center gap-1.5 sm:gap-2 rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
               quizTab === 'open'
                 ? 'bg-emerald-600 text-white shadow-sm'
                 : 'border text-muted-foreground hover:bg-muted/50'
             }`}
           >
-            <Eye className="h-4 w-4" />
+            <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             اختبارات مفتوحة
             <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
               quizTab === 'open' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-700'
@@ -2152,13 +2154,13 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
           </button>
           <button
             onClick={() => setQuizTab('closed')}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
+            className={`flex items-center gap-1.5 sm:gap-2 rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
               quizTab === 'closed'
                 ? 'bg-emerald-600 text-white shadow-sm'
                 : 'border text-muted-foreground hover:bg-muted/50'
             }`}
           >
-            <Lock className="h-4 w-4" />
+            <Lock className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             اختبارات مغلقة
             <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
               quizTab === 'closed' ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-700'
@@ -2201,7 +2203,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
           </p>
         </motion.div>
       ) : (
-        <motion.div variants={containerVariants} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <motion.div variants={containerVariants} className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
           {displayedQuizzes.map((quiz) => {
             // Format scheduled date/time nicely
             const formattedSchedule = (() => {
@@ -2227,20 +2229,20 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
             
             return (
             <motion.div key={quiz.id} variants={itemVariants} {...cardHover}>
-              <div className="group rounded-xl border bg-card p-5 shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-teal-100 transition-transform group-hover:scale-110">
-                    <ClipboardList className="h-5 w-5 text-teal-600" />
+              <div className="group rounded-xl border bg-card p-3 sm:p-5 shadow-sm hover:shadow-md transition-shadow">
+                <div className="flex items-start gap-2 sm:gap-3">
+                  <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg bg-teal-100 transition-transform group-hover:scale-110">
+                    <ClipboardList className="h-4 w-4 sm:h-5 sm:w-5 text-teal-600" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold text-foreground truncate">{quiz.title}</h3>
+                    <h3 className="text-sm sm:text-base font-semibold text-foreground line-clamp-2">{quiz.title}</h3>
                     {quiz.subject_name && (
                       <div className="flex items-center gap-1 mt-1">
                         <BookOpen className="h-3 w-3 text-emerald-600" />
-                        <span className="text-[11px] text-emerald-600 font-medium">{quiz.subject_name}</span>
+                        <span className="text-[10px] sm:text-[11px] text-emerald-600 font-medium">{quiz.subject_name}</span>
                       </div>
                     )}
-                    <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
+                    <div className="flex items-center gap-2 sm:gap-3 mt-2 text-[10px] sm:text-xs text-muted-foreground flex-wrap">
                       <span className="flex items-center gap-1">
                         <Hash className="h-3 w-3" />
                         {quiz.questions?.length || 0} أسئلة
@@ -2310,37 +2312,37 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                 </div>
 
                 {/* Action buttons */}
-                <div className="flex items-center gap-2 mt-3 pt-3 border-t">
+                <div className="flex items-center gap-1.5 sm:gap-2 mt-3 pt-3 border-t flex-wrap">
                   <button
                     onClick={() => handleViewQuizResults(quiz)}
-                    className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-teal-700 border-teal-200 bg-teal-50 hover:bg-teal-100 transition-colors"
+                    className="flex items-center gap-1 sm:gap-1.5 rounded-lg border px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-teal-700 border-teal-200 bg-teal-50 hover:bg-teal-100 transition-colors"
                   >
-                    <BarChart3 className="h-3.5 w-3.5" />
+                    <BarChart3 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                     النتائج
                   </button>
                   <button
                     onClick={() => handleOpenEditQuiz(quiz)}
-                    className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-amber-700 border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors"
+                    className="flex items-center gap-1 sm:gap-1.5 rounded-lg border px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-amber-700 border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors"
                   >
-                    <Pencil className="h-3.5 w-3.5" />
+                    <Pencil className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                     تعديل
                   </button>
                   <button
                     onClick={() => handleShareQuiz(quiz)}
-                    className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition-colors"
+                    className="flex items-center gap-1 sm:gap-1.5 rounded-lg border px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition-colors"
                   >
-                    <Share2 className="h-3.5 w-3.5" />
+                    <Share2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                     مشاركة
                   </button>
                   <button
                     onClick={() => handleDeleteQuiz(quiz.id)}
                     disabled={deletingQuizId === quiz.id}
-                    className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium text-rose-700 border-rose-200 bg-rose-50 hover:bg-rose-100 transition-colors"
+                    className="flex items-center gap-1 sm:gap-1.5 rounded-lg border px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-rose-700 border-rose-200 bg-rose-50 hover:bg-rose-100 transition-colors"
                   >
                     {deletingQuizId === quiz.id ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <Loader2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 animate-spin" />
                     ) : (
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Trash2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                     )}
                     حذف
                   </button>
@@ -2368,7 +2370,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
               exit={{ scale: 0.95, opacity: 0, y: 10 }}
               transition={{ type: 'spring', stiffness: 400, damping: 30 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-2xl rounded-2xl border bg-background shadow-xl max-h-[90vh] overflow-y-auto"
+              className="w-full max-w-2xl rounded-2xl border bg-background shadow-xl max-h-[85vh] overflow-y-auto"
               dir="rtl"
             >
               {/* Header */}
@@ -2703,7 +2705,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                             {idx + 1}
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-foreground truncate">{q.question}</p>
+                            <p className="text-sm font-medium text-foreground line-clamp-2">{q.question}</p>
                             <p className="text-xs text-muted-foreground">
                               {q.type === 'mcq' ? 'اختيار متعدد' : q.type === 'boolean' ? 'صح/خطأ' : q.type === 'completion' ? 'إكمال' : 'مطابقة'}
                             </p>
@@ -2770,14 +2772,14 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
               exit={{ scale: 0.95, opacity: 0, y: 10 }}
               transition={{ type: 'spring', stiffness: 400, damping: 30 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-3xl rounded-2xl border bg-background shadow-xl max-h-[90vh] overflow-y-auto"
+              className="w-full max-w-3xl rounded-2xl border bg-background shadow-xl max-h-[85vh] overflow-y-auto"
               dir="rtl"
             >
               {/* Header */}
-              <div className="flex items-center justify-between border-b p-5 sticky top-0 bg-background z-10">
-                <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5 text-emerald-600" />
-                  نتائج اختبار: {viewingQuizResults.title}
+              <div className="flex items-center justify-between border-b p-3 sm:p-5 sticky top-0 bg-background z-10">
+                <h3 className="text-sm sm:text-lg font-bold text-foreground flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-600" />
+                  <span className="line-clamp-1">نتائج اختبار: {viewingQuizResults.title}</span>
                   {(viewingQuizResults as any).subject_name && (
                     <Badge variant="outline" className="text-xs border-emerald-300 bg-emerald-50 text-emerald-700 mr-2">
                       <BookOpen className="h-3 w-3 ml-1" />
@@ -2794,7 +2796,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
               </div>
 
               {/* Content */}
-              <div className="p-5">
+              <div className="p-3 sm:p-5">
                 {loadingResults ? (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
@@ -2807,24 +2809,24 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                 ) : (
                   <>
                     {/* Summary */}
-                    <div className="grid grid-cols-3 gap-4 mb-6">
-                      <div className="rounded-xl border bg-emerald-50 p-4 text-center">
-                        <p className="text-2xl font-bold text-emerald-700">{quizResultsScores.length}</p>
-                        <p className="text-xs text-emerald-600">طالب أكمل</p>
+                    <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
+                      <div className="rounded-xl border bg-emerald-50 p-2 sm:p-4 text-center">
+                        <p className="text-lg sm:text-2xl font-bold text-emerald-700">{quizResultsScores.length}</p>
+                        <p className="text-[10px] sm:text-xs text-emerald-600">طالب أكمل</p>
                       </div>
-                      <div className="rounded-xl border bg-teal-50 p-4 text-center">
-                        <p className="text-2xl font-bold text-teal-700">
+                      <div className="rounded-xl border bg-teal-50 p-2 sm:p-4 text-center">
+                        <p className="text-lg sm:text-2xl font-bold text-teal-700">
                           {quizResultsScores.length > 0
                             ? Math.round(quizResultsScores.reduce((sum, s) => sum + (s.total > 0 ? (s.score / s.total) * 100 : 0), 0) / quizResultsScores.length)
                             : 0}%
                         </p>
-                        <p className="text-xs text-teal-600">متوسط النسبة</p>
+                        <p className="text-[10px] sm:text-xs text-teal-600">متوسط النسبة</p>
                       </div>
-                      <div className="rounded-xl border bg-amber-50 p-4 text-center">
-                        <p className="text-2xl font-bold text-amber-700">
+                      <div className="rounded-xl border bg-amber-50 p-2 sm:p-4 text-center">
+                        <p className="text-lg sm:text-2xl font-bold text-amber-700">
                           {quizResultsScores.filter(s => s.total > 0 && (s.score / s.total) * 100 >= 60).length}
                         </p>
-                        <p className="text-xs text-amber-600">ناجح (≥60%)</p>
+                        <p className="text-[10px] sm:text-xs text-amber-600">ناجح (≥60%)</p>
                       </div>
                     </div>
 
@@ -2954,39 +2956,39 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
     const maxDistCount = Math.max(...scoreDistribution.map((d) => d.count), 1);
 
     return (
-      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4 sm:space-y-6">
         {/* Header */}
-        <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-foreground">التقارير والإحصائيات</h2>
-            <p className="text-muted-foreground mt-1">تحليل شامل لأداء الطلاب والاختبارات</p>
+            <h2 className="text-lg sm:text-2xl font-bold text-foreground">التقارير والإحصائيات</h2>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1">تحليل شامل لأداء الطلاب والاختبارات</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={handleExportPerformanceExcel}
-              className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700"
+              className="flex items-center gap-1.5 sm:gap-2 rounded-lg bg-emerald-600 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700"
             >
-              <Download className="h-4 w-4" />
+              <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               تصدير Excel
             </button>
             <button
               onClick={handleExportPerformanceCSV}
-              className="flex items-center gap-2 rounded-lg border border-emerald-600 px-4 py-2.5 text-sm font-medium text-emerald-600 shadow-sm transition-colors hover:bg-emerald-50"
+              className="flex items-center gap-1.5 sm:gap-2 rounded-lg border border-emerald-600 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium text-emerald-600 shadow-sm transition-colors hover:bg-emerald-50"
             >
-              <Download className="h-4 w-4" />
+              <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               تصدير CSV
             </button>
           </div>
         </motion.div>
 
         {/* Subject Filter */}
-        <motion.div variants={itemVariants} className="flex items-center gap-3">
-          <BookOpen className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium text-foreground">تصفية حسب المقرر:</span>
+        <motion.div variants={itemVariants} className="flex items-center gap-2 sm:gap-3">
+          <BookOpen className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
+          <span className="text-xs sm:text-sm font-medium text-foreground">تصفية حسب المقرر:</span>
           <select
             value={reportSubjectFilter}
             onChange={(e) => setReportSubjectFilter(e.target.value)}
-            className="rounded-lg border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="rounded-lg border bg-background px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500"
           >
             <option value="all">جميع المقررات</option>
             {teacherSubjects.map((s) => (
@@ -2996,11 +2998,11 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
         </motion.div>
 
         {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-6">
           {/* Recharts: Bar chart */}
           <motion.div variants={itemVariants}>
-            <div className="rounded-xl border bg-card p-5 shadow-sm">
-              <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+            <div className="rounded-xl border bg-card p-3 sm:p-5 shadow-sm">
+              <h3 className="text-sm sm:text-base font-semibold text-foreground mb-3 sm:mb-4 flex items-center gap-2">
                 <TrendingUp className="h-4 w-4 text-emerald-600" />
                 متوسط الأداء لكل اختبار
               </h3>
@@ -3009,7 +3011,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                   لا توجد بيانات كافية
                 </div>
               ) : (
-                <div className="h-72" dir="ltr">
+                <div className="h-56 sm:h-72" dir="ltr">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={reportSubjectFilter === 'all' ? barChartData : filteredReportQuizzes.map((q) => {
                       const qScores = filteredReportScores.filter((s) => s.quiz_id === q.id);
@@ -3050,8 +3052,8 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
 
           {/* Pie chart */}
           <motion.div variants={itemVariants}>
-            <div className="rounded-xl border bg-card p-5 shadow-sm">
-              <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+            <div className="rounded-xl border bg-card p-3 sm:p-5 shadow-sm">
+              <h3 className="text-sm sm:text-base font-semibold text-foreground mb-3 sm:mb-4 flex items-center gap-2">
                 <Award className="h-4 w-4 text-teal-600" />
                 توزيع أداء الطلاب
               </h3>
@@ -3060,7 +3062,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                   لا توجد بيانات كافية
                 </div>
               ) : (
-                <div className="h-72" dir="ltr">
+                <div className="h-56 sm:h-72" dir="ltr">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
@@ -3104,15 +3106,15 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
 
         {/* CSS-based Score Distribution Bar Chart */}
         <motion.div variants={itemVariants}>
-          <div className="rounded-xl border bg-card p-5 shadow-sm">
-            <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+          <div className="rounded-xl border bg-card p-3 sm:p-5 shadow-sm">
+            <h3 className="text-sm sm:text-base font-semibold text-foreground mb-3 sm:mb-4 flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-emerald-600" />
               توزيع الدرجات
             </h3>
-            <div className="space-y-3">
+            <div className="space-y-2 sm:space-y-3">
               {scoreDistribution.map((range) => (
-                <div key={range.label} className="flex items-center gap-3">
-                  <span className="text-xs text-muted-foreground w-14 text-left shrink-0" dir="ltr">{range.label}</span>
+                <div key={range.label} className="flex items-center gap-2 sm:gap-3">
+                  <span className="text-[10px] sm:text-xs text-muted-foreground w-12 sm:w-14 text-left shrink-0" dir="ltr">{range.label}</span>
                   <div className="flex-1 h-8 bg-muted/30 rounded-lg overflow-hidden">
                     <motion.div
                       initial={{ width: 0 }}
@@ -3133,8 +3135,8 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
 
         {/* CSS-based Student Performance Comparison */}
         <motion.div variants={itemVariants}>
-          <div className="rounded-xl border bg-card p-5 shadow-sm">
-            <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+          <div className="rounded-xl border bg-card p-3 sm:p-5 shadow-sm">
+            <h3 className="text-sm sm:text-base font-semibold text-foreground mb-3 sm:mb-4 flex items-center gap-2">
               <Users className="h-4 w-4 text-teal-600" />
               مقارنة أداء الطلاب
             </h3>
@@ -3145,8 +3147,8 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
             ) : (
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {sortedStudentPerformance.map((s) => (
-                  <div key={s.id} className="flex items-center gap-3">
-                    <span className="text-xs text-foreground w-28 truncate shrink-0" title={s.name}>{s.name}</span>
+                  <div key={s.id} className="flex items-center gap-2 sm:gap-3">
+                    <span className="text-[10px] sm:text-xs text-foreground w-20 sm:w-28 line-clamp-1 shrink-0" title={s.name}>{s.name}</span>
                     <div className="flex-1 h-6 bg-muted/30 rounded-md overflow-hidden">
                       <motion.div
                         initial={{ width: 0 }}
@@ -3175,24 +3177,24 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
         {/* Student Performance Table with Sort */}
         <motion.div variants={itemVariants}>
           <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between border-b p-4">
-              <h3 className="font-semibold text-foreground flex items-center gap-2">
+            <div className="flex items-center justify-between border-b p-3 sm:p-4">
+              <h3 className="text-sm sm:text-base font-semibold text-foreground flex items-center gap-2">
                 <ClipboardList className="h-4 w-4 text-teal-600" />
                 ملخص أداء الطلاب
               </h3>
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleExportPerformanceCSV}
-                  className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                  className="flex items-center gap-1 text-[10px] sm:text-xs text-emerald-600 hover:text-emerald-700 font-medium"
                 >
-                  <Download className="h-3.5 w-3.5" />
+                  <Download className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                   CSV
                 </button>
                 <button
                   onClick={handleExportPerformanceExcel}
-                  className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                  className="flex items-center gap-1 text-[10px] sm:text-xs text-emerald-600 hover:text-emerald-700 font-medium"
                 >
-                  <Download className="h-3.5 w-3.5" />
+                  <Download className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                   Excel
                 </button>
               </div>
@@ -3203,11 +3205,11 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                   لا يوجد طلاب
                 </div>
               ) : (
-                <table className="w-full">
+                <table className="w-full min-w-[500px]">
                   <thead className="bg-muted/50">
-                    <tr className="text-xs text-muted-foreground">
+                    <tr className="text-[10px] sm:text-xs text-muted-foreground">
                       <th
-                        className="text-right font-medium p-3 cursor-pointer hover:text-foreground transition-colors"
+                        className="text-right font-medium p-2 sm:p-3 cursor-pointer hover:text-foreground transition-colors"
                         onClick={() => handleReportSort('name')}
                       >
                         <span className="inline-flex items-center gap-1">
@@ -3218,7 +3220,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                         </span>
                       </th>
                       <th
-                        className="text-right font-medium p-3 cursor-pointer hover:text-foreground transition-colors"
+                        className="text-right font-medium p-2 sm:p-3 cursor-pointer hover:text-foreground transition-colors"
                         onClick={() => handleReportSort('avgScore')}
                       >
                         <span className="inline-flex items-center gap-1">
@@ -3229,7 +3231,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                         </span>
                       </th>
                       <th
-                        className="text-right font-medium p-3 cursor-pointer hover:text-foreground transition-colors"
+                        className="text-right font-medium p-2 sm:p-3 cursor-pointer hover:text-foreground transition-colors"
                         onClick={() => handleReportSort('attendanceRate')}
                       >
                         <span className="inline-flex items-center gap-1">
@@ -3240,7 +3242,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                         </span>
                       </th>
                       <th
-                        className="text-right font-medium p-3 cursor-pointer hover:text-foreground transition-colors"
+                        className="text-right font-medium p-2 sm:p-3 cursor-pointer hover:text-foreground transition-colors"
                         onClick={() => handleReportSort('quizzesCompleted')}
                       >
                         <span className="inline-flex items-center gap-1">
@@ -3255,29 +3257,29 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                   <tbody className="divide-y">
                     {sortedStudentPerformance.map((s) => (
                       <tr key={s.id} className="hover:bg-muted/30 transition-colors">
-                        <td className="p-3">
+                        <td className="p-2 sm:p-3">
                           <div className="flex items-center gap-2">
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100">
-                              <Users className="h-4 w-4 text-emerald-600" />
+                            <div className="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100">
+                              <Users className="h-3 w-3 sm:h-4 sm:w-4 text-emerald-600" />
                             </div>
                             <div>
-                              <span className="text-sm font-medium text-foreground block">{s.name}</span>
-                              <span className="text-[10px] text-muted-foreground">{s.email}</span>
+                              <span className="text-xs sm:text-sm font-medium text-foreground block line-clamp-1">{s.name}</span>
+                              <span className="text-[9px] sm:text-[10px] text-muted-foreground line-clamp-1">{s.email}</span>
                             </div>
                           </div>
                         </td>
-                        <td className="p-3">
+                        <td className="p-2 sm:p-3">
                           {s.avgScore !== null ? (
-                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${pctColorClass(s.avgScore)}`}>
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] sm:text-xs font-bold ${pctColorClass(s.avgScore)}`}>
                               {s.avgScore}%
                             </span>
                           ) : (
-                            <span className="text-xs text-muted-foreground">لا توجد بيانات</span>
+                            <span className="text-[10px] sm:text-xs text-muted-foreground">لا توجد بيانات</span>
                           )}
                         </td>
-                        <td className="p-3">
+                        <td className="p-2 sm:p-3">
                           {s.attendanceRate !== null ? (
-                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] sm:text-xs font-bold ${
                               s.attendanceRate >= 90 ? 'text-emerald-700 bg-emerald-100' :
                               s.attendanceRate >= 75 ? 'text-teal-700 bg-teal-100' :
                               s.attendanceRate >= 60 ? 'text-amber-700 bg-amber-100' :
@@ -3286,11 +3288,11 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                               {s.attendanceRate}%
                             </span>
                           ) : (
-                            <span className="text-xs text-muted-foreground">لا توجد بيانات</span>
+                            <span className="text-[10px] sm:text-xs text-muted-foreground">لا توجد بيانات</span>
                           )}
                         </td>
-                        <td className="p-3">
-                          <span className="text-sm text-foreground">{s.quizzesCompleted}</span>
+                        <td className="p-2 sm:p-3">
+                          <span className="text-xs sm:text-sm text-foreground">{s.quizzesCompleted}</span>
                         </td>
                       </tr>
                     ))}
@@ -3304,16 +3306,16 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
         {/* Detailed table per quiz */}
         <motion.div variants={itemVariants}>
           <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between border-b p-4">
-              <h3 className="font-semibold text-foreground flex items-center gap-2">
+            <div className="flex items-center justify-between border-b p-3 sm:p-4">
+              <h3 className="text-sm sm:text-base font-semibold text-foreground flex items-center gap-2">
                 <ClipboardList className="h-4 w-4 text-teal-600" />
                 تفاصيل الاختبارات
               </h3>
               <button
                 onClick={handleExportAllData}
-                className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                className="flex items-center gap-1 text-[10px] sm:text-xs text-emerald-600 hover:text-emerald-700 font-medium"
               >
-                <Download className="h-3.5 w-3.5" />
+                <Download className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                 تصدير كافة البيانات
               </button>
             </div>
@@ -3323,14 +3325,14 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                   لا توجد اختبارات
                 </div>
               ) : (
-                <table className="w-full">
+                <table className="w-full min-w-[450px]">
                   <thead className="bg-muted/50">
-                    <tr className="text-xs text-muted-foreground">
-                      <th className="text-right font-medium p-3">اسم الاختبار</th>
-                      <th className="text-right font-medium p-3">المقرر</th>
-                      <th className="text-right font-medium p-3">عدد الطلاب</th>
-                      <th className="text-right font-medium p-3">متوسط الأداء</th>
-                      <th className="text-right font-medium p-3">تحميل</th>
+                    <tr className="text-[10px] sm:text-xs text-muted-foreground">
+                      <th className="text-right font-medium p-2 sm:p-3">اسم الاختبار</th>
+                      <th className="text-right font-medium p-2 sm:p-3">المقرر</th>
+                      <th className="text-right font-medium p-2 sm:p-3">عدد الطلاب</th>
+                      <th className="text-right font-medium p-2 sm:p-3">متوسط الأداء</th>
+                      <th className="text-right font-medium p-2 sm:p-3">تحميل</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -3341,32 +3343,32 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                         : 0;
                       return (
                         <tr key={quiz.id} className="hover:bg-muted/30 transition-colors">
-                          <td className="p-3">
+                          <td className="p-2 sm:p-3">
                             <div className="flex items-center gap-2">
-                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-100">
-                                <ClipboardList className="h-4 w-4 text-teal-600" />
+                              <div className="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg bg-teal-100">
+                                <ClipboardList className="h-3 w-3 sm:h-4 sm:w-4 text-teal-600" />
                               </div>
-                              <span className="text-sm font-medium text-foreground truncate">{quiz.title}</span>
+                              <span className="text-xs sm:text-sm font-medium text-foreground line-clamp-2">{quiz.title}</span>
                             </div>
                           </td>
-                          <td className="p-3">
-                            <span className="text-sm text-muted-foreground">{quiz.subject_name || '—'}</span>
+                          <td className="p-2 sm:p-3">
+                            <span className="text-xs sm:text-sm text-muted-foreground">{quiz.subject_name || '—'}</span>
                           </td>
-                          <td className="p-3">
-                            <span className="text-sm text-foreground">{qScores.length}</span>
+                          <td className="p-2 sm:p-3">
+                            <span className="text-xs sm:text-sm text-foreground">{qScores.length}</span>
                           </td>
-                          <td className="p-3">
-                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${pctColorClass(avg)}`}>
+                          <td className="p-2 sm:p-3">
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] sm:text-xs font-bold ${pctColorClass(avg)}`}>
                               {avg}%
                             </span>
                           </td>
-                          <td className="p-3">
+                          <td className="p-2 sm:p-3">
                             <button
                               onClick={() => handleExportQuizData(quiz)}
                               disabled={qScores.length === 0}
-                              className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                              className="flex items-center gap-1 text-[10px] sm:text-xs text-emerald-600 hover:text-emerald-700 font-medium disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                              <Download className="h-3.5 w-3.5" />
+                              <Download className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                               Excel
                             </button>
                           </td>
@@ -3417,7 +3419,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
             />
           </div>
         )}
-        <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-6xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8">
           {loadingData ? (
             <div className="flex flex-col items-center justify-center py-32">
               <Loader2 className="h-10 w-10 animate-spin text-emerald-600 mb-4" />

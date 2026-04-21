@@ -643,7 +643,7 @@ export default function CourseFilesSection({
               {/* File info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium text-foreground truncate" title={file.file_name}>
+                  <p className="text-sm font-medium text-foreground line-clamp-2" title={file.file_name}>
                     {file.file_name}
                   </p>
                   {/* Visibility badge */}
@@ -824,7 +824,7 @@ export default function CourseFilesSection({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-right">
               {previewFile && getFileIcon(previewFile.file_type)}
-              <span className="truncate">{previewFile?.file_name}</span>
+              <span className="line-clamp-2">{previewFile?.file_name}</span>
             </DialogTitle>
             <DialogDescription className="sr-only">
               معاينة الملف
@@ -902,7 +902,7 @@ export default function CourseFilesSection({
             {sharingFile && (
               <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
                 {getFileIcon(sharingFile.file_type)}
-                <span className="text-sm truncate">{sharingFile.file_name}</span>
+                <span className="text-sm line-clamp-2">{sharingFile.file_name}</span>
               </div>
             )}
 
@@ -928,8 +928,8 @@ export default function CourseFilesSection({
                     <span className="text-xs font-bold text-emerald-700">{lookupResult.name?.[0] || '?'}</span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{lookupResult.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{lookupResult.email}</p>
+                    <p className="text-sm font-medium line-clamp-1">{lookupResult.name}</p>
+                    <p className="text-xs text-muted-foreground line-clamp-1">{lookupResult.email}</p>
                   </div>
                   <Check className="h-4 w-4 text-emerald-600" />
                 </div>

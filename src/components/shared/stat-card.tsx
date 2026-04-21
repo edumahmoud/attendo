@@ -86,18 +86,18 @@ export default function StatCard({ icon, label, value, color }: StatCardProps) {
         className={`${colors.bg} ${colors.border} ${colors.hoverBorder} ${colors.shadow} transition-all duration-200 shadow-sm hover:shadow-md cursor-default ring-0 ${colors.glow} hover:ring-2`}
         dir="rtl"
       >
-        <CardContent className="flex items-center gap-4 p-5">
+        <CardContent className="flex items-center gap-3 sm:gap-4 p-3 sm:p-5">
           {/* Icon */}
           <div
-            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${colors.iconBg} shadow-sm transition-transform duration-200 group-hover:scale-110`}
+            className={`flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl ${colors.iconBg} shadow-sm transition-transform duration-200 group-hover:scale-110`}
           >
             <span className={colors.iconText}>{icon}</span>
           </div>
 
           {/* Label & Value */}
           <div className="flex flex-col gap-1 text-right min-w-0">
-            <span className="text-sm text-muted-foreground font-medium truncate">{label}</span>
-            <span className={`text-2xl font-bold leading-tight ${colors.valueText}`}>
+            <span className="text-xs sm:text-sm text-muted-foreground font-medium">{label}</span>
+            <span className={`text-xl sm:text-2xl font-bold leading-tight ${colors.valueText}`}>
               {value}
             </span>
           </div>

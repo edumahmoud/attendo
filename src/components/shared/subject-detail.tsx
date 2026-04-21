@@ -298,6 +298,8 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
   const [savingLectureNote, setSavingLectureNote] = useState(false);
   const [lectureDetailSearch, setLectureDetailSearch] = useState('');
   const [expandedStudentLectureId, setExpandedStudentLectureId] = useState<string | null>(null);
+  const [studentLectureDetailOpen, setStudentLectureDetailOpen] = useState(false);
+  const [studentLectureDetailData, setStudentLectureDetailData] = useState<Lecture | null>(null);
 
   // ─── Files tab state ───
   const [fileTypeFilter, setFileTypeFilter] = useState<string>('all');
@@ -931,6 +933,30 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
       )
       .subscribe();
 
+    // Lecture notes realtime - refresh notes live
+    const lectureNotesChannel = supabase
+      .channel(`subject-lecture-notes-${subjectId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'lecture_notes' },
+        () => {
+          // Refresh all lecture notes
+          const currentLectureIds = lectures.map((l) => l.id);
+          if (currentLectureIds.length > 0) {
+            fetchAllLectureNotes(currentLectureIds);
+          }
+          // Also refresh the specific lecture if the detail dialog is open
+          if (lectureDetailData) {
+            fetchLectureNotes(lectureDetailData.id);
+          }
+          // Refresh for student expanded lecture
+          if (expandedStudentLectureId) {
+            fetchLectureNotes(expandedStudentLectureId);
+          }
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(filesChannel);
       supabase.removeChannel(notesChannel);
@@ -941,8 +967,9 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
       supabase.removeChannel(scoresChannel);
       supabase.removeChannel(attendanceChannel);
       supabase.removeChannel(noteViewsChannel);
+      supabase.removeChannel(lectureNotesChannel);
     };
-  }, [subjectId, fetchFiles, fetchNotes, fetchStudents, fetchLectures, fetchMessages, fetchQuizzes, fetchScores, fetchAttendanceCounts, fetchMyAttendance, isTeacher, attendanceLectureId, fetchLectureAttendance, fetchNoteViews]);
+  }, [subjectId, fetchFiles, fetchNotes, fetchStudents, fetchLectures, fetchMessages, fetchQuizzes, fetchScores, fetchAttendanceCounts, fetchMyAttendance, isTeacher, attendanceLectureId, fetchLectureAttendance, fetchNoteViews, fetchAllLectureNotes, fetchLectureNotes, lectures, lectureDetailData, expandedStudentLectureId]);
 
   // =====================================================
   // Handlers
@@ -1479,7 +1506,7 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
   // Render: Loading
   // =====================================================
   const renderLoading = () => (
-    <div className="space-y-6" dir="rtl">
+    <div className="space-y-4 sm:space-y-6" dir="rtl">
       <div className="flex items-center gap-4">
         <Skeleton className="h-10 w-10 rounded-lg" />
         <Skeleton className="h-8 w-64" />
@@ -1528,24 +1555,24 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
               }}
             >
               <div className="absolute inset-0 bg-black/10" />
-              <div className="absolute bottom-4 right-6 left-6 flex items-end gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm shadow-lg">
-                  <BookOpen className="h-7 w-7 text-white" />
+              <div className="absolute bottom-3 right-4 left-4 sm:bottom-4 sm:right-6 sm:left-6 flex items-end gap-2 sm:gap-4">
+                <div className="flex h-10 w-10 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm shadow-lg">
+                  <BookOpen className="h-5 w-5 sm:h-7 sm:w-7 text-white" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h2 className="text-2xl font-bold text-white truncate">{subject.name}</h2>
+                  <h2 className="text-lg sm:text-2xl font-bold text-white line-clamp-2">{subject.name}</h2>
                   {subject.description && (
-                    <p className="text-white/80 text-sm mt-1 line-clamp-1">{subject.description}</p>
+                    <p className="text-white/80 text-xs sm:text-sm mt-1 line-clamp-2">{subject.description}</p>
                   )}
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
                   {isTeacher && subject.subject_code && (
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(subject.subject_code || '');
                         toast.success('تم نسخ رمز المقرر');
                       }}
-                      className="flex items-center gap-1.5 rounded-lg bg-black/30 text-white/90 backdrop-blur-sm px-3 py-1.5 text-xs font-mono tracking-wider hover:bg-black/50 transition-colors"
+                      className="flex items-center gap-1 rounded-lg bg-black/30 text-white/90 backdrop-blur-sm px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-mono tracking-wider hover:bg-black/50 transition-colors"
                       title="انقر للنسخ"
                     >
                       <Hash className="h-3.5 w-3.5" />
@@ -1563,7 +1590,7 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
         </motion.div>
 
         {/* Stats */}
-        <motion.div variants={itemVariants} className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <motion.div variants={itemVariants} className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
           <StatCard
             icon={<Users className="h-6 w-6" />}
             label="الطلاب"
@@ -1607,7 +1634,7 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
                       {getFileIcon(f.file_type)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-foreground truncate">تم رفع: {f.file_name}</p>
+                      <p className="text-foreground line-clamp-2">تم رفع: {f.file_name}</p>
                       <p className="text-xs text-muted-foreground">{formatDate(f.created_at)}</p>
                     </div>
                   </div>
@@ -1618,7 +1645,7 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
                       <StickyNote className="h-4 w-4 text-amber-600" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-foreground truncate">ملاحظة: {n.title}</p>
+                      <p className="text-foreground line-clamp-2">ملاحظة: {n.title}</p>
                       <p className="text-xs text-muted-foreground">{formatDate(n.created_at)}</p>
                     </div>
                   </div>
@@ -1866,7 +1893,7 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className="font-medium text-foreground text-sm truncate" title={file.file_name}>
+                        <p className="font-medium text-foreground text-sm line-clamp-2" title={file.file_name}>
                           {file.file_name}
                         </p>
                         {/* Visibility badge */}
@@ -1980,7 +2007,7 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
 
       {/* Preview Dialog */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden" dir="rtl">
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden w-[95vw] sm:w-auto" dir="rtl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {previewFile && getFileIcon(previewFile.file_type)}
@@ -2022,7 +2049,7 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div className="bg-muted/30 rounded-lg p-3">
                         <p className="text-muted-foreground text-xs mb-1">اسم الملف</p>
-                        <p className="font-medium truncate" title={previewFile.file_name}>{previewFile.file_name}</p>
+                        <p className="font-medium line-clamp-2" title={previewFile.file_name}>{previewFile.file_name}</p>
                       </div>
                       <div className="bg-muted/30 rounded-lg p-3">
                         <p className="text-muted-foreground text-xs mb-1">النوع</p>
@@ -2072,7 +2099,7 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
                   {getFileIcon(sharingFile.file_type)}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm truncate" title={sharingFile.file_name}>
+                  <p className="font-medium text-sm line-clamp-2" title={sharingFile.file_name}>
                     {sharingFile.file_name}
                   </p>
                   <p className="text-xs text-muted-foreground">{formatFileSize(sharingFile.file_size)}</p>
@@ -2503,7 +2530,7 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
                           <ClipboardList className="h-5 w-5 text-teal-600" />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <h4 className="font-semibold text-foreground truncate">{quiz.title}</h4>
+                          <h4 className="font-semibold text-foreground line-clamp-2">{quiz.title}</h4>
                           <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
                             <span className="flex items-center gap-1">
                               <Hash className="h-3 w-3" />
@@ -2642,7 +2669,11 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
                   lecture.is_active ? 'border-emerald-300 ring-1 ring-emerald-200' : ''
                 }`} onClick={() => {
                   if (isTeacher) openLectureDetail(lecture);
-                  else setExpandedStudentLectureId(expandedStudentLectureId === lecture.id ? null : lecture.id);
+                  else {
+                    setStudentLectureDetailData(lecture);
+                    setStudentLectureDetailOpen(true);
+                    fetchLectureNotes(lecture.id);
+                  }
                 }}>
                   <CardContent className="p-5">
                     <div className="flex items-start gap-3">
@@ -2672,7 +2703,7 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
 
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="font-semibold text-foreground truncate">{lecture.title}</h4>
+                          <h4 className="font-semibold text-foreground line-clamp-2">{lecture.title}</h4>
                           {amAttending ? (
                             <Badge className="bg-emerald-100 text-emerald-700 border-emerald-300 text-[10px] gap-1">
                               <CheckCircle2 className="h-3 w-3" />
@@ -2885,48 +2916,6 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
                         </motion.div>
                       )}
                     </AnimatePresence>
-
-                    {/* Student expanded notes view */}
-                    <AnimatePresence>
-                      {!isTeacher && expandedStudentLectureId === lecture.id && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.2 }}
-                          className="overflow-hidden"
-                        >
-                          <div className="mt-3 pt-3 border-t space-y-2">
-                            {(() => {
-                              const allNotes = lectureNotes[lecture.id] || [];
-                              return (
-                                <>
-                                  <p className="text-xs font-medium text-amber-700 flex items-center gap-1.5">
-                                    <StickyNote className="h-3 w-3" />
-                                    ملاحظات المحاضرة ({allNotes.length})
-                                  </p>
-                                  {allNotes.length === 0 ? (
-                                    <p className="text-sm text-muted-foreground text-center py-2">لا توجد ملاحظات بعد</p>
-                                  ) : (
-                                    <div className="space-y-1.5">
-                                      {allNotes.map((note) => (
-                                        <div key={note.id} className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-100 p-2.5 text-sm">
-                                          <StickyNote className="h-3.5 w-3.5 text-amber-500 mt-0.5 shrink-0" />
-                                          <div>
-                                            <p className="text-foreground whitespace-pre-wrap break-words">{note.content}</p>
-                                            <p className="text-[10px] text-muted-foreground mt-1">{formatDate(note.created_at)} - {formatTime(note.created_at)}</p>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </>
-                              );
-                            })()}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
                   </CardContent>
                 </Card>
               </motion.div>
@@ -3100,7 +3089,7 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
         setLectureDetailOpen(open);
         if (!open) setLectureDetailData(null);
       }}>
-        <DialogContent dir="rtl" className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent dir="rtl" className="sm:max-w-4xl max-h-[90vh] overflow-y-auto w-[95vw] sm:w-auto">
           {lectureDetailData && (() => {
             const attendance = lectureAttendance[lectureDetailData.id] || [];
             const presentCount = attendance.length;
@@ -3141,22 +3130,22 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
 
                 <div className="space-y-5 py-2">
                   {/* Stats Row */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="rounded-lg border bg-emerald-50 p-3 text-center">
-                      <p className="text-2xl font-bold text-emerald-700">{presentCount}</p>
-                      <p className="text-xs text-emerald-600">حاضر</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+                    <div className="rounded-lg border bg-emerald-50 p-2 sm:p-3 text-center">
+                      <p className="text-lg sm:text-2xl font-bold text-emerald-700">{presentCount}</p>
+                      <p className="text-[10px] sm:text-xs text-emerald-600">حاضر</p>
                     </div>
-                    <div className="rounded-lg border bg-rose-50 p-3 text-center">
-                      <p className="text-2xl font-bold text-rose-700">{absentCount}</p>
-                      <p className="text-xs text-rose-600">غائب</p>
+                    <div className="rounded-lg border bg-rose-50 p-2 sm:p-3 text-center">
+                      <p className="text-lg sm:text-2xl font-bold text-rose-700">{absentCount}</p>
+                      <p className="text-[10px] sm:text-xs text-rose-600">غائب</p>
                     </div>
-                    <div className="rounded-lg border bg-teal-50 p-3 text-center">
-                      <p className="text-2xl font-bold text-teal-700">{students.length}</p>
-                      <p className="text-xs text-teal-600">إجمالي</p>
+                    <div className="rounded-lg border bg-teal-50 p-2 sm:p-3 text-center">
+                      <p className="text-lg sm:text-2xl font-bold text-teal-700">{students.length}</p>
+                      <p className="text-[10px] sm:text-xs text-teal-600">إجمالي</p>
                     </div>
-                    <div className="rounded-lg border bg-amber-50 p-3 text-center">
-                      <p className="text-2xl font-bold text-amber-700">{attendancePercentage}%</p>
-                      <p className="text-xs text-amber-600">نسبة الحضور</p>
+                    <div className="rounded-lg border bg-amber-50 p-2 sm:p-3 text-center">
+                      <p className="text-lg sm:text-2xl font-bold text-amber-700">{attendancePercentage}%</p>
+                      <p className="text-[10px] sm:text-xs text-amber-600">نسبة الحضور</p>
                     </div>
                   </div>
 
@@ -3570,7 +3559,7 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
                                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
                                   {(student.student_name || 'ط').charAt(0)}
                                 </div>
-                                <span className="text-sm font-medium text-foreground truncate">
+                                <span className="text-sm font-medium text-foreground line-clamp-1 min-w-0">
                                   {student.student_name || 'طالب'}
                                 </span>
                               </div>
@@ -3694,8 +3683,8 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
           <ArrowRight className="h-5 w-5" />
         </Button>
         <div className="min-w-0 flex-1">
-          <h2 className="text-xl font-bold text-foreground truncate">{subject.name}</h2>
-          <p className="text-sm text-muted-foreground truncate">{subject.description || 'بدون وصف'}</p>
+          <h2 className="text-base sm:text-xl font-bold text-foreground line-clamp-2">{subject.name}</h2>
+          <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2">{subject.description || 'بدون وصف'}</p>
         </div>
         <Badge
           className="shrink-0"

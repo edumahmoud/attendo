@@ -1239,7 +1239,7 @@ export default function ChatPanel({
 
                 {/* Title and subtitle */}
                 <div className="min-w-0">
-                  <h2 className="text-base font-bold text-foreground truncate">
+                  <h2 className="text-base font-bold text-foreground line-clamp-2">
                     {chatTitle}
                   </h2>
                   <div className="flex items-center gap-1.5">
@@ -1435,13 +1435,13 @@ function ChatListItem({ icon, title, subtitle, time, badge, extra, onClick }: Ch
       {icon}
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-semibold text-foreground truncate">{title}</span>
+          <span className="text-sm font-semibold text-foreground line-clamp-2">{title}</span>
           {time && (
             <span className="text-[10px] text-muted-foreground shrink-0">{timeAgoAr(time)}</span>
           )}
         </div>
         <div className="flex items-center justify-between gap-2 mt-0.5">
-          <span className="text-xs text-muted-foreground truncate">{subtitle}</span>
+          <span className="text-xs text-muted-foreground line-clamp-2">{subtitle}</span>
           <div className="flex items-center gap-1.5 shrink-0">
             {extra && (
               <span className="text-[10px] text-muted-foreground/60">{extra}</span>

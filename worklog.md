@@ -174,3 +174,39 @@ Stage Summary:
 - Assignment submissions automatically create a `user_files` record for the student
 - Submission files show a "تسليم" badge in personal files section
 - Migration V7 adds `assignment_id` column to `user_files` table
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Make the entire application fully responsive for mobile phones
+
+Work Log:
+- Fixed stat-card.tsx: responsive icon sizes (h-10 w-10 sm:h-12 sm:w-12), value text (text-xl sm:text-2xl), padding (p-3 sm:p-5), label (text-xs sm:text-sm)
+- Fixed subject-detail.tsx:
+  - Replaced all `truncate` with `line-clamp-2` for subject names, lecture titles, quiz titles, file names, student names, descriptions
+  - Made overview header responsive: smaller icon/text on mobile, tighter spacing
+  - Made subject code badge responsive: smaller font/padding on mobile
+  - Made stats grid gaps responsive: gap-2 sm:gap-4
+  - Fixed dialog widths for mobile: added w-[95vw] sm:w-auto
+  - Made lecture detail dialog stats responsive: smaller text/padding on mobile
+  - Fixed space-y: space-y-4 sm:space-y-6
+  - Fixed BookOpen icon size: h-5 w-5 sm:h-7 sm:w-7
+- Fixed assignments-section.tsx: replaced all truncate with line-clamp-2
+- Fixed course-files-section.tsx: replaced all truncate with line-clamp-2/line-clamp-1
+- Fixed personal-files-section.tsx: replaced all truncate with line-clamp-2/line-clamp-1
+- Fixed student-dashboard.tsx: replaced truncate with line-clamp-2, fixed space-y-8 → space-y-4 sm:space-y-8, fixed all space-y-6 → space-y-4 sm:space-y-6
+- Fixed teacher-dashboard.tsx: replaced truncate with line-clamp-2, fixed all space-y-6 → space-y-4 sm:space-y-6
+- Fixed admin-dashboard.tsx: replaced truncate with line-clamp-2, fixed all space-y-6 → space-y-4 sm:space-y-6
+- Fixed chat-panel.tsx: replaced truncate with line-clamp-2
+- Fixed quiz-view.tsx: replaced truncate with line-clamp-2, made quiz titles responsive (text-lg sm:text-xl, text-base sm:text-lg), fixed grid gaps for mobile
+- Fixed subjects-section.tsx: replaced truncate with line-clamp-1
+- Fixed settings-page.tsx: replaced truncate with line-clamp-1 min-w-0
+- Added global CSS in globals.css: mobile-friendly dialog padding (0.75rem) and max-width (calc(100vw - 1rem)) on small screens
+
+Stage Summary:
+- All text (names, titles, emails, numbers, labels) is now fully visible on mobile using line-clamp instead of truncate
+- All grids have responsive breakpoints (2 columns on mobile, 4 on desktop for stats)
+- All dialogs fit properly on mobile screens with reduced padding
+- Font sizes are smaller on mobile (text-xs/text-lg) and scale up on larger screens
+- Spacing is tighter on mobile (gap-2/gap-3) and expands on larger screens
+- Lint check passes with 0 errors, only 2 pre-existing warnings

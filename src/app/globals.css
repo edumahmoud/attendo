@@ -331,3 +331,12 @@
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #9ca3af;
 }
+
+/* Mobile-friendly Dialog - ensure dialogs don't overflow on small screens */
+@media (max-width: 640px) {
+  [data-slot="dialog-content"] {
+    max-width: calc(100vw - 1rem) !important;
+    max-height: 90vh !important;
+    padding: 0.75rem !important;
+  }
+}

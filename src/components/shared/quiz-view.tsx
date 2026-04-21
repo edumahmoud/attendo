@@ -874,7 +874,7 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
                   <ClipboardList className="h-6 w-6 text-teal-600" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h2 className="text-xl font-bold text-foreground truncate">{quiz.title}</h2>
+                  <h2 className="text-lg sm:text-xl font-bold text-foreground line-clamp-2">{quiz.title}</h2>
                   {(quiz.subject_name || quizSubjectName) && (
                     <div className="flex items-center gap-1 mt-1">
                       <BookOpen className="h-3.5 w-3.5 text-emerald-600" />
@@ -976,7 +976,7 @@ export default function QuizView({ quizId, onBack, profile, reviewScoreId }: Qui
             <ChevronLeft className="h-5 w-5" />
           </button>
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-bold text-foreground truncate">{quiz.title}</h2>
+            <h2 className="text-base sm:text-lg font-bold text-foreground line-clamp-2">{quiz.title}</h2>
             <div className="flex items-center gap-2 mt-0.5">
               {(quiz.subject_name || quizSubjectName) && (
                 <span className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium">
@@ -1250,7 +1250,7 @@ function BooleanQuestion({
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-4">
+    <div className="grid grid-cols-2 gap-2 sm:gap-4">
       {options.map((opt) => {
         const isSelected = selectedOption === opt.value;
         const isCorrectOption = opt.value === question.correctAnswer;
@@ -1399,7 +1399,7 @@ function MatchingQuestion({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4">
         {/* Keys column */}
         <div className="space-y-2">
           <p className="text-xs font-medium text-muted-foreground mb-2">العناصر</p>

@@ -732,17 +732,17 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
   // Render: Dashboard Section
   // -------------------------------------------------------
   const renderDashboard = () => (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4 sm:space-y-6">
       {/* Header */}
       <motion.div
         variants={itemVariants}
         className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
       >
         <div>
-          <h2 className="text-2xl font-bold text-foreground">
+          <h2 className="text-lg sm:text-2xl font-bold text-foreground">
             مرحباً، مشرف النظام
           </h2>
-          <p className="text-muted-foreground mt-1">لوحة تحكم الإدارة المركزية</p>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">لوحة تحكم الإدارة المركزية</p>
         </div>
         <div className="flex items-center gap-3">
           <RealtimeStatus
@@ -750,15 +750,15 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
             lastUpdated={rtStatus.lastUpdated}
             onRefresh={refreshAllData}
           />
-          <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-gradient-to-l from-emerald-50 to-slate-50 px-4 py-2 text-sm">
-            <Shield className="h-4 w-4 text-emerald-600" />
+          <div className="flex items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl border border-emerald-200 bg-gradient-to-l from-emerald-50 to-slate-50 px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm">
+            <Shield className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-600" />
             <span className="font-medium text-emerald-700">وضع المشرف</span>
           </div>
         </div>
       </motion.div>
 
       {/* Stats row */}
-      <motion.div variants={itemVariants} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+      <motion.div variants={itemVariants} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4">
         <StatCard
           icon={<Users className="h-6 w-6" />}
           label="إجمالي المستخدمين"
@@ -796,15 +796,15 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
         {/* Recent Activity Bar Chart */}
         <motion.div variants={itemVariants} className="lg:col-span-2">
           <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between border-b p-4">
-              <h3 className="font-semibold text-foreground flex items-center gap-2">
-                <Activity className="h-4 w-4 text-emerald-600" />
+            <div className="flex items-center justify-between border-b p-3 sm:p-4">
+              <h3 className="text-sm sm:text-base font-semibold text-foreground flex items-center gap-1.5 sm:gap-2">
+                <Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-600" />
                 النشاط الأخير (7 أيام)
               </h3>
-              <span className="text-xs text-muted-foreground">اختبارات مكتملة</span>
+              <span className="text-[10px] sm:text-xs text-muted-foreground">اختبارات مكتملة</span>
             </div>
-            <div className="p-6">
-              <div className="flex items-end gap-3 h-48">
+            <div className="p-3 sm:p-6">
+              <div className="flex items-end gap-1 sm:gap-3 h-36 sm:h-48">
                 {recentActivityData.map((day, idx) => (
                   <div key={idx} className="flex flex-1 flex-col items-center gap-2">
                     <span className="text-xs font-semibold text-foreground">
@@ -817,7 +817,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                       className={`w-full min-h-[4px] rounded-t-lg ${day.color} transition-all hover:opacity-80`}
                       style={{ maxHeight: '100%' }}
                     />
-                    <span className="text-[10px] text-muted-foreground font-medium">
+                    <span className="text-[8px] sm:text-[10px] text-muted-foreground font-medium leading-tight">
                       {day.label}
                     </span>
                   </div>
@@ -830,37 +830,37 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
         {/* System Health */}
         <motion.div variants={itemVariants}>
           <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between border-b p-4">
-              <h3 className="font-semibold text-foreground flex items-center gap-2">
-                <Server className="h-4 w-4 text-emerald-600" />
+            <div className="flex items-center justify-between border-b p-3 sm:p-4">
+              <h3 className="text-sm sm:text-base font-semibold text-foreground flex items-center gap-1.5 sm:gap-2">
+                <Server className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-600" />
                 صحة النظام
               </h3>
             </div>
-            <div className="p-4 space-y-3">
+            <div className="p-3 sm:p-4 space-y-2 sm:space-y-3">
               {systemHealth.map((item, idx) => (
                 <motion.div
                   key={idx}
                   initial={{ opacity: 0, x: 10 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: idx * 0.1 }}
-                  className="flex items-center justify-between rounded-lg border bg-emerald-50/50 p-3"
+                  className="flex items-center justify-between rounded-lg border bg-emerald-50/50 p-2 sm:p-3"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
                       {item.icon}
                     </div>
-                    <span className="text-sm font-medium text-foreground">{item.label}</span>
+                    <span className="text-xs sm:text-sm font-medium text-foreground">{item.label}</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-xs font-medium text-emerald-600">{item.status}</span>
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <div className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-[10px] sm:text-xs font-medium text-emerald-600">{item.status}</span>
                   </div>
                 </motion.div>
               ))}
             </div>
 
-            <div className="border-t p-4">
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <div className="border-t p-3 sm:p-4">
+              <div className="flex items-center justify-between text-[10px] sm:text-xs text-muted-foreground">
                 <span>آخر فحص</span>
                 <span className="flex items-center gap-1">
                   <Clock className="h-3 w-3" />
@@ -874,12 +874,12 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
 
       {/* Quick actions */}
       <motion.div variants={itemVariants}>
-        <div className="rounded-xl border bg-card shadow-sm p-4">
-          <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-emerald-600" />
+        <div className="rounded-xl border bg-card shadow-sm p-3 sm:p-4">
+          <h3 className="text-sm sm:text-base font-semibold text-foreground mb-2 sm:mb-3 flex items-center gap-1.5 sm:gap-2">
+            <Sparkles className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-600" />
             إجراءات سريعة
           </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
             {[
               { label: 'إدارة المستخدمين', icon: <Users className="h-5 w-5" />, section: 'users' as AdminSection },
               { label: 'إدارة المواد', icon: <BookOpen className="h-5 w-5" />, section: 'subjects' as AdminSection },
@@ -891,10 +891,10 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
                 onClick={() => handleSectionChange(action.section)}
-                className="flex flex-col items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 text-emerald-700 transition-colors hover:bg-emerald-100 hover:border-emerald-300"
+                className="flex flex-col items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 sm:p-4 text-emerald-700 transition-colors hover:bg-emerald-100 hover:border-emerald-300"
               >
                 {action.icon}
-                <span className="text-xs font-medium">{action.label}</span>
+                <span className="text-[11px] sm:text-xs font-medium">{action.label}</span>
               </motion.button>
             ))}
           </div>
@@ -907,22 +907,22 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
   // Render: Users Section
   // -------------------------------------------------------
   const renderUsers = () => (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4 sm:space-y-6">
       {/* Header */}
       <motion.div
         variants={itemVariants}
-        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4"
       >
         <div>
-          <h2 className="text-2xl font-bold text-foreground">إدارة المستخدمين</h2>
-          <p className="text-muted-foreground mt-1">
+          <h2 className="text-lg sm:text-2xl font-bold text-foreground">إدارة المستخدمين</h2>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
             {allUsers.length} مستخدم مسجل ({studentCount} طالب، {teacherCount} معلم، {adminCount} مشرف)
           </p>
         </div>
       </motion.div>
 
       {/* Search and filters */}
-      <motion.div variants={itemVariants} className="flex flex-col sm:flex-row gap-3">
+      <motion.div variants={itemVariants} className="flex flex-col sm:flex-row gap-2 sm:gap-3">
         <div className="relative flex-1">
           <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -930,12 +930,12 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
             value={userSearch}
             onChange={(e) => handleUserSearchChange(e.target.value)}
             placeholder="بحث بالاسم أو البريد الإلكتروني..."
-            className="w-full rounded-lg border bg-background pr-10 pl-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-colors"
+            className="w-full rounded-lg border bg-background pr-10 pl-3 py-2 sm:py-2.5 text-xs sm:text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-colors"
             dir="rtl"
           />
         </div>
         <Select value={roleFilter} onValueChange={setRoleFilter}>
-          <SelectTrigger className="w-full sm:w-40">
+          <SelectTrigger className="w-full sm:w-40 text-xs sm:text-sm">
             <SelectValue placeholder="تصفية حسب الدور" />
           </SelectTrigger>
           <SelectContent>
@@ -967,94 +967,65 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                 </p>
               </div>
             ) : (
-              <table className="w-full">
-                <thead className="bg-muted/50 sticky top-0 z-10">
-                  <tr className="text-xs text-muted-foreground">
-                    <th className="text-right font-medium p-3">الاسم</th>
-                    <th className="text-right font-medium p-3 hidden sm:table-cell">البريد الإلكتروني</th>
-                    <th className="text-right font-medium p-3">الدور</th>
-                    <th className="text-right font-medium p-3 hidden md:table-cell">الجنس</th>
-                    <th className="text-right font-medium p-3 hidden md:table-cell">تاريخ التسجيل</th>
-                    <th className="text-right font-medium p-3">إجراءات</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
+              <>
+                {/* Mobile: Card layout */}
+                <div className="sm:hidden divide-y">
                   {paginatedUsers.map((user) => {
                     const titlePrefix = getUserTitlePrefix(user);
                     const isSelf = user.id === profile.id;
                     const isDisabled = user.role === 'disabled';
                     return (
-                      <tr
+                      <div
                         key={user.id}
-                        className={`hover:bg-muted/30 transition-colors ${isDisabled ? 'opacity-60' : ''}`}
+                        className={`p-3 space-y-2 ${isDisabled ? 'opacity-60' : ''}`}
                       >
-                        <td className="p-3">
-                          <div className="flex items-center gap-2">
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-                              {user.name.charAt(0)}
-                            </div>
-                            <div className="min-w-0">
-                              <span className="text-sm font-medium text-foreground truncate block">
-                                {titlePrefix && (
-                                  <span className="text-emerald-600 ml-1">{titlePrefix}</span>
-                                )}
-                                {user.name}
-                              </span>
-                              <span className="text-xs text-muted-foreground truncate block sm:hidden">{user.email}</span>
-                            </div>
+                        <div className="flex items-start gap-2">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-sm font-bold">
+                            {user.name.charAt(0)}
                           </div>
-                        </td>
-                        <td className="p-3 hidden sm:table-cell">
-                          <span className="text-xs text-muted-foreground truncate max-w-[200px] inline-block">
-                            {user.email}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <Badge className={`text-[10px] ${roleColors[user.role] || ''}`}>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-foreground line-clamp-2">
+                              {titlePrefix && (
+                                <span className="text-emerald-600 ml-1">{titlePrefix}</span>
+                              )}
+                              {user.name}
+                            </p>
+                            <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{user.email}</p>
+                          </div>
+                          <Badge className={`text-[10px] shrink-0 ${roleColors[user.role] || ''}`}>
                             {roleLabels[user.role] || user.role}
                           </Badge>
-                        </td>
-                        <td className="p-3 hidden md:table-cell">
-                          <span className="text-xs text-muted-foreground">
-                            {user.gender === 'male' ? '♂ ذكر' : user.gender === 'female' ? '♀ أنثى' : '—'}
-                          </span>
-                        </td>
-                        <td className="p-3 hidden md:table-cell">
-                          <span className="text-xs text-muted-foreground">
-                            {formatDate(user.created_at)}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-1">
-                            {/* Grant/Revoke admin */}
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                            <span>{user.gender === 'male' ? '♂ ذكر' : user.gender === 'female' ? '♀ أنثى' : '—'}</span>
+                            <span>•</span>
+                            <span>{formatDate(user.created_at)}</span>
+                          </div>
+                          <div className="flex items-center gap-0.5">
                             {!user.is_admin && !isDisabled ? (
                               <motion.button
-                                whileHover={{ scale: 1.1 }}
                                 whileTap={{ scale: 0.9 }}
                                 onClick={() => setGrantAdminConfirm(user)}
                                 disabled={actionLoading === user.id}
-                                className="flex h-7 w-7 items-center justify-center rounded-md text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-50"
+                                className="flex h-8 w-8 items-center justify-center rounded-md text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-50"
                                 title="منح صلاحيات المشرف"
                               >
-                                <Shield className="h-3.5 w-3.5" />
+                                <Shield className="h-4 w-4" />
                               </motion.button>
                             ) : user.is_admin && !isSelf ? (
                               <motion.button
-                                whileHover={{ scale: 1.1 }}
                                 whileTap={{ scale: 0.9 }}
                                 onClick={() => setRevokeAdminConfirm(user)}
                                 disabled={actionLoading === user.id}
-                                className="flex h-7 w-7 items-center justify-center rounded-md text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-50"
+                                className="flex h-8 w-8 items-center justify-center rounded-md text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-50"
                                 title="إزالة صلاحيات المشرف"
                               >
-                                <ShieldCheck className="h-3.5 w-3.5" />
+                                <ShieldCheck className="h-4 w-4" />
                               </motion.button>
                             ) : null}
-
-                            {/* Disable/Enable user */}
                             {isDisabled ? (
                               <motion.button
-                                whileHover={{ scale: 1.1 }}
                                 whileTap={{ scale: 0.9 }}
                                 onClick={async () => {
                                   setActionLoading(user.id);
@@ -1071,66 +1042,200 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                                   setActionLoading(null);
                                 }}
                                 disabled={actionLoading === user.id || isSelf}
-                                className="flex h-7 w-7 items-center justify-center rounded-md text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50"
+                                className="flex h-8 w-8 items-center justify-center rounded-md text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50"
                                 title="تفعيل المستخدم"
                               >
-                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                <CheckCircle2 className="h-4 w-4" />
                               </motion.button>
                             ) : (
                               <motion.button
-                                whileHover={{ scale: 1.1 }}
                                 whileTap={{ scale: 0.9 }}
                                 onClick={() => setDisableUserConfirm(user)}
                                 disabled={actionLoading === user.id || isSelf}
-                                className="flex h-7 w-7 items-center justify-center rounded-md text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-50"
+                                className="flex h-8 w-8 items-center justify-center rounded-md text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-50"
                                 title="تعطيل المستخدم"
                               >
-                                <Ban className="h-3.5 w-3.5" />
+                                <Ban className="h-4 w-4" />
                               </motion.button>
                             )}
-
-                            {/* Delete user */}
                             <motion.button
-                              whileHover={{ scale: 1.1 }}
                               whileTap={{ scale: 0.9 }}
                               onClick={() => setDeleteUserConfirm(user)}
                               disabled={actionLoading === user.id || isSelf}
-                              className="flex h-7 w-7 items-center justify-center rounded-md text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
+                              className="flex h-8 w-8 items-center justify-center rounded-md text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
                               title="حذف المستخدم"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Trash2 className="h-4 w-4" />
                             </motion.button>
                           </div>
-                        </td>
-                      </tr>
+                        </div>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
+                </div>
+
+                {/* Desktop: Table layout */}
+                <div className="hidden sm:block">
+                  <table className="w-full">
+                    <thead className="bg-muted/50 sticky top-0 z-10">
+                      <tr className="text-xs text-muted-foreground">
+                        <th className="text-right font-medium p-3">الاسم</th>
+                        <th className="text-right font-medium p-3">البريد الإلكتروني</th>
+                        <th className="text-right font-medium p-3">الدور</th>
+                        <th className="text-right font-medium p-3 hidden md:table-cell">الجنس</th>
+                        <th className="text-right font-medium p-3 hidden md:table-cell">تاريخ التسجيل</th>
+                        <th className="text-right font-medium p-3">إجراءات</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {paginatedUsers.map((user) => {
+                        const titlePrefix = getUserTitlePrefix(user);
+                        const isSelf = user.id === profile.id;
+                        const isDisabled = user.role === 'disabled';
+                        return (
+                          <tr
+                            key={user.id}
+                            className={`hover:bg-muted/30 transition-colors ${isDisabled ? 'opacity-60' : ''}`}
+                          >
+                            <td className="p-3">
+                              <div className="flex items-center gap-2">
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
+                                  {user.name.charAt(0)}
+                                </div>
+                                <div className="min-w-0">
+                                  <span className="text-sm font-medium text-foreground line-clamp-2 block">
+                                    {titlePrefix && (
+                                      <span className="text-emerald-600 ml-1">{titlePrefix}</span>
+                                    )}
+                                    {user.name}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              <span className="text-xs text-muted-foreground line-clamp-2 max-w-[200px] inline-block">
+                                {user.email}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              <Badge className={`text-[10px] ${roleColors[user.role] || ''}`}>
+                                {roleLabels[user.role] || user.role}
+                              </Badge>
+                            </td>
+                            <td className="p-3 hidden md:table-cell">
+                              <span className="text-xs text-muted-foreground">
+                                {user.gender === 'male' ? '♂ ذكر' : user.gender === 'female' ? '♀ أنثى' : '—'}
+                              </span>
+                            </td>
+                            <td className="p-3 hidden md:table-cell">
+                              <span className="text-xs text-muted-foreground">
+                                {formatDate(user.created_at)}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              <div className="flex items-center gap-1">
+                                {!user.is_admin && !isDisabled ? (
+                                  <motion.button
+                                    whileHover={{ scale: 1.1 }}
+                                    whileTap={{ scale: 0.9 }}
+                                    onClick={() => setGrantAdminConfirm(user)}
+                                    disabled={actionLoading === user.id}
+                                    className="flex h-7 w-7 items-center justify-center rounded-md text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-50"
+                                    title="منح صلاحيات المشرف"
+                                  >
+                                    <Shield className="h-3.5 w-3.5" />
+                                  </motion.button>
+                                ) : user.is_admin && !isSelf ? (
+                                  <motion.button
+                                    whileHover={{ scale: 1.1 }}
+                                    whileTap={{ scale: 0.9 }}
+                                    onClick={() => setRevokeAdminConfirm(user)}
+                                    disabled={actionLoading === user.id}
+                                    className="flex h-7 w-7 items-center justify-center rounded-md text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-50"
+                                    title="إزالة صلاحيات المشرف"
+                                  >
+                                    <ShieldCheck className="h-3.5 w-3.5" />
+                                  </motion.button>
+                                ) : null}
+                                {isDisabled ? (
+                                  <motion.button
+                                    whileHover={{ scale: 1.1 }}
+                                    whileTap={{ scale: 0.9 }}
+                                    onClick={async () => {
+                                      setActionLoading(user.id);
+                                      const { error } = await supabase
+                                        .from('users')
+                                        .update({ role: 'student', is_admin: false })
+                                        .eq('id', user.id);
+                                      if (error) {
+                                        toast.error('حدث خطأ أثناء تفعيل المستخدم');
+                                      } else {
+                                        toast.success(`تم تفعيل المستخدم ${user.name}`);
+                                        fetchUsers();
+                                      }
+                                      setActionLoading(null);
+                                    }}
+                                    disabled={actionLoading === user.id || isSelf}
+                                    className="flex h-7 w-7 items-center justify-center rounded-md text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50"
+                                    title="تفعيل المستخدم"
+                                  >
+                                    <CheckCircle2 className="h-3.5 w-3.5" />
+                                  </motion.button>
+                                ) : (
+                                  <motion.button
+                                    whileHover={{ scale: 1.1 }}
+                                    whileTap={{ scale: 0.9 }}
+                                    onClick={() => setDisableUserConfirm(user)}
+                                    disabled={actionLoading === user.id || isSelf}
+                                    className="flex h-7 w-7 items-center justify-center rounded-md text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-50"
+                                    title="تعطيل المستخدم"
+                                  >
+                                    <Ban className="h-3.5 w-3.5" />
+                                  </motion.button>
+                                )}
+                                <motion.button
+                                  whileHover={{ scale: 1.1 }}
+                                  whileTap={{ scale: 0.9 }}
+                                  onClick={() => setDeleteUserConfirm(user)}
+                                  disabled={actionLoading === user.id || isSelf}
+                                  className="flex h-7 w-7 items-center justify-center rounded-md text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
+                                  title="حذف المستخدم"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </motion.button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between border-t px-4 py-3">
-              <span className="text-xs text-muted-foreground">
+            <div className="flex flex-col sm:flex-row items-center justify-between border-t px-3 sm:px-4 py-2 sm:py-3 gap-2">
+              <span className="text-[10px] sm:text-xs text-muted-foreground">
                 عرض {((usersPage - 1) * USERS_PER_PAGE) + 1} - {Math.min(usersPage * USERS_PER_PAGE, filteredUsers.length)} من {filteredUsers.length}
               </span>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setUsersPage((p) => Math.max(1, p - 1))}
                   disabled={usersPage === 1}
-                  className="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-1 rounded-lg border px-2 sm:px-3 py-1.5 text-[10px] sm:text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ChevronRight className="h-3 w-3" />
                   السابق
                 </button>
-                <span className="text-xs text-muted-foreground">
+                <span className="text-[10px] sm:text-xs text-muted-foreground">
                   {usersPage} / {totalPages}
                 </span>
                 <button
                   onClick={() => setUsersPage((p) => Math.min(totalPages, p + 1))}
                   disabled={usersPage === totalPages}
-                  className="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-1 rounded-lg border px-2 sm:px-3 py-1.5 text-[10px] sm:text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   التالي
                   <ChevronLeft className="h-3 w-3" />
@@ -1143,7 +1248,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
 
       {/* Grant Admin Confirmation */}
       <AlertDialog open={!!grantAdminConfirm} onOpenChange={(open) => !open && setGrantAdminConfirm(null)}>
-        <AlertDialogContent dir="rtl">
+        <AlertDialogContent dir="rtl" className="max-h-[85vh] overflow-y-auto">
           <AlertDialogHeader className="text-right">
             <AlertDialogTitle className="text-right flex items-center gap-2">
               <Shield className="h-5 w-5 text-amber-500" />
@@ -1186,7 +1291,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
 
       {/* Revoke Admin Confirmation */}
       <AlertDialog open={!!revokeAdminConfirm} onOpenChange={(open) => !open && setRevokeAdminConfirm(null)}>
-        <AlertDialogContent dir="rtl">
+        <AlertDialogContent dir="rtl" className="max-h-[85vh] overflow-y-auto">
           <AlertDialogHeader className="text-right">
             <AlertDialogTitle className="text-right flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-amber-500" />
@@ -1219,7 +1324,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
 
       {/* Delete User Confirmation */}
       <AlertDialog open={!!deleteUserConfirm} onOpenChange={(open) => !open && setDeleteUserConfirm(null)}>
-        <AlertDialogContent dir="rtl">
+        <AlertDialogContent dir="rtl" className="max-h-[85vh] overflow-y-auto">
           <AlertDialogHeader className="text-right">
             <AlertDialogTitle className="text-right flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-rose-500" />
@@ -1252,7 +1357,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
 
       {/* Disable User Confirmation */}
       <AlertDialog open={!!disableUserConfirm} onOpenChange={(open) => !open && setDisableUserConfirm(null)}>
-        <AlertDialogContent dir="rtl">
+        <AlertDialogContent dir="rtl" className="max-h-[85vh] overflow-y-auto">
           <AlertDialogHeader className="text-right">
             <AlertDialogTitle className="text-right flex items-center gap-2">
               <Ban className="h-5 w-5 text-amber-500" />
@@ -1289,11 +1394,11 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
   // Render: Subjects Section
   // -------------------------------------------------------
   const renderSubjects = () => (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4 sm:space-y-6">
       {/* Header */}
       <motion.div variants={itemVariants}>
-        <h2 className="text-2xl font-bold text-foreground">إدارة المواد الدراسية</h2>
-        <p className="text-muted-foreground mt-1">
+        <h2 className="text-lg sm:text-2xl font-bold text-foreground">إدارة المواد الدراسية</h2>
+        <p className="text-xs sm:text-sm text-muted-foreground mt-1">
           {allSubjects.length} مادة دراسية مسجلة
         </p>
       </motion.div>
@@ -1311,49 +1416,49 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
           <p className="text-sm text-muted-foreground">سيتم عرض المواد هنا عند إنشائها من قبل المعلمين</p>
         </motion.div>
       ) : (
-        <motion.div variants={containerVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <motion.div variants={containerVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {allSubjects.map((subject) => (
             <motion.div key={subject.id} variants={itemVariants} {...cardHover}>
-              <div className="group rounded-xl border bg-card p-5 shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex items-start gap-3 mb-3">
+              <div className="group rounded-xl border bg-card p-3 sm:p-5 shadow-sm hover:shadow-md transition-shadow">
+                <div className="flex items-start gap-2 sm:gap-3 mb-2 sm:mb-3">
                   <div
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white text-sm font-bold transition-transform group-hover:scale-110"
+                    className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg text-white text-xs sm:text-sm font-bold transition-transform group-hover:scale-110"
                     style={{ backgroundColor: subject.color || '#10b981' }}
                   >
                     {subject.name.charAt(0)}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold text-foreground truncate">{subject.name}</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
+                    <h3 className="text-sm sm:text-base font-semibold text-foreground line-clamp-2">{subject.name}</h3>
+                    <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
                       المعلم: {subject.teacher_name || 'غير معروف'}
                     </p>
                   </div>
                 </div>
 
                 {subject.description && (
-                  <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
+                  <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2 mb-2 sm:mb-3">
                     {subject.description}
                   </p>
                 )}
 
-                <div className="flex items-center justify-between mt-3 pt-3 border-t">
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
+                <div className="flex items-center justify-between mt-2 sm:mt-3 pt-2 sm:pt-3 border-t">
+                  <div className="flex items-center gap-2 sm:gap-3 text-[10px] sm:text-xs text-muted-foreground">
+                    <span className="flex items-center gap-0.5 sm:gap-1">
                       <Users className="h-3 w-3" />
                       {subject.student_count || 0} طالب
                     </span>
-                    <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-0.5 sm:gap-1">
                       <Calendar className="h-3 w-3" />
                       {formatDate(subject.created_at)}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-0.5 sm:gap-1">
                     <motion.button
                       whileHover={{ scale: 1.1 }}
                       whileTap={{ scale: 0.9 }}
                       onClick={() => setSubjectDetailId(subject.id)}
-                      className="flex h-7 w-7 items-center justify-center rounded-md text-emerald-600 hover:bg-emerald-50 transition-colors"
+                      className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-md text-emerald-600 hover:bg-emerald-50 transition-colors"
                       title="عرض التفاصيل"
                     >
                       <Eye className="h-3.5 w-3.5" />
@@ -1363,7 +1468,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                       whileTap={{ scale: 0.9 }}
                       onClick={() => setDeleteSubjectConfirm(subject)}
                       disabled={actionLoading === subject.id}
-                      className="flex h-7 w-7 items-center justify-center rounded-md text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
+                      className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-md text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
                       title="حذف المادة"
                     >
                       {actionLoading === subject.id ? (
@@ -1376,7 +1481,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                 </div>
 
                 {!subject.is_active && (
-                  <Badge className="mt-2 bg-rose-100 text-rose-700 border-rose-200 text-[10px]">
+                  <Badge className="mt-1.5 sm:mt-2 bg-rose-100 text-rose-700 border-rose-200 text-[10px]">
                     معطلة
                   </Badge>
                 )}
@@ -1402,7 +1507,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
               exit={{ scale: 0.95, opacity: 0, y: 10 }}
               transition={{ type: 'spring', stiffness: 400, damping: 30 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-lg rounded-2xl border bg-background shadow-xl"
+              className="w-full max-w-[calc(100vw-2rem)] sm:max-w-lg max-h-[85vh] overflow-y-auto rounded-2xl border bg-background shadow-xl"
               dir="rtl"
             >
               {(() => {
@@ -1410,17 +1515,17 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                 if (!subject) return null;
                 return (
                   <>
-                    <div className="flex items-center justify-between border-b p-5">
-                      <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-between border-b p-3 sm:p-5">
+                      <div className="flex items-center gap-2 sm:gap-3">
                         <div
-                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white font-bold"
+                          className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg text-white text-sm sm:font-bold font-bold"
                           style={{ backgroundColor: subject.color || '#10b981' }}
                         >
                           {subject.name.charAt(0)}
                         </div>
-                        <div>
-                          <h3 className="text-lg font-bold text-foreground">{subject.name}</h3>
-                          <p className="text-xs text-muted-foreground">
+                        <div className="min-w-0">
+                          <h3 className="text-base sm:text-lg font-bold text-foreground line-clamp-2">{subject.name}</h3>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground">
                             المعلم: {subject.teacher_name || 'غير معروف'}
                           </p>
                         </div>
@@ -1433,28 +1538,28 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                       </button>
                     </div>
 
-                    <div className="p-5 space-y-4">
+                    <div className="p-3 sm:p-5 space-y-3 sm:space-y-4">
                       {subject.description && (
                         <div>
-                          <Label className="text-sm text-muted-foreground">الوصف</Label>
-                          <p className="text-sm text-foreground mt-1">{subject.description}</p>
+                          <Label className="text-xs sm:text-sm text-muted-foreground">الوصف</Label>
+                          <p className="text-xs sm:text-sm text-foreground mt-1">{subject.description}</p>
                         </div>
                       )}
 
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="rounded-lg border p-3">
-                          <span className="text-xs text-muted-foreground">عدد الطلاب</span>
-                          <p className="text-lg font-bold text-foreground">{subject.student_count || 0}</p>
+                      <div className="grid grid-cols-2 gap-2 sm:gap-4">
+                        <div className="rounded-lg border p-2 sm:p-3">
+                          <span className="text-[10px] sm:text-xs text-muted-foreground">عدد الطلاب</span>
+                          <p className="text-base sm:text-lg font-bold text-foreground">{subject.student_count || 0}</p>
                         </div>
-                        <div className="rounded-lg border p-3">
-                          <span className="text-xs text-muted-foreground">الحالة</span>
-                          <p className="text-sm font-medium text-foreground">
+                        <div className="rounded-lg border p-2 sm:p-3">
+                          <span className="text-[10px] sm:text-xs text-muted-foreground">الحالة</span>
+                          <p className="text-xs sm:text-sm font-medium text-foreground">
                             {subject.is_active ? 'نشطة' : 'معطلة'}
                           </p>
                         </div>
                       </div>
 
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-[10px] sm:text-xs text-muted-foreground">
                         <span>تاريخ الإنشاء: {formatDate(subject.created_at)}</span>
                       </div>
                     </div>
@@ -1468,7 +1573,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
 
       {/* Delete Subject Confirmation */}
       <AlertDialog open={!!deleteSubjectConfirm} onOpenChange={(open) => !open && setDeleteSubjectConfirm(null)}>
-        <AlertDialogContent dir="rtl">
+        <AlertDialogContent dir="rtl" className="max-h-[85vh] overflow-y-auto">
           <AlertDialogHeader className="text-right">
             <AlertDialogTitle className="text-right flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-rose-500" />
@@ -1505,7 +1610,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
   // Render: Quizzes Section
   // -------------------------------------------------------
   const renderQuizzes = () => (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4 sm:space-y-6">
       {/* Header */}
       <motion.div variants={itemVariants}>
         <h2 className="text-2xl font-bold text-foreground">إدارة الاختبارات</h2>
@@ -1538,7 +1643,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                       <ClipboardList className="h-5 w-5 text-teal-600" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-foreground truncate">{quiz.title}</h3>
+                      <h3 className="font-semibold text-foreground line-clamp-2">{quiz.title}</h3>
                       <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <Hash className="h-3 w-3" />
@@ -1585,7 +1690,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
 
       {/* Delete Quiz Confirmation */}
       <AlertDialog open={!!deleteQuizConfirm} onOpenChange={(open) => !open && setDeleteQuizConfirm(null)}>
-        <AlertDialogContent dir="rtl">
+        <AlertDialogContent dir="rtl" className="max-h-[85vh] overflow-y-auto">
           <AlertDialogHeader className="text-right">
             <AlertDialogTitle className="text-right flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-rose-500" />
@@ -1622,7 +1727,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
   // Render: Settings Section
   // -------------------------------------------------------
   const renderSettings = () => (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4 sm:space-y-6">
       {/* Header */}
       <motion.div variants={itemVariants}>
         <h2 className="text-2xl font-bold text-foreground">إعدادات المشرف</h2>
@@ -1889,7 +1994,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                     تسجيل الخروج
                   </Button>
                 </AlertDialogTrigger>
-                <AlertDialogContent dir="rtl">
+                <AlertDialogContent dir="rtl" className="max-h-[85vh] overflow-y-auto">
                   <AlertDialogHeader className="text-right">
                     <AlertDialogTitle className="text-right">تأكيد تسجيل الخروج</AlertDialogTitle>
                     <AlertDialogDescription className="text-right">

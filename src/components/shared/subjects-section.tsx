@@ -652,7 +652,7 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
       {/* Search skeleton */}
       <Skeleton className="h-10 w-full max-w-sm" />
       {/* Cards grid skeleton */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {[...Array(6)].map((_, i) => (
           <Skeleton key={i} className="h-52 rounded-xl" />
         ))}
@@ -669,10 +669,10 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
       className="flex flex-col items-center justify-center rounded-xl border border-amber-300 bg-amber-50/30 py-20"
       dir="rtl"
     >
-      <div className="flex h-20 w-20 items-center justify-center rounded-full bg-amber-100 mb-5">
-        <BookOpen className="h-10 w-10 text-amber-600" />
+      <div className="flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-full bg-amber-100 mb-4 sm:mb-5">
+        <BookOpen className="h-8 w-8 sm:h-10 sm:w-10 text-amber-600" />
       </div>
-      <p className="text-xl font-semibold text-foreground mb-2">
+      <p className="text-lg sm:text-xl font-semibold text-foreground mb-2">
         {dbError === 'recursion'
           ? 'يحتاج قسم المقررات إعداد قاعدة البيانات'
           : 'خطأ في الوصول إلى البيانات'}
@@ -702,10 +702,10 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
       className="flex flex-col items-center justify-center rounded-xl border border-dashed border-emerald-300 bg-emerald-50/30 py-20"
       dir="rtl"
     >
-      <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 mb-5">
-        <BookOpen className="h-10 w-10 text-emerald-600" />
+      <div className="flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-full bg-emerald-100 mb-4 sm:mb-5">
+        <BookOpen className="h-8 w-8 sm:h-10 sm:w-10 text-emerald-600" />
       </div>
-      <p className="text-xl font-semibold text-foreground mb-2">
+      <p className="text-lg sm:text-xl font-semibold text-foreground mb-2">
         {isTeacher ? 'لا توجد مقررات بعد' : 'لم تسجل في أي مقرر بعد'}
       </p>
       <p className="text-sm text-muted-foreground mb-6 max-w-sm text-center">
@@ -805,8 +805,8 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
             </div>
 
             {/* Active badge + Subject code */}
-            <div className="absolute bottom-3 right-4 left-4 flex items-end justify-between">
-              <div className="flex items-center gap-2">
+            <div className="absolute bottom-2 sm:bottom-3 right-3 sm:right-4 left-3 sm:left-4 flex items-end justify-between gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                 <Badge
                   className="bg-white/20 text-white border-white/30 backdrop-blur-sm text-[10px]"
                 >
@@ -815,7 +815,7 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
                 {isTeacher && subject.subject_code && (
                   <button
                     onClick={(e) => handleCopyCode(subject.subject_code || '', e)}
-                    className="flex items-center gap-1 rounded-md bg-black/30 text-white/90 backdrop-blur-sm px-2 py-0.5 text-[10px] font-mono tracking-wider hover:bg-black/50 transition-colors"
+                    className="flex items-center gap-1 rounded-md bg-black/30 text-white/90 backdrop-blur-sm px-1.5 sm:px-2 py-0.5 text-[10px] font-mono tracking-wider hover:bg-black/50 transition-colors"
                     title="انقر للنسخ"
                   >
                     <Hash className="h-3 w-3" />
@@ -832,34 +832,34 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
           </div>
 
           {/* Content */}
-          <CardContent className="p-4 space-y-3">
+          <CardContent className="p-3 sm:p-4 space-y-2 sm:space-y-3">
             {/* Name */}
-            <h3 className="font-bold text-foreground text-base leading-tight line-clamp-1">
+            <h3 className="font-bold text-foreground text-sm sm:text-base leading-tight line-clamp-2">
               {subject.name}
             </h3>
 
             {/* Description */}
             {subject.description && (
-              <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
+              <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2 leading-relaxed">
                 {subject.description}
               </p>
             )}
 
             {/* Meta info */}
-            <div className="flex items-center justify-between pt-1">
+            <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
               {isTeacher ? (
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Users className="h-3.5 w-3.5" />
+                <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-muted-foreground">
+                  <Users className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                   <span>{subject.student_count ?? 0} طالب</span>
                 </div>
               ) : (
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <GraduationCap className="h-3.5 w-3.5" />
-                  <span className="truncate max-w-[120px]">{subject.teacher_name || 'معلم'}</span>
+                <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-muted-foreground min-w-0">
+                  <GraduationCap className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
+                  <span className="line-clamp-1">{subject.teacher_name || 'معلم'}</span>
                 </div>
               )}
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <CalendarDays className="h-3.5 w-3.5" />
+              <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-muted-foreground shrink-0">
+                <CalendarDays className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                 <span>{formatDate(isTeacher ? subject.created_at : (enrolledAt || subject.created_at))}</span>
               </div>
             </div>
@@ -922,7 +922,7 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
               <Palette className="h-4 w-4 text-muted-foreground" />
               لون المقرر
             </label>
-            <div className="grid grid-cols-5 gap-2.5">
+            <div className="grid grid-cols-5 gap-2">
               {COLOR_PRESETS.map((color) => (
                 <button
                   key={color}
@@ -1182,11 +1182,11 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-xl border border-amber-300 bg-amber-50/50 p-4 shadow-sm"
+          className="rounded-xl border border-amber-300 bg-amber-50/50 p-3 sm:p-4 shadow-sm"
           dir="rtl"
         >
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-100">
+          <div className="flex items-start gap-2 sm:gap-3">
+            <div className="flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg bg-amber-100">
               <Hash className="h-5 w-5 text-amber-600" />
             </div>
             <div className="min-w-0 flex-1 space-y-2">
@@ -1301,7 +1301,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.subjects TO authenticated;`}
         className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
       >
         <div>
-          <h2 className="text-2xl font-bold text-foreground">
+          <h2 className="text-lg sm:text-2xl font-bold text-foreground">
             {isTeacher ? 'المقررات الدراسية' : 'مقرراتي'}
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
@@ -1336,7 +1336,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.subjects TO authenticated;`}
           variants={itemVariants}
           initial="hidden"
           animate="visible"
-          className="relative max-w-sm"
+          className="relative w-full sm:max-w-sm"
         >
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -1393,7 +1393,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.subjects TO authenticated;`}
           variants={containerVariants}
           initial="hidden"
           animate="visible"
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4"
         >
           {filteredSubjects.map((subject) => renderSubjectCard(subject))}
         </motion.div>

@@ -1404,7 +1404,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-right">
               {getFileIcon(file_type)}
-              <span className="truncate">{file_name}</span>
+              <span className="line-clamp-2">{file_name}</span>
             </DialogTitle>
             <DialogDescription className="sr-only">
               معاينة الملف {file_name}
@@ -1594,7 +1594,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
 
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-1">
-                                  <span className="text-xs text-muted-foreground truncate" title={item.file.name}>
+                                  <span className="text-xs text-muted-foreground line-clamp-2" title={item.file.name}>
                                     {item.file.name}
                                   </span>
                                   <span className="text-[10px] text-muted-foreground shrink-0">
@@ -1854,7 +1854,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                     <User className="h-4 w-4 text-emerald-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{user.name}</p>
+                    <p className="text-sm font-medium text-foreground line-clamp-1">{user.name}</p>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <span dir="ltr">{user.email}</span>
                       <Badge variant="secondary" className="text-[10px] px-1.5 py-0 border-0">
@@ -2016,7 +2016,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
               <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${getFileIconBg(assigningFile.file_type)}`}>
                 {getFileIcon(assigningFile.file_type, 'sm')}
               </div>
-              <p className="text-sm font-medium truncate">{assigningFile.file_name}</p>
+              <p className="text-sm font-medium line-clamp-2">{assigningFile.file_name}</p>
             </div>
 
             {/* Current assignment */}

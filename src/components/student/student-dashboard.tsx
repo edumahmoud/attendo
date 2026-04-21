@@ -1024,12 +1024,12 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
   // Render: Dashboard Section
   // -------------------------------------------------------
   const renderDashboard = () => (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4 sm:space-y-6">
       {/* Header */}
       <motion.div variants={itemVariants} className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">لوحة التحكم</h2>
-          <p className="text-muted-foreground mt-1">مرحباً بك في منصة إكسامي التعليمية</p>
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground">لوحة التحكم</h2>
+          <p className="text-sm sm:text-base text-muted-foreground mt-1">مرحباً بك في منصة إكسامي التعليمية</p>
         </div>
         <RealtimeStatus
           status={rtStatusValue}
@@ -1039,7 +1039,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
       </motion.div>
 
       {/* Stats row */}
-      <motion.div variants={itemVariants} className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <motion.div variants={itemVariants} className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
         <StatCard
           icon={<BookOpen className="h-6 w-6" />}
           label="المقررات"
@@ -1067,12 +1067,12 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
       </motion.div>
 
       {/* Two columns: recent summaries & recent scores */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* أحدث الملخصات */}
         <motion.div variants={itemVariants}>
           <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between border-b p-4">
-              <h3 className="font-semibold text-foreground flex items-center gap-2">
+            <div className="flex items-center justify-between border-b p-3 sm:p-4">
+              <h3 className="text-sm sm:text-base font-semibold text-foreground flex items-center gap-2">
                 <BookOpen className="h-4 w-4 text-emerald-600" />
                 أحدث الملخصات
               </h3>
@@ -1096,13 +1096,13 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
                       key={summary.id}
                       whileHover={{ backgroundColor: 'rgba(0,0,0,0.02)' }}
                       onClick={() => setViewingSummaryId(summary.id)}
-                      className="flex w-full items-start gap-3 p-4 text-right transition-colors"
+                      className="flex w-full items-start gap-2 sm:gap-3 p-3 sm:p-4 text-right transition-colors"
                     >
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100">
+                      <div className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100">
                         <FileText className="h-4 w-4 text-emerald-600" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-foreground truncate">{summary.title}</p>
+                        <p className="text-xs sm:text-sm font-medium text-foreground line-clamp-2">{summary.title}</p>
                         <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
                           {summary.summary_content?.slice(0, 80) || ''}...
                         </p>
@@ -1119,8 +1119,8 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
         {/* آخر النتائج */}
         <motion.div variants={itemVariants}>
           <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between border-b p-4">
-              <h3 className="font-semibold text-foreground flex items-center gap-2">
+            <div className="flex items-center justify-between border-b p-3 sm:p-4">
+              <h3 className="text-sm sm:text-base font-semibold text-foreground flex items-center gap-2">
                 <Award className="h-4 w-4 text-amber-600" />
                 آخر النتائج
               </h3>
@@ -1141,12 +1141,12 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
                           ? 'text-amber-700 bg-amber-100'
                           : 'text-rose-700 bg-rose-100';
                     return (
-                      <div key={score.id} className="flex items-center gap-3 p-4">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50">
+                      <div key={score.id} className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4">
+                        <div className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50">
                           <Award className="h-4 w-4 text-amber-600" />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-foreground truncate">{score.quiz_title}</p>
+                          <p className="text-xs sm:text-sm font-medium text-foreground line-clamp-2">{score.quiz_title}</p>
                           <p className="text-xs text-muted-foreground mt-1">
                             {score.score} / {score.total}
                           </p>
@@ -1170,16 +1170,16 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
   // Render: Summaries Section
   // -------------------------------------------------------
   const renderSummaries = () => (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4 sm:space-y-6">
       {/* Header */}
       <motion.div variants={itemVariants} className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">الملخصات</h2>
-          <p className="text-muted-foreground mt-1">جميع ملخصاتك الدراسية في مكان واحد</p>
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground">الملخصات</h2>
+          <p className="text-sm sm:text-base text-muted-foreground mt-1">جميع ملخصاتك الدراسية في مكان واحد</p>
         </div>
         <button
           onClick={() => setNewSummaryOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700"
+          className="flex items-center gap-1.5 sm:gap-2 rounded-lg bg-emerald-600 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700"
         >
           <Plus className="h-4 w-4" />
           ملخص جديد
@@ -1209,7 +1209,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
         <motion.div variants={containerVariants} className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {summaries.map((summary) => (
             <motion.div key={summary.id} variants={itemVariants} {...cardHover}>
-              <div className="group relative rounded-xl border bg-card p-5 shadow-sm hover:shadow-md transition-shadow">
+              <div className="group relative rounded-xl border bg-card p-3 sm:p-5 shadow-sm hover:shadow-md transition-shadow">
                 {/* Delete button */}
                 <button
                   onClick={(e) => {
@@ -1234,7 +1234,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-100 transition-transform group-hover:scale-110">
                       <FileText className="h-5 w-5 text-emerald-600" />
                     </div>
-                    <h3 className="font-semibold text-foreground truncate">{summary.title}</h3>
+                    <h3 className="text-sm sm:text-base font-semibold text-foreground line-clamp-2">{summary.title}</h3>
                   </div>
                   <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
                     {summary.summary_content?.slice(0, 120) || ''}...
@@ -1513,14 +1513,14 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
 
       return (
         <motion.div key={quiz.id} variants={itemVariants} {...cardHover}>
-          <div className="group rounded-xl border bg-card p-5 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-teal-100 transition-transform group-hover:scale-110">
-                <ClipboardList className="h-5 w-5 text-teal-600" />
+          <div className="group rounded-xl border bg-card p-3 sm:p-5 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-start gap-2 sm:gap-3">
+              <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg bg-teal-100 transition-transform group-hover:scale-110">
+                <ClipboardList className="h-4 w-4 sm:h-5 sm:w-5 text-teal-600" />
               </div>
               <div className="min-w-0 flex-1">
-                <h3 className="font-semibold text-foreground truncate">{quiz.title}</h3>
-                <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
+                <h3 className="text-sm sm:text-base font-semibold text-foreground line-clamp-2">{quiz.title}</h3>
+                <div className="flex items-center gap-2 sm:gap-3 mt-1.5 sm:mt-2 text-xs text-muted-foreground flex-wrap">
                   <span className="flex items-center gap-1">
                     <Hash className="h-3 w-3" />
                     {quiz.questions?.length || 0} أسئلة
@@ -1587,19 +1587,19 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
     };
 
     return (
-      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4 sm:space-y-6">
         {/* Header */}
         <motion.div variants={itemVariants}>
-          <h2 className="text-2xl font-bold text-foreground">الاختبارات</h2>
-          <p className="text-muted-foreground mt-1">اختبارات المقررات المسجل بها</p>
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground">الاختبارات</h2>
+          <p className="text-sm sm:text-base text-muted-foreground mt-1">اختبارات المقررات المسجل بها</p>
         </motion.div>
 
         {/* Tabs */}
         <motion.div variants={itemVariants}>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => setStudentQuizTab('open')}
-              className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
+              className={`flex items-center gap-1.5 sm:gap-2 rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium transition-all ${
                 studentQuizTab === 'open'
                   ? 'bg-emerald-600 text-white shadow-sm'
                   : 'border text-muted-foreground hover:bg-muted/50'
@@ -1615,7 +1615,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
             </button>
             <button
               onClick={() => setStudentQuizTab('completed')}
-              className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
+              className={`flex items-center gap-1.5 sm:gap-2 rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium transition-all ${
                 studentQuizTab === 'completed'
                   ? 'bg-emerald-600 text-white shadow-sm'
                   : 'border text-muted-foreground hover:bg-muted/50'
@@ -1659,7 +1659,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
             </p>
           </motion.div>
         ) : (
-          <div className="space-y-8">
+          <div className="space-y-4 sm:space-y-8">
             {/* Quizzes grouped by subject */}
             {Array.from(quizzesBySubject.entries()).map(([subjectId, subjectQuizList]) => {
               const subj = enrolledSubjects.find(s => s.id === subjectId);
@@ -1681,7 +1681,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
                       {subjectQuizList.length} اختبار
                     </Badge>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     {subjectQuizList.map(renderQuizCard)}
                   </div>
                 </motion.div>
@@ -1698,7 +1698,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
                   <h3 className="text-lg font-bold text-foreground">اختبارات عامة</h3>
                   <Badge variant="outline" className="text-xs">{noSubjectQuizzes.length} اختبار</Badge>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   {noSubjectQuizzes.map(renderQuizCard)}
                 </div>
               </motion.div>
@@ -1713,19 +1713,19 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
   // Render: Teachers Section
   // -------------------------------------------------------
   const renderTeachers = () => (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4 sm:space-y-6">
       {/* Header */}
       <motion.div variants={itemVariants} className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">المعلمون</h2>
-          <p className="text-muted-foreground mt-1">معلموك المسجلون في المنصة</p>
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground">المعلمون</h2>
+          <p className="text-sm sm:text-base text-muted-foreground mt-1">معلموك المسجلون في المنصة</p>
         </div>
         <button
           onClick={() => setLinkTeacherOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700"
+          className="flex items-center gap-1.5 sm:gap-2 rounded-lg bg-emerald-600 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700"
         >
           <UserPlus className="h-4 w-4" />
-          ربط معلم جديد
+          <span className="hidden sm:inline">ربط معلم جديد</span><span className="sm:hidden">ربط معلم</span>
         </button>
       </motion.div>
 
@@ -1765,16 +1765,16 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
                 <div className="group rounded-xl border bg-card shadow-sm hover:shadow-md transition-shadow overflow-hidden">
                   {/* Teacher header - clickable to expand */}
                   <div
-                    className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+                    className="flex items-center justify-between p-3 sm:p-4 cursor-pointer hover:bg-muted/30 transition-colors"
                     onClick={() => setExpandedTeacherId(isExpanded ? null : teacher.id)}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold text-sm">
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                      <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs sm:text-sm">
                         {initials || 'م'}
                       </div>
-                      <div>
-                        <h3 className="font-semibold text-foreground">{teacher.name}</h3>
-                        <p className="text-xs text-muted-foreground">{teacher.email}</p>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-sm sm:text-base font-semibold text-foreground line-clamp-2">{teacher.name}</h3>
+                        <p className="text-xs text-muted-foreground break-all">{teacher.email}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1824,7 +1824,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
                                       }}
                                     >
                                       <BookOpen className="h-3 w-3" />
-                                      <span className="truncate max-w-[120px]">{subject.name}</span>
+                                      <span className="line-clamp-2">{subject.name}</span>
                                     </button>
                                   );
                                 })}
@@ -1968,7 +1968,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
   // Render: Lectures Section (placeholder)
   // -------------------------------------------------------
   const renderLectures = () => (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4 sm:space-y-6">
       <motion.div variants={itemVariants}>
         <h2 className="text-2xl font-bold text-foreground">المحاضرات</h2>
         <p className="text-muted-foreground mt-1">محاضراتك المسجلة والبث المباشر</p>
@@ -2048,7 +2048,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-foreground truncate">{file.file_name}</p>
+                      <p className="text-sm font-medium text-foreground line-clamp-2">{file.file_name}</p>
                       {file.visibility === 'private' && (
                         <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[9px]">خاص</Badge>
                       )}
@@ -2094,7 +2094,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
     };
 
     return (
-      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4 sm:space-y-6">
         {/* Header */}
         <motion.div variants={itemVariants} className="flex items-center justify-between">
           <div>
@@ -2262,7 +2262,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
     }));
 
     return (
-      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-4 sm:space-y-6">
         {/* Header */}
         <motion.div variants={itemVariants}>
           <h2 className="text-2xl font-bold text-foreground">تحليل الأداء</h2>
@@ -2332,7 +2332,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
                       <div key={cat.name} className="flex items-center gap-4">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm font-medium text-foreground truncate">{cat.name}</span>
+                            <span className="text-sm font-medium text-foreground line-clamp-2">{cat.name}</span>
                             <span className="text-xs text-muted-foreground">{cat.count} اختبار</span>
                           </div>
                           <div className="h-2.5 rounded-full bg-muted overflow-hidden">

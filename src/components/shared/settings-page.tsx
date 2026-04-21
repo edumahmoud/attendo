@@ -800,7 +800,7 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
                 </Label>
                 <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2.5">
                   <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="flex-1 text-sm text-muted-foreground select-all truncate">{profile.email}</span>
+                  <span className="flex-1 text-sm text-muted-foreground select-all line-clamp-1 min-w-0">{profile.email}</span>
                   <Badge variant="outline" className="shrink-0 text-xs text-muted-foreground">
                     للقراءة فقط
                   </Badge>
