@@ -27,6 +27,7 @@ import {
   Video,
   BarChart3,
   Clock,
+  FolderOpen,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import AppSidebar from '@/components/shared/app-sidebar';
@@ -1042,9 +1043,9 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
           color="amber"
         />
         <StatCard
-          icon={<Award className="h-6 w-6" />}
-          label="اختبارات منجزة"
-          value={scores.length}
+          icon={<FolderOpen className="h-6 w-6" />}
+          label="عدد الملفات"
+          value={studentFiles.length}
           color="rose"
         />
       </motion.div>

@@ -45,6 +45,7 @@ import {
   BarChart3,
   Pencil,
   Lock,
+  FolderOpen,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import AppSidebar from '@/components/shared/app-sidebar';
@@ -161,6 +162,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
   const [scores, setScores] = useState<Score[]>([]);
   const [subjectsCount, setSubjectsCount] = useState(0);
   const [teacherSubjects, setTeacherSubjects] = useState<Subject[]>([]);
+  const [totalFilesCount, setTotalFilesCount] = useState(0);
   const [loadingData, setLoadingData] = useState(true);
   const [attendanceData, setAttendanceData] = useState<{ student_id: string; attended: number; total: number }[]>([]);
   const [performanceDialogOpen, setPerformanceDialogOpen] = useState(false);
@@ -332,6 +334,20 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
         .order('created_at', { ascending: false });
       if (!error && data) {
         setTeacherSubjects(data as Subject[]);
+
+        // Fetch total files count across all teacher's subjects
+        if (data.length > 0) {
+          const subjectIds = data.map((s: Subject) => s.id);
+          const { count, error: countError } = await supabase
+            .from('subject_files')
+            .select('*', { count: 'exact', head: true })
+            .in('subject_id', subjectIds);
+          if (!countError && count !== null) {
+            setTotalFilesCount(count);
+          }
+        } else {
+          setTotalFilesCount(0);
+        }
       }
     } catch {
       // silently ignore
@@ -1465,7 +1481,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
       {renderHeader()}
 
       {/* Stats row */}
-      <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           icon={<BookOpen className="h-6 w-6" />}
           label="المقررات"
@@ -1479,9 +1495,9 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
           color="teal"
         />
         <StatCard
-          icon={<ClipboardList className="h-6 w-6" />}
-          label="الاختبارات النشطة"
-          value={quizzes.length}
+          icon={<FolderOpen className="h-6 w-6" />}
+          label="عدد الملفات"
+          value={totalFilesCount}
           color="amber"
         />
         <StatCard
@@ -1489,12 +1505,6 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
           label="متوسط الأداء"
           value={`${avgPerformance}%`}
           color="rose"
-        />
-        <StatCard
-          icon={<Award className="h-6 w-6" />}
-          label="اختبارات منجزة"
-          value={scores.length}
-          color="purple"
         />
       </motion.div>
 

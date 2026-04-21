@@ -37,6 +37,7 @@ import {
   Database,
   Sparkles,
   LogOut,
+  FolderOpen,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import AppSidebar from '@/components/shared/app-sidebar';
@@ -164,6 +165,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
   const [allSubjects, setAllSubjects] = useState<Subject[]>([]);
   const [allQuizzes, setAllQuizzes] = useState<Quiz[]>([]);
   const [allScores, setAllScores] = useState<Score[]>([]);
+  const [allFilesCount, setAllFilesCount] = useState(0);
   const [loadingData, setLoadingData] = useState(true);
 
   // ─── Users section ───
@@ -239,6 +241,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
       setAllSubjects((data.subjects as Subject[]) || []);
       setAllQuizzes((data.quizzes as Quiz[]) || []);
       setAllScores((data.scores as Score[]) || []);
+      setAllFilesCount(data.filesCount || 0);
     } catch (error) {
       console.error('Error fetching admin dashboard data:', error);
     } finally {
@@ -781,10 +784,10 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
           color="rose"
         />
         <StatCard
-          icon={<TrendingUp className="h-6 w-6" />}
-          label="الاختبارات المنجزة"
-          value={allScores.length}
-          color="emerald"
+          icon={<FolderOpen className="h-6 w-6" />}
+          label="عدد الملفات"
+          value={allFilesCount}
+          color="purple"
         />
       </motion.div>
 
