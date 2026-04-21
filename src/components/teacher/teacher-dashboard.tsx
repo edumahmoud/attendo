@@ -56,6 +56,7 @@ import ChatPanel from '@/components/shared/chat-panel';
 import NotificationBell from '@/components/shared/notification-bell';
 import NotificationsPanel from '@/components/shared/notifications-panel';
 import StatCard from '@/components/shared/stat-card';
+import PersonalFilesSection from '@/components/shared/personal-files-section';
 import { useAppStore } from '@/stores/app-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { useAutoRefresh, useDebouncedCallback, useRealtimeStatus } from '@/hooks/use-auto-refresh';
@@ -3438,6 +3439,15 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                     </div>
                     <h2 className="text-2xl font-bold text-foreground mb-2">المحاضرات</h2>
                     <p className="text-muted-foreground text-center max-w-sm">سيتم إضافة المحاضرات قريباً</p>
+                  </motion.div>
+                )}
+                {activeSection === 'personal-files' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.35 }}
+                  >
+                    <PersonalFilesSection profile={profile} />
                   </motion.div>
                 )}
                 {activeSection === 'notifications' && (

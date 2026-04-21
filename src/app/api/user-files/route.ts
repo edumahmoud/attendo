@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
 
       const { data, error } = await supabaseServer
         .from('file_shares')
-        .select('id, file_id, file_type, shared_by, shared_with, created_at, shared_with_name, shared_with_email, shared_with_role, shared_by_name, file_name, file_url')
+        .select('id, file_id, file_type, shared_by, shared_with, created_at')
         .eq('shared_with', user.id)
         .eq('file_type', 'user_file')
         .order('created_at', { ascending: false });
@@ -112,32 +112,52 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      // Enrich with sharer names if not already present
-      const enriched = (data || []).map((share: Record<string, unknown>) => {
-        if (!share.shared_by_name && share.shared_by) {
-          // Will be enriched in a second query if needed
-        }
-        return share;
-      });
+      // Enrich shares with user names and file info
+      const shares = (data || []) as Record<string, unknown>[];
 
-      // Fetch sharer names for entries missing them
-      const missingNames = enriched.filter((s: Record<string, unknown>) => !s.shared_by_name && s.shared_by);
-      if (missingNames.length > 0) {
-        const sharerIds = [...new Set(missingNames.map((s: Record<string, unknown>) => s.shared_by as string))];
-        const { data: sharerProfiles } = await supabaseServer
+      // Get sharer profiles
+      const sharerIds = [...new Set(shares.map((s) => s.shared_by as string).filter(Boolean))];
+      const sharedWithIds = [...new Set(shares.map((s) => s.shared_with as string).filter(Boolean))];
+      const allUserIds = [...new Set([...sharerIds, ...sharedWithIds])];
+
+      let userMap = new Map<string, { name: string; email: string; role: string }>();
+      if (allUserIds.length > 0) {
+        const { data: userProfiles } = await supabaseServer
           .from('users')
-          .select('id, name')
-          .in('id', sharerIds);
-
-        if (sharerProfiles) {
-          const nameMap = new Map((sharerProfiles as { id: string; name: string }[]).map((p) => [p.id, p.name]));
-          enriched.forEach((share: Record<string, unknown>) => {
-            if (!share.shared_by_name && share.shared_by) {
-              share.shared_by_name = nameMap.get(share.shared_by as string) || 'مستخدم';
-            }
-          });
+          .select('id, name, email, role')
+          .in('id', allUserIds);
+        if (userProfiles) {
+          userMap = new Map((userProfiles as { id: string; name: string; email: string; role: string }[]).map((p) => [p.id, p]));
         }
       }
+
+      // Get file info
+      const fileIds = shares.map((s) => s.file_id as string).filter(Boolean);
+      let fileMap = new Map<string, { file_name: string; file_url: string; file_type: string }>();
+      if (fileIds.length > 0) {
+        const { data: fileRecords } = await supabaseServer
+          .from('user_files')
+          .select('id, file_name, file_url, file_type')
+          .in('id', fileIds);
+        if (fileRecords) {
+          fileMap = new Map((fileRecords as { id: string; file_name: string; file_url: string; file_type: string }[]).map((f) => [f.id, f]));
+        }
+      }
+
+      const enriched = shares.map((share) => {
+        const sharer = userMap.get(share.shared_by as string);
+        const sharedWith = userMap.get(share.shared_with as string);
+        const file = fileMap.get(share.file_id as string);
+        return {
+          ...share,
+          shared_by_name: sharer?.name || 'مستخدم',
+          shared_with_name: sharedWith?.name || '',
+          shared_with_email: sharedWith?.email || '',
+          shared_with_role: sharedWith?.role || '',
+          file_name: file?.file_name || 'ملف مشترك',
+          file_url: file?.file_url || '',
+        };
+      });
 
       return NextResponse.json(
         { success: true, data: enriched },
@@ -231,6 +251,7 @@ export async function POST(request: NextRequest) {
     const visibilityInput = formData.get('visibility') as string | null;
     const descriptionInput = formData.get('description') as string | null;
     const notesInput = formData.get('notes') as string | null;
+    const subjectIdInput = formData.get('subjectId') as string | null;
 
     if (!file) {
       return NextResponse.json(
@@ -247,8 +268,22 @@ export async function POST(request: NextRequest) {
     }
 
     const fileName = sanitizeString(displayName || file.name, 255) || file.name;
-    const fileExt = fileName.split('.').pop() || 'bin';
-    const storagePath = `${user.id}/${Date.now()}.${fileExt}`;
+    // Extract extension from ORIGINAL file name (not display name) to avoid Arabic/non-ASCII in storage path
+    const originalExt = file.name.split('.').pop() || '';
+    const mimeExtMap: Record<string, string> = {
+      'application/pdf': 'pdf',
+      'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg', 'image/bmp': 'bmp',
+      'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov', 'video/x-msvideo': 'avi',
+      'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a',
+      'application/msword': 'doc', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+      'application/vnd.ms-excel': 'xls', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+      'application/vnd.ms-powerpoint': 'ppt', 'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+      'text/plain': 'txt', 'text/csv': 'csv', 'application/rtf': 'rtf', 'application/zip': 'zip',
+      'application/x-rar-compressed': 'rar', 'application/json': 'json',
+    };
+    const isAsciiExt = /^[a-zA-Z0-9]+$/.test(originalExt);
+    const safeExt = isAsciiExt ? originalExt : (mimeExtMap[file.type] || 'bin');
+    const storagePath = `${user.id}/${Date.now()}.${safeExt}`;
 
     // Ensure bucket exists
     const bucketResult = await ensureBucketExists();
@@ -306,19 +341,48 @@ export async function POST(request: NextRequest) {
     const description = descriptionInput?.trim() || null;
     const notes = notesInput?.trim() || null;
 
+    // Validate subject_id if provided (user must be enrolled or teacher)
+    let subjectId: string | null = null;
+    if (subjectIdInput && subjectIdInput.trim()) {
+      const trimmedId = subjectIdInput.trim();
+      // Verify the subject exists and user has access
+      const { data: subjectCheck } = await authResult.supabase
+        .from('subjects')
+        .select('teacher_id')
+        .eq('id', trimmedId)
+        .single();
+      if (subjectCheck) {
+        const isTeacherOfSubject = subjectCheck.teacher_id === user.id;
+        const { data: enrollment } = await authResult.supabase
+          .from('subject_students')
+          .select('id')
+          .eq('subject_id', trimmedId)
+          .eq('student_id', user.id)
+          .single();
+        if (isTeacherOfSubject || enrollment) {
+          subjectId = trimmedId;
+        }
+      }
+    }
+
     // Save metadata to database
+    const insertPayload: Record<string, unknown> = {
+      user_id: user.id,
+      file_name: fileName,
+      file_url: fileUrl,
+      file_type: fileType,
+      file_size: file.size,
+      visibility,
+      description,
+      notes,
+    };
+    if (subjectId) {
+      insertPayload.subject_id = subjectId;
+    }
+
     const { data, error: dbError } = await authResult.supabase
       .from('user_files')
-      .insert({
-        user_id: user.id,
-        file_name: fileName,
-        file_url: fileUrl,
-        file_type: fileType,
-        file_size: file.size,
-        visibility,
-        description,
-        notes,
-      })
+      .insert(insertPayload)
       .select()
       .single();
 

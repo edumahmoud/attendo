@@ -242,8 +242,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const fileName = sanitizeString(displayName || file.name, 255) || file.name;
-    const fileExt = fileName.split('.').pop() || 'bin';
-    const storagePath = `${subjectId}/${user.id}/${Date.now()}.${fileExt}`;
+    // Extract extension from ORIGINAL file name (not display name) to avoid Arabic/non-ASCII in storage path
+    const originalExt = file.name.split('.').pop() || '';
+    const mimeExtMap: Record<string, string> = {
+      'application/pdf': 'pdf',
+      'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg', 'image/bmp': 'bmp',
+      'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov', 'video/x-msvideo': 'avi',
+      'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a',
+      'application/msword': 'doc', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+      'application/vnd.ms-excel': 'xls', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+      'application/vnd.ms-powerpoint': 'ppt', 'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+      'text/plain': 'txt', 'text/csv': 'csv', 'application/rtf': 'rtf',
+    };
+    const isAsciiExt = /^[a-zA-Z0-9]+$/.test(originalExt);
+    const safeExt = isAsciiExt ? originalExt : (mimeExtMap[file.type] || 'bin');
+    const storagePath = `${subjectId}/${user.id}/${Date.now()}.${safeExt}`;
 
     // Ensure bucket exists
     const bucketResult = await ensureBucketExists();

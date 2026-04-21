@@ -19,6 +19,7 @@ import {
   Bell,
   BarChart3,
   FolderOpen,
+  Archive,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -62,7 +63,8 @@ const studentNavItems: NavItem[] = [
   { id: 'dashboard', label: 'لوحة التحكم', icon: <LayoutDashboard className="h-5 w-5" /> },
   { id: 'subjects', label: 'المقررات', icon: <BookOpen className="h-5 w-5" /> },
   { id: 'teachers', label: 'المعلمون', icon: <Users className="h-5 w-5" /> },
-  { id: 'files', label: 'الملفات', icon: <FolderOpen className="h-5 w-5" /> },
+  { id: 'files', label: 'ملفات المقررات', icon: <FolderOpen className="h-5 w-5" /> },
+  { id: 'personal-files', label: 'ملفاتي', icon: <Archive className="h-5 w-5" /> },
   { id: 'summaries', label: 'الملخصات', icon: <FileText className="h-5 w-5" /> },
   { id: 'quizzes', label: 'الاختبارات', icon: <ClipboardList className="h-5 w-5" /> },
   { id: 'lectures', label: 'المحاضرات', icon: <Video className="h-5 w-5" /> },
@@ -76,6 +78,7 @@ const teacherNavItems: NavItem[] = [
   { id: 'dashboard', label: 'لوحة التحكم', icon: <LayoutDashboard className="h-5 w-5" /> },
   { id: 'subjects', label: 'المقررات', icon: <BookOpen className="h-5 w-5" /> },
   { id: 'students', label: 'الطلاب', icon: <Users className="h-5 w-5" /> },
+  { id: 'personal-files', label: 'ملفاتي', icon: <Archive className="h-5 w-5" /> },
   { id: 'quizzes', label: 'الاختبارات', icon: <ClipboardList className="h-5 w-5" /> },
   { id: 'lectures', label: 'المحاضرات', icon: <Video className="h-5 w-5" /> },
   { id: 'chat', label: 'المحادثات', icon: <MessageCircle className="h-5 w-5" /> },

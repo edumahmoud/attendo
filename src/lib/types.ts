@@ -131,7 +131,7 @@ export interface SubjectFile {
   uploader_name?: string;
 }
 
-// Personal user file (not tied to a subject)
+// Personal user file (optionally linked to a subject)
 export interface UserFile {
   id: string;
   user_id: string;
@@ -142,6 +142,7 @@ export interface UserFile {
   visibility: 'public' | 'private';
   description?: string;
   notes?: string;
+  subject_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -292,8 +293,8 @@ export type AppPage =
   | 'subject-detail';
 
 // Update section types
-export type StudentSection = 'dashboard' | 'subjects' | 'summaries' | 'quizzes' | 'teachers' | 'chat' | 'analytics' | 'lectures' | 'notifications' | 'files' | 'settings';
-export type TeacherSection = 'dashboard' | 'subjects' | 'students' | 'quizzes' | 'analytics' | 'chat' | 'lectures' | 'notifications' | 'settings';
+export type StudentSection = 'dashboard' | 'subjects' | 'summaries' | 'quizzes' | 'teachers' | 'chat' | 'analytics' | 'lectures' | 'notifications' | 'files' | 'personal-files' | 'settings';
+export type TeacherSection = 'dashboard' | 'subjects' | 'students' | 'quizzes' | 'analytics' | 'chat' | 'lectures' | 'notifications' | 'personal-files' | 'settings';
 
 // Helper to check if user has a valid (non-pending) role
 export function isActiveRole(role: UserRole): role is 'student' | 'teacher' | 'admin' {

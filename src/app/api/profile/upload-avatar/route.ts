@@ -181,8 +181,10 @@ export async function POST(request: NextRequest) {
     // Clean up old avatars
     await cleanupOldAvatars(userId);
 
-    const fileExt = file.name.split('.').pop() || 'jpg';
-    const storagePath = `${userId}/${Date.now()}.${fileExt}`;
+    const originalExt = file.name.split('.').pop() || '';
+    const isAsciiExt = /^[a-zA-Z0-9]+$/.test(originalExt);
+    const safeExt = isAsciiExt ? originalExt : 'jpg';
+    const storagePath = `${userId}/${Date.now()}.${safeExt}`;
 
     // Convert file to Buffer
     let fileBuffer: Buffer;

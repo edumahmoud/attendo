@@ -36,6 +36,7 @@ import SettingsPage from '@/components/shared/settings-page';
 import ChatPanel from '@/components/shared/chat-panel';
 import NotificationBell from '@/components/shared/notification-bell';
 import NotificationsPanel from '@/components/shared/notifications-panel';
+import PersonalFilesSection from '@/components/shared/personal-files-section';
 import StatCard from '@/components/shared/stat-card';
 import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/stores/app-store';
@@ -2390,6 +2391,8 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
         return renderLectures();
       case 'files':
         return renderFiles();
+      case 'personal-files':
+        return <PersonalFilesSection profile={profile} />;
       case 'notifications':
         return <NotificationsPanel profile={profile} onBack={() => setActiveSection('dashboard')} />;
       case 'analytics':
