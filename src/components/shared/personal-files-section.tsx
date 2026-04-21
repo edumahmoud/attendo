@@ -34,6 +34,7 @@ import {
   Headphones,
   Presentation,
   MoreVertical,
+  ClipboardCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
@@ -112,6 +113,7 @@ interface UnifiedFileItem {
   description?: string;
   notes?: string;
   subject_id?: string | null;
+  assignment_id?: string | null;
   created_at: string;
   source: 'user_file' | 'subject_file' | 'shared';
   isOwn: boolean;
@@ -566,6 +568,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
         description: f.description,
         notes: f.notes,
         subject_id: f.subject_id,
+        assignment_id: f.assignment_id,
         created_at: f.created_at,
         source: 'user_file',
         isOwn: true,
@@ -1292,6 +1295,16 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                       </Badge>
                     </>
                   )}
+                  {/* Assignment submission badge */}
+                  {file.assignment_id && (
+                    <>
+                      <span className="text-muted-foreground/40">•</span>
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-amber-100 text-amber-700 border-0">
+                        <ClipboardCheck className="h-2.5 w-2.5 ml-0.5" />
+                        تسليم
+                      </Badge>
+                    </>
+                  )}
                   {/* Shared by info inline */}
                   {file.source === 'shared' && file.shared_by_name && (
                     <>
@@ -1330,7 +1343,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                       مشاركة
                     </DropdownMenuItem>
                   )}
-                  {file.isOwn && file.source === 'user_file' && (
+                  {file.isOwn && file.source === 'user_file' && profile.role === 'teacher' && !file.assignment_id && (
                     <DropdownMenuItem onClick={() => handleOpenAssignDialog(file)}>
                       <BookOpen className="h-4 w-4 ml-2" />
                       اسناد لمقرر

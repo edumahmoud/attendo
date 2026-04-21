@@ -2,15 +2,14 @@
 
 // =====================================================
 // CourseFilesSection — ملفات المقرر
-// Handles upload, categorization, preview, share, etc.
-// Supports MULTI-FILE UPLOAD with CUSTOM NAMING per file.
+// Displays course files with preview, download, share,
+// visibility toggle, and delete actions.
 // Files classified by type with auto-generated tabs.
 // =====================================================
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
-  Upload,
   Download,
   Trash2,
   Eye,
@@ -24,7 +23,6 @@ import {
   Globe,
   Lock,
   Share2,
-  X,
   Check,
   Search,
   Music,
@@ -42,11 +40,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Progress } from '@/components/ui/progress';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -72,19 +66,6 @@ interface CourseFilesSectionProps {
   profile: UserProfile;
   isTeacher: boolean;
   subject: Subject;
-}
-
-// =====================================================
-// Upload item interface (multi-file)
-// =====================================================
-interface UploadItem {
-  id: string;
-  file: File;
-  customName: string;
-  category: string;
-  status: 'pending' | 'uploading' | 'done' | 'error';
-  progress: number;
-  errorMsg?: string;
 }
 
 // =====================================================
@@ -276,41 +257,6 @@ function isPdfType(type?: string | null): boolean {
   return type.toLowerCase().includes('pdf');
 }
 
-/** Auto-detect category from file extension */
-function autoCategoryFromExtension(fileName: string): string {
-  const ext = fileName.split('.').pop()?.toLowerCase() || '';
-  if (['pdf'].includes(ext)) return FILE_CATEGORY_DOCUMENTS;
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return FILE_CATEGORY_IMAGES;
-  if (['mp4', 'webm', 'mov', 'avi'].includes(ext)) return FILE_CATEGORY_VIDEOS;
-  if (['mp3', 'wav', 'ogg', 'm4a'].includes(ext)) return FILE_CATEGORY_AUDIO;
-  if (['doc', 'docx', 'txt', 'rtf'].includes(ext)) return FILE_CATEGORY_DOCUMENTS;
-  if (['xls', 'xlsx', 'csv'].includes(ext)) return FILE_CATEGORY_SPREADSHEETS;
-  if (['ppt', 'pptx'].includes(ext)) return FILE_CATEGORY_PRESENTATIONS;
-  return FILE_CATEGORY_OTHER;
-}
-
-/** Extract extension from original file name */
-function extractExtension(fileName: string): string {
-  const parts = fileName.split('.');
-  if (parts.length > 1) return parts.pop()!.toLowerCase();
-  return '';
-}
-
-/** Get file name without extension */
-function nameWithoutExtension(fileName: string): string {
-  const ext = extractExtension(fileName);
-  if (!ext) return fileName;
-  return fileName.slice(0, -(ext.length + 1));
-}
-
-/** Build display name: customName + original extension */
-function buildDisplayName(customName: string, originalFileName: string): string {
-  const ext = extractExtension(originalFileName);
-  if (!ext) return customName;
-  if (customName.endsWith('.' + ext)) return customName;
-  return customName + '.' + ext;
-}
-
 // =====================================================
 // Main Component
 // =====================================================
@@ -323,17 +269,6 @@ export default function CourseFilesSection({
   // ─── Data state ───
   const [files, setFiles] = useState<SubjectFile[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // ─── Upload state (multi-file) ───
-  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [uploadItems, setUploadItems] = useState<UploadItem[]>([]);
-  const [uploadDescription, setUploadDescription] = useState('');
-  const [uploadVisibility, setUploadVisibility] = useState<'public' | 'private'>('public');
-  const [uploading, setUploading] = useState(false);
-  const [uploadOverallProgress, setUploadOverallProgress] = useState(0);
-  const [completedCount, setCompletedCount] = useState(0);
-  const [totalCount, setTotalCount] = useState(0);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ─── Preview dialog ───
   const [previewFile, setPreviewFile] = useState<SubjectFile | null>(null);
@@ -359,20 +294,6 @@ export default function CourseFilesSection({
 
   // ─── Search state ───
   const [searchQuery, setSearchQuery] = useState('');
-
-  // ─── Counter for generating unique IDs ───
-  const itemIdCounter = useRef(0);
-
-  // =====================================================
-  // Upload item helpers
-  // =====================================================
-  const updateUploadItem = useCallback((id: string, updates: Partial<UploadItem>) => {
-    setUploadItems((prev) => prev.map((item) => item.id === id ? { ...item, ...updates } : item));
-  }, []);
-
-  const removeUploadItem = useCallback((id: string) => {
-    setUploadItems((prev) => prev.filter((item) => item.id !== id));
-  }, []);
 
   // =====================================================
   // Data fetching
@@ -508,138 +429,6 @@ export default function CourseFilesSection({
 
     return result;
   }, [files, activeCategory, searchQuery]);
-
-  // =====================================================
-  // Multi-file upload handler (sequential, XHR progress)
-  // =====================================================
-  const handleMultiUpload = useCallback(async () => {
-    const pendingItems = uploadItems.filter((item) => item.status === 'pending');
-    if (pendingItems.length === 0) return;
-
-    for (const item of pendingItems) {
-      if (item.file.size > 10 * 1024 * 1024) {
-        toast.error(`حجم الملف "${item.file.name}" يتجاوز 10 ميجابايت`);
-        updateUploadItem(item.id, { status: 'error', errorMsg: 'حجم الملف يتجاوز 10 ميجابايت' });
-        return;
-      }
-    }
-
-    setUploading(true);
-    setTotalCount(pendingItems.length);
-    setCompletedCount(0);
-    setUploadOverallProgress(0);
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        toast.error('يرجى تسجيل الدخول أولاً');
-        return;
-      }
-
-      const uploadUrl = isTeacher
-        ? `/api/subjects/${subjectId}/files`
-        : `/api/subjects/${subjectId}/files/upload`;
-
-      let successCount = 0;
-      let errorCount = 0;
-
-      for (let i = 0; i < pendingItems.length; i++) {
-        const item = pendingItems[i];
-        const displayName = buildDisplayName(item.customName, item.file.name);
-
-        updateUploadItem(item.id, { status: 'uploading', progress: 0 });
-
-        const formData = new FormData();
-        formData.append('file', item.file);
-        formData.append('name', displayName);
-        formData.append('category', item.category);
-        formData.append('description', uploadDescription);
-        formData.append('visibility', uploadVisibility);
-
-        try {
-          await new Promise<void>((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-
-            xhr.upload.addEventListener('progress', (e) => {
-              if (e.lengthComputable) {
-                const pct = Math.round((e.loaded / e.total) * 100);
-                updateUploadItem(item.id, { progress: pct });
-                const overallPct = Math.round(((i + pct / 100) / pendingItems.length) * 100);
-                setUploadOverallProgress(overallPct);
-              }
-            });
-
-            xhr.addEventListener('load', () => {
-              try {
-                const result = JSON.parse(xhr.responseText);
-                if (xhr.status >= 200 && xhr.status < 300 && result.success) {
-                  updateUploadItem(item.id, { status: 'done', progress: 100 });
-                  successCount++;
-                  setCompletedCount(successCount);
-                  toast.success(`تم رفع "${displayName}" بنجاح`);
-                  fetchFiles();
-                  resolve();
-                } else {
-                  const errMsg = result.error || `حدث خطأ أثناء رفع الملف (${xhr.status})`;
-                  updateUploadItem(item.id, { status: 'error', errorMsg: errMsg });
-                  errorCount++;
-                  toast.error(errMsg);
-                  reject(new Error(errMsg));
-                }
-              } catch {
-                updateUploadItem(item.id, { status: 'error', errorMsg: 'حدث خطأ غير متوقع' });
-                errorCount++;
-                reject(new Error('Parse error'));
-              }
-            });
-
-            xhr.addEventListener('error', () => {
-              updateUploadItem(item.id, { status: 'error', errorMsg: 'خطأ في الاتصال' });
-              errorCount++;
-              reject(new Error('Network error'));
-            });
-
-            xhr.addEventListener('abort', () => {
-              updateUploadItem(item.id, { status: 'error', errorMsg: 'تم الإلغاء' });
-              errorCount++;
-              reject(new Error('Aborted'));
-            });
-
-            xhr.open('POST', uploadUrl);
-            xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`);
-            xhr.send(formData);
-          });
-        } catch {
-          // Error already handled
-        }
-      }
-
-      if (successCount > 0 && errorCount === 0) {
-        toast.success(`تم رفع جميع الملفات بنجاح (${successCount} ملف)`);
-      } else if (successCount > 0 && errorCount > 0) {
-        toast.warning(`تم رفع ${successCount} ملف بنجاح، وفشل رفع ${errorCount} ملف`);
-      } else if (errorCount > 0) {
-        toast.error(`فشل رفع جميع الملفات (${errorCount} ملف)`);
-      }
-    } catch {
-      // Auth error already handled
-    } finally {
-      setUploading(false);
-      setUploadOverallProgress(0);
-      setCompletedCount(0);
-      setTotalCount(0);
-      const allDone = uploadItems.every((item) => item.status === 'done' || item.status === 'error');
-      if (allDone) {
-        setTimeout(() => {
-          setUploadItems([]);
-          setUploadDescription('');
-          setUploadVisibility('public');
-          setUploadDialogOpen(false);
-          if (fileInputRef.current) fileInputRef.current.value = '';
-        }, 1500);
-      }
-    }
-  }, [uploadItems, uploadDescription, uploadVisibility, isTeacher, subjectId, fetchFiles, updateUploadItem]);
 
   // =====================================================
   // Delete handler
@@ -794,7 +583,6 @@ export default function CourseFilesSection({
     <div className="space-y-4" dir="rtl">
       <div className="flex items-center justify-between">
         <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-10 w-28" />
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
         {[...Array(4)].map((_, i) => (
@@ -822,7 +610,7 @@ export default function CourseFilesSection({
   // =====================================================
   // Render: Empty state
   // =====================================================
-  const renderEmpty = (icon: React.ReactNode, title: string, subtitle: string, action?: React.ReactNode) => (
+  const renderEmpty = (icon: React.ReactNode, title: string, subtitle: string) => (
     <motion.div
       variants={itemVariants}
       className="flex flex-col items-center justify-center rounded-xl border border-dashed border-emerald-300 bg-emerald-50/30 py-16"
@@ -832,7 +620,6 @@ export default function CourseFilesSection({
       </div>
       <p className="text-lg font-semibold text-foreground mb-1">{title}</p>
       <p className="text-sm text-muted-foreground mb-4">{subtitle}</p>
-      {action}
     </motion.div>
   );
 
@@ -954,84 +741,7 @@ export default function CourseFilesSection({
               {files.length} ملف
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              onChange={(e) => {
-                const fileList = e.target.files;
-                if (!fileList || fileList.length === 0) return;
-
-                const newItems: UploadItem[] = [];
-                for (let i = 0; i < fileList.length; i++) {
-                  const f = fileList[i];
-                  itemIdCounter.current += 1;
-                  newItems.push({
-                    id: `upload-${itemIdCounter.current}`,
-                    file: f,
-                    customName: nameWithoutExtension(f.name),
-                    category: autoCategoryFromExtension(f.name),
-                    status: 'pending',
-                    progress: 0,
-                  });
-                }
-                setUploadItems((prev) => [...prev, ...newItems]);
-                setUploadDialogOpen(true);
-              }}
-              className="hidden"
-              disabled={uploading}
-            />
-            <Button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="gap-2 bg-emerald-600 hover:bg-emerald-700"
-              size="sm"
-            >
-              {uploading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Upload className="h-4 w-4" />
-              )}
-              {uploading
-                ? totalCount > 1
-                  ? `جاري الرفع... ${completedCount}/${totalCount}`
-                  : 'جاري الرفع...'
-                : 'رفع ملفات'}
-            </Button>
-          </div>
         </motion.div>
-
-        {/* ─── Upload progress ─── */}
-        <AnimatePresence>
-          {uploading && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-            >
-              <Card className="shadow-sm border-emerald-200 bg-emerald-50/30">
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-3 mb-2">
-                    <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
-                    <span className="text-sm font-medium text-emerald-700">
-                      جاري رفع الملفات... ({completedCount}/{totalCount})
-                    </span>
-                    <span className="text-sm font-bold text-emerald-700 mr-auto">{uploadOverallProgress}%</span>
-                  </div>
-                  <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-emerald-200">
-                    <motion.div
-                      className="h-full rounded-full bg-gradient-to-l from-emerald-500 to-teal-400"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${uploadOverallProgress}%` }}
-                      transition={{ duration: 0.3, ease: 'easeOut' }}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {/* ─── Search ─── */}
         {files.length > 0 && (
@@ -1101,17 +811,7 @@ export default function CourseFilesSection({
           renderEmpty(
             <FolderOpen className="h-8 w-8 text-emerald-600" />,
             'لا توجد ملفات',
-            'لم يتم رفع أي ملفات بعد',
-            isTeacher ? (
-              <Button
-                onClick={() => fileInputRef.current?.click()}
-                className="gap-2 bg-emerald-600 hover:bg-emerald-700 mt-2"
-                size="sm"
-              >
-                <Upload className="h-4 w-4" />
-                رفع أول ملف
-              </Button>
-            ) : undefined
+            'لم يتم رفع أي ملفات بعد'
           )
         )}
       </motion.div>
@@ -1254,159 +954,6 @@ export default function CourseFilesSection({
                 <>
                   <Share2 className="h-4 w-4 ml-1.5" />
                   مشاركة
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* =====================================================
-          Multi-File Upload Dialog
-          ===================================================== */}
-      <Dialog open={uploadDialogOpen} onOpenChange={(open) => {
-        if (!uploading) {
-          setUploadDialogOpen(open);
-          if (!open) {
-            setUploadItems([]);
-            setUploadDescription('');
-            setUploadVisibility('public');
-            if (fileInputRef.current) fileInputRef.current.value = '';
-          }
-        }
-      }}>
-        <DialogContent className="max-w-lg" dir="rtl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5 text-emerald-600" />
-              رفع ملفات ({uploadItems.length})
-            </DialogTitle>
-            <DialogDescription className="sr-only">رفع ملفات جديدة للمقرر</DialogDescription>
-          </DialogHeader>
-
-          {uploadItems.length > 0 && (
-            <div className="space-y-4">
-              {/* ─── Scrollable file list ─── */}
-              <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
-                {uploadItems.map((item) => {
-                  const ext = extractExtension(item.file.name);
-
-                  return (
-                    <div
-                      key={item.id}
-                      className={`flex flex-col gap-2 p-3 rounded-lg border transition-colors ${
-                        item.status === 'done'
-                          ? 'bg-emerald-50/50 border-emerald-200'
-                          : item.status === 'error'
-                          ? 'bg-rose-50/50 border-rose-200'
-                          : item.status === 'uploading'
-                          ? 'bg-amber-50/50 border-amber-200'
-                          : 'bg-muted/30 border-muted'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-emerald-100">
-                          {item.status === 'done' ? (
-                            <Check className="h-4 w-4 text-emerald-600" />
-                          ) : item.status === 'uploading' ? (
-                            <Loader2 className="h-4 w-4 text-amber-500 animate-spin" />
-                          ) : item.status === 'error' ? (
-                            <X className="h-4 w-4 text-rose-500" />
-                          ) : (
-                            getFileIcon(item.file.type)
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium truncate text-muted-foreground" title={item.file.name}>
-                            {item.file.name}
-                          </p>
-                          <p className="text-[10px] text-muted-foreground">{formatFileSize(item.file.size)}</p>
-                        </div>
-                        {!uploading && item.status === 'pending' && (
-                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 shrink-0" onClick={() => removeUploadItem(item.id)}>
-                            <X className="h-3 w-3" />
-                          </Button>
-                        )}
-                      </div>
-
-                      {/* Custom name input */}
-                      {item.status === 'pending' && (
-                        <Input
-                          value={item.customName}
-                          onChange={(e) => updateUploadItem(item.id, { customName: e.target.value })}
-                          placeholder="اسم الملف"
-                          className="text-xs h-7"
-                          dir="rtl"
-                        />
-                      )}
-
-                      {item.status === 'uploading' && (
-                        <Progress value={item.progress} className="h-1.5" />
-                      )}
-
-                      {item.status === 'error' && item.errorMsg && (
-                        <p className="text-[10px] text-rose-500">{item.errorMsg}</p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Description */}
-              <Textarea
-                placeholder="وصف الملفات (اختياري)"
-                value={uploadDescription}
-                onChange={(e) => setUploadDescription(e.target.value)}
-                className="text-sm"
-                rows={2}
-              />
-
-              {/* Visibility */}
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setUploadVisibility('public')}
-                  disabled={uploading}
-                  className={`flex-1 flex items-center justify-center gap-2 rounded-lg border-2 p-2.5 text-sm font-medium transition-all ${
-                    uploadVisibility === 'public'
-                      ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
-                      : 'border-muted bg-background text-muted-foreground hover:border-muted-foreground/30'
-                  }`}
-                >
-                  <Globe className="h-4 w-4" />
-                  عام
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUploadVisibility('private')}
-                  disabled={uploading}
-                  className={`flex-1 flex items-center justify-center gap-2 rounded-lg border-2 p-2.5 text-sm font-medium transition-all ${
-                    uploadVisibility === 'private'
-                      ? 'border-amber-400 bg-amber-50 text-amber-700'
-                      : 'border-muted bg-background text-muted-foreground hover:border-muted-foreground/30'
-                  }`}
-                >
-                  <Lock className="h-4 w-4" />
-                  خاص
-                </button>
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setUploadDialogOpen(false); setUploadItems([]); setUploadDescription(''); setUploadVisibility('public'); }} size="sm" disabled={uploading}>
-              إلغاء
-            </Button>
-            <Button onClick={handleMultiUpload} disabled={uploading || uploadItems.filter((i) => i.status === 'pending').length === 0} className="bg-emerald-600 hover:bg-emerald-700" size="sm">
-              {uploading ? (
-                <>
-                  <Loader2 className="h-4 w-4 ml-1.5 animate-spin" />
-                  جاري الرفع...
-                </>
-              ) : (
-                <>
-                  <Upload className="h-4 w-4 ml-1.5" />
-                  رفع ({uploadItems.filter((i) => i.status === 'pending').length})
                 </>
               )}
             </Button>

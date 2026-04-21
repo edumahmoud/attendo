@@ -131,7 +131,7 @@ export interface SubjectFile {
   uploader_name?: string;
 }
 
-// Personal user file (optionally linked to a subject)
+// Personal user file (optionally linked to a subject or assignment submission)
 export interface UserFile {
   id: string;
   user_id: string;
@@ -143,6 +143,7 @@ export interface UserFile {
   description?: string;
   notes?: string;
   subject_id?: string | null;
+  assignment_id?: string | null;
   created_at: string;
   updated_at: string;
 }

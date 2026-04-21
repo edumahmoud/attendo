@@ -1,6 +1,42 @@
 # Examy Worklog
 
 ---
+Task ID: 1
+Agent: Task Agent
+Task: Remove file upload button and all upload functionality from CourseFilesSection component
+
+Work Log:
+- Removed Upload import from lucide-react
+- Removed X import from lucide-react (only used in upload dialog)
+- Removed AnimatePresence import from framer-motion (only used for upload progress)
+- Removed Progress import from ui components
+- Removed Textarea import from ui components (only used in upload dialog)
+- Removed ScrollArea and Separator imports (unused)
+- Removed UploadItem interface
+- Removed upload-only helper functions: autoCategoryFromExtension, extractExtension, nameWithoutExtension, buildDisplayName
+- Kept getEffectiveCategory, mapLegacyCategory, getFileTypeCategory (used for file categorization display)
+- Removed upload state variables: uploadDialogOpen, uploadItems, uploadDescription, uploadVisibility, uploading, uploadOverallProgress, completedCount, totalCount
+- Removed fileInputRef and itemIdCounter refs
+- Removed updateUploadItem and removeUploadItem callbacks
+- Removed handleMultiUpload function (entire multi-file upload handler with XHR progress)
+- Removed upload progress AnimatePresence section from the render
+- Removed Multi-File Upload Dialog from the render
+- Removed the hidden file input element from the header
+- Removed the "رفع ملفات" upload button from the header
+- Updated header to only show "ملفات المقرر" title and file count
+- Removed upload action from empty state (the "رفع أول ملف" button for teachers)
+- Updated renderEmpty signature to remove the action parameter
+- Updated loading skeleton to remove upload button skeleton
+- Component now purely displays course files with: preview, download, share, visibility toggle, and delete actions
+- All lint checks pass with 0 errors
+
+Stage Summary:
+- CourseFilesSection is now display-only — no upload functionality remains
+- Files are assigned to courses from personal files via the "اسناد لمقرر" action in PersonalFilesSection
+- Component retains: file-type tabs, search, file cards, preview dialog, share dialog, visibility toggle, delete, download
+- No lint errors
+
+---
 Task ID: 4
 Agent: Main Agent
 Task: Restore course files tab, add assign-to-subject action, merge action buttons into single dropdown
@@ -114,3 +150,27 @@ Stage Summary:
 - Search bar added for filtering files
 - Legacy category mapping ensures backward compatibility
 - Responsive: desktop shows icon-only actions inline, mobile shows text actions below
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: Remove upload button from course files, restrict assign-to-subject to teachers, auto-attach submissions to personal files
+
+Work Log:
+- Removed file upload button and all upload functionality from CourseFilesSection component (delegated to sub-agent)
+- Added condition `profile.role === 'teacher'` to "اسناد لمقرر" dropdown option in PersonalFilesSection (students can no longer assign files to courses)
+- Added `!file.assignment_id` condition to "اسناد لمقرر" option (submission files can't be reassigned)
+- Modified submission API (`/api/subjects/[id]/assignments/submit/route.ts`) to also insert/update a `user_files` record when a student submits an assignment
+- Created migration V7_USER_FILES_ASSIGNMENT_LINK.sql to add `assignment_id` column to `user_files` table
+- Updated `UserFile` TypeScript type to include `assignment_id` field
+- Added `assignment_id` to `UnifiedFileItem` interface and mapping in PersonalFilesSection
+- Added "تسليم" (submission) badge in personal file cards for files with `assignment_id`
+- Added `ClipboardCheck` icon import for the submission badge
+- Lint check passes with 0 errors
+
+Stage Summary:
+- Course files section is now display-only (no upload button)
+- Teachers assign files to courses from personal files only; students cannot assign
+- Assignment submissions automatically create a `user_files` record for the student
+- Submission files show a "تسليم" badge in personal files section
+- Migration V7 adds `assignment_id` column to `user_files` table

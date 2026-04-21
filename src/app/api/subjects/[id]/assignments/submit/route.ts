@@ -493,6 +493,25 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
 
       console.log('[SUBMIT] Submission updated successfully for assignment:', assignmentId);
+
+      // Also update the student's user_files record for this submission
+      try {
+        await supabaseServer
+          .from('user_files')
+          .update({
+            file_name: sanitizeString(file.name, 255),
+            file_url: fileUrl,
+            file_type: fileType,
+            file_size: file.size,
+            notes: notes ? sanitizeString(notes, 5000) : null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('user_id', user.id)
+          .eq('assignment_id', existingSubmission.assignment_id);
+      } catch (ufErr) {
+        console.error('[SUBMIT] user_files update error (non-critical):', ufErr);
+      }
+
       return NextResponse.json(
         { success: true, data, isResubmission: true },
         { status: 200, headers: rateLimitHeaders }
@@ -524,6 +543,25 @@ export async function POST(request: NextRequest, context: RouteContext) {
           { success: false, error: `فشل في حفظ التسليم: ${insertError.message}` },
           { status: 500, headers: rateLimitHeaders }
         );
+      }
+
+      // Also create a user_files record so the submission appears in the student's personal files
+      try {
+        await supabaseServer.from('user_files').insert({
+          user_id: user.id,
+          file_name: sanitizeString(file.name, 255),
+          file_url: fileUrl,
+          file_type: fileType,
+          file_size: file.size,
+          visibility: 'private',
+          description: `تسليم مهمة: ${assignment.title}`,
+          notes: notes ? sanitizeString(notes, 5000) : null,
+          subject_id: subjectId,
+          assignment_id: assignmentId,
+        });
+      } catch (ufErr) {
+        console.error('[SUBMIT] user_files insert error (non-critical):', ufErr);
+        // Non-critical: submission was saved, just the personal file record failed
       }
 
       console.log('[SUBMIT] Submission created successfully for assignment:', assignmentId);
