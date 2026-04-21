@@ -293,7 +293,7 @@ export type AppPage =
   | 'subject-detail';
 
 // Update section types
-export type StudentSection = 'dashboard' | 'subjects' | 'summaries' | 'quizzes' | 'teachers' | 'chat' | 'analytics' | 'lectures' | 'notifications' | 'files' | 'personal-files' | 'settings';
+export type StudentSection = 'dashboard' | 'subjects' | 'summaries' | 'quizzes' | 'teachers' | 'chat' | 'analytics' | 'lectures' | 'notifications' | 'personal-files' | 'settings';
 export type TeacherSection = 'dashboard' | 'subjects' | 'students' | 'quizzes' | 'analytics' | 'chat' | 'lectures' | 'notifications' | 'personal-files' | 'settings';
 
 // Helper to check if user has a valid (non-pending) role

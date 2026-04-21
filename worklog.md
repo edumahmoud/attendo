@@ -295,3 +295,46 @@ Work Log:
 Stage Summary:
 - Shared files tab now works correctly
 - file_shares query no longer fails with column not found error
+
+---
+Task ID: 5
+Agent: main
+Task: Rewrite PersonalFilesSection to merge course files into "ملفاتي" (My Files)
+
+Work Log:
+- Read current PersonalFilesSection (1600+ lines), subject-detail.tsx, student-dashboard.tsx, app-sidebar.tsx, types.ts
+- Read all API routes: /api/user-files, /api/user-files/share, /api/users/lookup, /api/subjects/[id]/files
+- Created /api/user-files/visibility/route.ts - PATCH endpoint for toggling user file visibility (private ↔ public)
+- Completely rewrote PersonalFilesSection with unified file management:
+
+1. **Subject-based Tab Organization**: Top-level tabs auto-generated from user's subjects. "عام" (General) tab for files not linked to any subject. Each subject tab shows both user_files with that subject_id AND subject_files for that subject_id.
+
+2. **Dual Data Sources**: Fetches from user_files (private + public) and subject_files (for each enrolled/taught subject). Unified into a single UnifiedFileItem[] array for display.
+
+3. **Search Functionality**: Prominent search bar at top. Searches by file name, description, notes, and Arabic date keywords (اليوم, أمس, هذا الأسبوع, هذا الشهر). Real-time filtering as user types.
+
+4. **Visibility Toggle**: Each file owned by the user has a lock/globe toggle button. For user_files: uses PATCH /api/user-files/visibility. For subject_files: uses PATCH /api/subjects/{subjectId}/files/visibility. Optimistic UI updates.
+
+5. **Enhanced Share Dialog with Multi-Select**: Search input that searches users by name/email using /api/users/lookup?search=xxx. Search results shown as clickable list with name, email, role badge. Selected users shown as removable chips. Share with ALL selected users at once using /api/user-files/share with { fileId, userIds: [...] }. 300ms debounced search.
+
+6. **File Timestamps**: Every file card shows created_at in Arabic locale format: "21 أبريل 2025، 3:06 م" using toLocaleDateString('ar-SA', { full date/time options }).
+
+7. **Removed "ملفات المقررات" Section**: Removed CourseFilesSection from subject-detail.tsx files tab. Only PersonalFilesSection shown. Removed 'files' from StudentSection type. Removed 'files' nav item from student sidebar.
+
+8. **UI Improvements**: Modal dialogs have max-h-[85vh] with scroll. Horizontal tab bar scrolls on mobile. Responsive grid: 1 col mobile, 2 cols tablet, 3 cols desktop. Search bar prominent at top. File count badge in header.
+
+- Updated subject-detail.tsx: removed CourseFilesSection import and usage from files tab
+- Updated student-dashboard.tsx: removed 'files' case from switch statement
+- Updated app-sidebar.tsx: removed "ملفات المقررات" nav item from student sidebar
+- Updated types.ts: removed 'files' from StudentSection type
+
+Stage Summary:
+- PersonalFilesSection is now the ONE place for ALL files (personal + course)
+- Subject-based tabs organize files by course, with "عام" for unlinked files
+- Full-text search with Arabic date keywords
+- Visibility toggle on every own file
+- Multi-select share dialog with debounced user search
+- Arabic date formatting on all file cards
+- CourseFilesSection removed from subject detail view
+- "ملفات المقررات" sidebar item removed (merged into "ملفاتي")
+- 0 lint errors, dev server running cleanly

@@ -2389,8 +2389,6 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
         );
       case 'lectures':
         return renderLectures();
-      case 'files':
-        return renderFiles();
       case 'personal-files':
         return <PersonalFilesSection profile={profile} />;
       case 'notifications':

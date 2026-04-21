@@ -1,5 +1,5 @@
 // =====================================================
-// /api/user-files/share — Share Personal File with User
+// /api/user-files/share — Share Personal File with User(s)
 // =====================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -9,7 +9,8 @@ import { supabaseServer, isSupabaseServerConfigured } from '@/lib/supabase-serve
 
 /**
  * POST /api/user-files/share
- * Share a personal file with another user by email.
+ * Share a personal file with one or more users.
+ * Body: { fileId, userIds: string[] }  OR  { fileId, email: string } (backward compat)
  * Only the file owner can share a file.
  */
 export async function POST(request: NextRequest) {
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let body: { fileId?: string; fileType?: string; email?: string };
+    let body: { fileId?: string; userIds?: string[]; email?: string; fileType?: string };
     try {
       body = await request.json();
     } catch {
@@ -50,11 +51,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { fileId, fileType, email } = body;
+    const { fileId, userIds, email } = body;
 
-    if (!fileId || !email) {
+    if (!fileId) {
       return NextResponse.json(
-        { success: false, error: 'معرف الملف والبريد الإلكتروني مطلوبان' },
+        { success: false, error: 'معرف الملف مطلوب' },
         { status: 400, headers: rateLimitHeaders }
       );
     }
@@ -88,61 +89,99 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find the target user by email
-    const { data: targetUser } = await supabaseServer
-      .from('users')
-      .select('id, name, email, role')
-      .eq('email', email.trim().toLowerCase())
-      .single();
+    // ─── Resolve target user IDs ───
+    let targetUserIds: string[] = [];
 
-    if (!targetUser) {
-      return NextResponse.json(
-        { success: false, error: 'المستخدم غير موجود' },
-        { status: 404, headers: rateLimitHeaders }
-      );
-    }
+    if (userIds && Array.isArray(userIds) && userIds.length > 0) {
+      // New mode: share with multiple users by ID
+      targetUserIds = userIds.filter((id) => typeof id === 'string' && id !== user.id);
+    } else if (email?.trim()) {
+      // Backward compat: share with single user by email
+      const { data: targetUser } = await supabaseServer
+        .from('users')
+        .select('id')
+        .eq('email', email.trim().toLowerCase())
+        .single();
 
-    // Don't share with yourself
-    if ((targetUser as Record<string, unknown>).id === user.id) {
+      if (!targetUser) {
+        return NextResponse.json(
+          { success: false, error: 'المستخدم غير موجود' },
+          { status: 404, headers: rateLimitHeaders }
+        );
+      }
+
+      const targetId = (targetUser as { id: string }).id;
+      if (targetId === user.id) {
+        return NextResponse.json(
+          { success: false, error: 'لا يمكنك مشاركة الملف مع نفسك' },
+          { status: 400, headers: rateLimitHeaders }
+        );
+      }
+      targetUserIds = [targetId];
+    } else {
       return NextResponse.json(
-        { success: false, error: 'لا يمكنك مشاركة الملف مع نفسك' },
+        { success: false, error: 'يرجى تحديد المستخدمين للمشاركة معهم' },
         { status: 400, headers: rateLimitHeaders }
       );
     }
 
-    const target = targetUser as { id: string; name: string; email: string; role: string };
-
-    // Check if already shared
-    const { data: existingShare } = await supabaseServer
-      .from('file_shares')
-      .select('id')
-      .eq('file_id', fileId)
-      .eq('file_type', 'user_file')
-      .eq('shared_with', target.id)
-      .single();
-
-    if (existingShare) {
+    if (targetUserIds.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'الملف مشارك بالفعل مع هذا المستخدم' },
+        { success: false, error: 'لم يتم تحديد مستخدمين صالحين' },
+        { status: 400, headers: rateLimitHeaders }
+      );
+    }
+
+    // ─── Fetch target user profiles ───
+    const { data: targetProfiles } = await supabaseServer
+      .from('users')
+      .select('id, name, email, role')
+      .in('id', targetUserIds);
+
+    const profileMap = new Map(
+      (targetProfiles || []).map((p) => [(p as { id: string }).id, p as { id: string; name: string; email: string; role: string }])
+    );
+
+    // ─── Check existing shares to avoid duplicates ───
+    const { data: existingShares } = await supabaseServer
+      .from('file_shares')
+      .select('shared_with')
+      .eq('file_id', fileId)
+      .eq('file_type', 'user_file');
+
+    const existingSet = new Set(
+      (existingShares || []).map((s) => (s as { shared_with: string }).shared_with)
+    );
+
+    // ─── Create share records for new targets ───
+    const newTargets = targetUserIds.filter((id) => !existingSet.has(id));
+
+    if (newTargets.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'الملف مشارك بالفعل مع جميع المستخدمين المحددين' },
         { status: 409, headers: rateLimitHeaders }
       );
     }
 
-    // Create share record
-    const { error: shareError } = await supabaseServer
-      .from('file_shares')
-      .insert({
+    const shareRecords = newTargets.map((targetId) => {
+      const targetProfile = profileMap.get(targetId);
+      return {
         file_id: fileId,
         file_type: 'user_file',
         shared_by: user.id,
-        shared_with: target.id,
-        shared_with_name: target.name,
-        shared_with_email: target.email,
-        shared_with_role: target.role,
+        shared_with: targetId,
+        shared_with_name: targetProfile?.name || null,
+        shared_with_email: targetProfile?.email || null,
+        shared_with_role: targetProfile?.role || null,
         shared_by_name: profile.name,
         file_name: (fileRecord as Record<string, unknown>).file_name as string,
         file_url: (fileRecord as Record<string, unknown>).file_url as string,
-      });
+      };
+    });
+
+    const { error: shareError } = await supabaseServer
+      .from('file_shares')
+      .insert(shareRecords);
 
     if (shareError) {
       console.error('[USER-FILES SHARE] Insert error:', shareError);
@@ -152,24 +191,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Send notification about shared file
+    // ─── Send notifications ───
+    const fileName = (fileRecord as Record<string, unknown>).file_name as string || 'ملف';
+    const notifications = newTargets.map((targetId) => ({
+      user_id: targetId,
+      title: 'ملف شخصي مشارك',
+      content: `شاركك ${profile.name} ملفاً بعنوان "${fileName}"`,
+      type: 'message',
+      reference_id: fileId,
+    }));
+
     try {
-      await supabaseServer
-        .from('notifications')
-        .insert({
-          user_id: target.id,
-          title: 'ملف شخصي مشارك',
-          content: `شاركك ${profile.name} ملفاً بعنوان "${(fileRecord as Record<string, unknown>).file_name || 'ملف'}"`,
-          type: 'message',
-          reference_id: fileId,
-        });
+      await supabaseServer.from('notifications').insert(notifications);
     } catch (notifErr) {
       console.error('[USER-FILES SHARE] Notification error:', notifErr);
-      // Don't fail the whole request if notification fails
     }
 
+    const sharedNames = newTargets
+      .map((id) => profileMap.get(id)?.name || 'مستخدم')
+      .join('، ');
+
     return NextResponse.json(
-      { success: true, sharedWith: target.name },
+      { success: true, sharedWith: sharedNames, count: newTargets.length },
       { headers: rateLimitHeaders }
     );
   } catch (error) {

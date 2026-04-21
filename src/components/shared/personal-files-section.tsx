@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Lock,
@@ -27,6 +27,7 @@ import {
   StickyNote,
   BookOpen,
   CheckCircle2,
+  ChevronLeft,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
@@ -54,14 +55,8 @@ import {
   DialogFooter,
   DialogDescription,
 } from '@/components/ui/dialog';
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-} from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabase';
-import type { UserProfile, UserFile, FileShare } from '@/lib/types';
+import type { UserProfile, UserFile, FileShare, SubjectFile } from '@/lib/types';
 
 // =====================================================
 // Props
@@ -76,7 +71,7 @@ interface PersonalFilesSectionProps {
 interface UploadItem {
   id: string;
   file: File;
-  customName: string; // name without extension
+  customName: string;
   originalExtension: string;
   status: 'pending' | 'uploading' | 'done' | 'error';
   progress: number;
@@ -89,6 +84,36 @@ interface UploadItem {
 interface SubjectOption {
   id: string;
   name: string;
+}
+
+// =====================================================
+// Unified file item for display
+// =====================================================
+interface UnifiedFileItem {
+  id: string;
+  file_name: string;
+  file_url: string;
+  file_type?: string;
+  file_size?: number;
+  visibility: 'public' | 'private';
+  description?: string;
+  notes?: string;
+  subject_id?: string | null;
+  created_at: string;
+  source: 'user_file' | 'subject_file' | 'shared';
+  isOwn: boolean;
+  subjectFileSubjectId?: string; // for subject_files, the subject_id
+  shared_by_name?: string;
+}
+
+// =====================================================
+// User lookup result type
+// =====================================================
+interface UserLookupResult {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
 }
 
 // =====================================================
@@ -107,13 +132,16 @@ const itemVariants = {
 // =====================================================
 // Helpers
 // =====================================================
-function formatDate(dateStr: string): string {
+function formatArabicDate(dateStr: string): string {
   try {
     const date = new Date(dateStr);
     return date.toLocaleDateString('ar-SA', {
       year: 'numeric',
-      month: 'short',
+      month: 'long',
       day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
     });
   } catch {
     return dateStr;
@@ -151,7 +179,6 @@ function isPdfType(type?: string | null): boolean {
   return type.toLowerCase().includes('pdf');
 }
 
-/** Extract the name without extension and the extension from a filename */
 function splitFileName(fileName: string): { name: string; ext: string } {
   const lastDot = fileName.lastIndexOf('.');
   if (lastDot <= 0) return { name: fileName, ext: '' };
@@ -166,18 +193,58 @@ function generateUploadItemId(): string {
   return `upload-${++uploadItemIdCounter}-${Date.now()}`;
 }
 
+/** Check if a date string matches a given Arabic date keyword */
+function matchesDateKeyword(dateStr: string, keyword: string): boolean {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const kw = keyword.trim();
+
+  if (kw === 'اليوم' || kw === 'اليوم،' || kw === 'اليوم,') {
+    return date.toDateString() === now.toDateString();
+  }
+  if (kw === 'أمس' || kw === 'امس') {
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    return date.toDateString() === yesterday.toDateString();
+  }
+  if (kw === 'هذا الأسبوع' || kw === 'هذا الاسبوع') {
+    const weekStart = new Date(now);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    weekStart.setHours(0, 0, 0, 0);
+    return date >= weekStart;
+  }
+  if (kw === 'هذا الشهر') {
+    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+  }
+
+  // Try matching date format patterns
+  try {
+    const parsed = new Date(kw);
+    if (!isNaN(parsed.getTime())) {
+      return date.toDateString() === parsed.toDateString();
+    }
+  } catch {
+    // ignore
+  }
+
+  return false;
+}
+
 // =====================================================
 // Main Component
 // =====================================================
 export default function PersonalFilesSection({ profile }: PersonalFilesSectionProps) {
-  // ─── Sub-tab state ───
-  const [activeSubTab, setActiveSubTab] = useState<'private' | 'public'>('private');
+  // ─── Active tab state ───
+  const [activeTab, setActiveTab] = useState<string>('__general__');
 
   // ─── Data state ───
-  const [privateFiles, setPrivateFiles] = useState<UserFile[]>([]);
-  const [publicFiles, setPublicFiles] = useState<UserFile[]>([]);
+  const [allUserFiles, setAllUserFiles] = useState<UserFile[]>([]);
+  const [subjectFilesMap, setSubjectFilesMap] = useState<Record<string, SubjectFile[]>>({});
   const [sharedFiles, setSharedFiles] = useState<FileShare[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // ─── Search state ───
+  const [searchQuery, setSearchQuery] = useState('');
 
   // ─── Upload state ───
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -197,95 +264,91 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
 
   // ─── Preview state ───
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewFile, setPreviewFile] = useState<UserFile | FileShare | null>(null);
+  const [previewFile, setPreviewFile] = useState<UnifiedFileItem | null>(null);
 
   // ─── Share dialog state ───
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [sharingFileId, setSharingFileId] = useState<string | null>(null);
-  const [shareEmail, setShareEmail] = useState('');
-  const [shareLookupResult, setShareLookupResult] = useState<{
-    id: string;
-    name: string;
-    role: string;
-    email: string;
-  } | null>(null);
-  const [shareLookupLoading, setShareLookupLoading] = useState(false);
+  const [shareSearchQuery, setShareSearchQuery] = useState('');
+  const [shareSearchResults, setShareSearchResults] = useState<UserLookupResult[]>([]);
+  const [shareSearchLoading, setShareSearchLoading] = useState(false);
+  const [selectedShareUsers, setSelectedShareUsers] = useState<UserLookupResult[]>([]);
   const [sharingInProgress, setSharingInProgress] = useState(false);
 
   // ─── Delete state ───
   const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; source: string } | null>(null);
 
-  // ─── Debounce ref for email lookup ───
-  const emailLookupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ─── Visibility toggle state ───
+  const [togglingVisibilityId, setTogglingVisibilityId] = useState<string | null>(null);
+
+  // ─── Debounce ref for share search ───
+  const shareSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // =====================================================
   // Data Fetching
   // =====================================================
-  const fetchPrivateFiles = useCallback(async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch('/api/user-files?type=private', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      const result = await response.json();
-      if (result.success && Array.isArray(result.data)) {
-        setPrivateFiles(result.data as UserFile[]);
-      }
-    } catch (err) {
-      console.error('Error fetching private files:', err);
-    }
-  }, []);
-
-  const fetchPublicFiles = useCallback(async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch('/api/user-files?type=public', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      const result = await response.json();
-      if (result.success && Array.isArray(result.data)) {
-        setPublicFiles(result.data as UserFile[]);
-      }
-    } catch (err) {
-      console.error('Error fetching public files:', err);
-    }
-  }, []);
-
-  const fetchSharedFiles = useCallback(async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch('/api/user-files?type=shared', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      const result = await response.json();
-      if (result.success && Array.isArray(result.data)) {
-        setSharedFiles(result.data as FileShare[]);
-      }
-    } catch (err) {
-      console.error('Error fetching shared files:', err);
-    }
-  }, []);
-
-  const fetchCurrentTabData = useCallback(async () => {
+  const fetchAllData = useCallback(async () => {
     setLoading(true);
     try {
-      if (activeSubTab === 'private') {
-        await fetchPrivateFiles();
-      } else {
-        await Promise.all([fetchPublicFiles(), fetchSharedFiles()]);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      // Fetch user files (all types at once)
+      const [privateRes, publicRes, sharedRes] = await Promise.all([
+        fetch('/api/user-files?type=private', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }),
+        fetch('/api/user-files?type=public', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }),
+        fetch('/api/user-files?type=shared', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }),
+      ]);
+
+      const [privateData, publicData, sharedData] = await Promise.all([
+        privateRes.json(),
+        publicRes.json(),
+        sharedRes.json(),
+      ]);
+
+      const allFiles: UserFile[] = [
+        ...(privateData.success && Array.isArray(privateData.data) ? privateData.data : []),
+        ...(publicData.success && Array.isArray(publicData.data) ? publicData.data : []),
+      ];
+      // Deduplicate by id
+      const fileMap = new Map<string, UserFile>();
+      allFiles.forEach((f: UserFile) => fileMap.set(f.id, f));
+      setAllUserFiles(Array.from(fileMap.values()));
+
+      if (sharedData.success && Array.isArray(sharedData.data)) {
+        setSharedFiles(sharedData.data as FileShare[]);
       }
+
+      // Fetch subject files for each subject
+      const sfMap: Record<string, SubjectFile[]> = {};
+      for (const subject of subjects) {
+        try {
+          const res = await fetch(`/api/subjects/${subject.id}/files`, {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+          const result = await res.json();
+          if (result.success && Array.isArray(result.data)) {
+            sfMap[subject.id] = result.data as SubjectFile[];
+          }
+        } catch {
+          // Skip failed subject file fetches
+        }
+      }
+      setSubjectFilesMap(sfMap);
+    } catch (err) {
+      console.error('Error fetching files:', err);
     } finally {
       setLoading(false);
     }
-  }, [activeSubTab, fetchPrivateFiles, fetchPublicFiles, fetchSharedFiles]);
+  }, [subjects]);
 
   // ─── Fetch user's subjects ───
   const fetchSubjects = useCallback(async () => {
@@ -331,12 +394,169 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
   }, [profile.id, profile.role]);
 
   useEffect(() => {
-    fetchCurrentTabData();
-  }, [fetchCurrentTabData]);
-
-  useEffect(() => {
     fetchSubjects();
   }, [fetchSubjects]);
+
+  useEffect(() => {
+    if (subjects.length > 0) {
+      fetchAllData();
+    }
+  }, [subjects, fetchAllData]);
+
+  // Initial data load even without subjects
+  useEffect(() => {
+    const doInitial = async () => {
+      setLoading(true);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        const [privateRes, publicRes, sharedRes] = await Promise.all([
+          fetch('/api/user-files?type=private', {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          }),
+          fetch('/api/user-files?type=public', {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          }),
+          fetch('/api/user-files?type=shared', {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          }),
+        ]);
+
+        const [privateData, publicData, sharedData] = await Promise.all([
+          privateRes.json(),
+          publicRes.json(),
+          sharedRes.json(),
+        ]);
+
+        const allFiles: UserFile[] = [
+          ...(privateData.success && Array.isArray(privateData.data) ? privateData.data : []),
+          ...(publicData.success && Array.isArray(publicData.data) ? publicData.data : []),
+        ];
+        const fileMap = new Map<string, UserFile>();
+        allFiles.forEach((f: UserFile) => fileMap.set(f.id, f));
+        setAllUserFiles(Array.from(fileMap.values()));
+
+        if (sharedData.success && Array.isArray(sharedData.data)) {
+          setSharedFiles(sharedData.data as FileShare[]);
+        }
+      } catch (err) {
+        console.error('Initial fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    doInitial();
+  }, []);
+
+  // =====================================================
+  // Unified file list computation
+  // =====================================================
+  const unifiedFiles = useMemo<UnifiedFileItem[]>(() => {
+    const items: UnifiedFileItem[] = [];
+
+    // User files
+    allUserFiles.forEach((f) => {
+      items.push({
+        id: f.id,
+        file_name: f.file_name,
+        file_url: f.file_url,
+        file_type: f.file_type,
+        file_size: f.file_size,
+        visibility: f.visibility,
+        description: f.description,
+        notes: f.notes,
+        subject_id: f.subject_id,
+        created_at: f.created_at,
+        source: 'user_file',
+        isOwn: true,
+      });
+    });
+
+    // Subject files
+    Object.entries(subjectFilesMap).forEach(([subjectId, files]) => {
+      files.forEach((f) => {
+        // For students: show public + own private
+        // For teachers: show all
+        const isOwn = f.uploaded_by === profile.id;
+        if (profile.role === 'teacher' || f.visibility === 'public' || isOwn) {
+          items.push({
+            id: f.id,
+            file_name: f.file_name,
+            file_url: f.file_url,
+            file_type: f.file_type,
+            file_size: f.file_size,
+            visibility: (f.visibility as 'public' | 'private') || 'public',
+            description: f.description,
+            subject_id: subjectId,
+            created_at: f.created_at,
+            source: 'subject_file',
+            isOwn,
+            subjectFileSubjectId: subjectId,
+          });
+        }
+      });
+    });
+
+    // Shared files
+    sharedFiles.forEach((s) => {
+      items.push({
+        id: s.file_id,
+        file_name: s.file_name || 'ملف مشترك',
+        file_url: s.file_url || '',
+        file_type: undefined,
+        file_size: undefined,
+        visibility: 'public',
+        created_at: s.created_at,
+        source: 'shared',
+        isOwn: false,
+        shared_by_name: s.shared_by_name,
+      });
+    });
+
+    return items;
+  }, [allUserFiles, subjectFilesMap, sharedFiles, profile.id, profile.role]);
+
+  // ─── Filtered files for current tab ───
+  const filteredFiles = useMemo(() => {
+    let files = unifiedFiles;
+
+    // Filter by tab (subject)
+    if (activeTab === '__general__') {
+      // General tab: files NOT linked to any subject + shared files
+      files = files.filter(
+        (f) =>
+          (!f.subject_id || f.source === 'shared') &&
+          f.source !== 'subject_file'
+      );
+    } else {
+      // Subject tab: user_files with that subject_id + subject_files for that subject
+      files = files.filter(
+        (f) =>
+          f.subject_id === activeTab ||
+          f.subjectFileSubjectId === activeTab
+      );
+    }
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      files = files.filter((f) => {
+        // Search by file name
+        if (f.file_name.toLowerCase().includes(q)) return true;
+        // Search by description
+        if (f.description?.toLowerCase().includes(q)) return true;
+        // Search by notes
+        if (f.notes?.toLowerCase().includes(q)) return true;
+        // Search by date keyword
+        if (matchesDateKeyword(f.created_at, q)) return true;
+        return false;
+      });
+    }
+
+    // Sort by created_at descending
+    return files.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [unifiedFiles, activeTab, searchQuery]);
 
   // =====================================================
   // Handlers
@@ -375,23 +595,19 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
       setUploadItems((prev) => [...prev, ...newItems]);
     }
 
-    // Reset input so re-selecting same files works
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // ─── Update a single upload item ───
   const updateUploadItem = useCallback((id: string, updates: Partial<UploadItem>) => {
     setUploadItems((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
     );
   }, []);
 
-  // ─── Remove a single upload item ───
   const removeUploadItem = (id: string) => {
     setUploadItems((prev) => prev.filter((item) => item.id !== id));
   };
 
-  // ─── Upload a single file via XHR ───
   const uploadSingleFile = useCallback(async (
     item: UploadItem,
     accessToken: string
@@ -406,7 +622,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
     formData.append('visibility', uploadVisibility);
     formData.append('description', uploadDescription);
     formData.append('notes', uploadNotes);
-    if (uploadSubjectId && uploadSubjectId !== '__none__') {
+    if (uploadSubjectId && uploadSubjectId !== '__none__' && uploadSubjectId !== '__general__') {
       formData.append('subjectId', uploadSubjectId);
     }
 
@@ -457,7 +673,6 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
     });
   }, [uploadVisibility, uploadDescription, uploadNotes, uploadSubjectId, updateUploadItem]);
 
-  // ─── Handle multi-file upload with sequential progress ───
   const handleUpload = async () => {
     const pendingItems = uploadItems.filter((item) => item.status === 'pending');
     if (pendingItems.length === 0) {
@@ -495,7 +710,6 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
         setOverallProgress({ completed: completed + errors, total: pendingItems.length });
       }
 
-      // Summary toast
       if (errors === 0) {
         toast.success(`تم رفع ${completed} ملف${completed > 1 ? 'ات' : ''} بنجاح`);
       } else if (completed > 0) {
@@ -504,12 +718,10 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
         toast.error(`فشل رفع جميع الملفات (${errors})`);
       }
 
-      // If at least one succeeded, refresh data
       if (completed > 0) {
-        fetchCurrentTabData();
+        fetchAllData();
       }
 
-      // If all done (success or error), auto-close dialog after a brief delay
       if (completed > 0 && errors === 0) {
         setTimeout(() => {
           resetUploadForm();
@@ -536,15 +748,81 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // ─── Handle file delete ───
-  const handleDeleteClick = (fileId: string) => {
-    setDeleteTargetId(fileId);
+  // ─── Handle visibility toggle ───
+  const handleVisibilityToggle = async (file: UnifiedFileItem) => {
+    const newVisibility = file.visibility === 'private' ? 'public' : 'private';
+    setTogglingVisibilityId(file.id);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error('يرجى تسجيل الدخول أولاً');
+        return;
+      }
+
+      if (file.source === 'user_file') {
+        const response = await fetch('/api/user-files/visibility', {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ fileId: file.id, visibility: newVisibility }),
+        });
+
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          toast.error(result.error || 'حدث خطأ أثناء تحديث الظهور');
+        } else {
+          toast.success(newVisibility === 'public' ? 'تم تغيير الملف إلى عام' : 'تم تغيير الملف إلى خاص');
+          // Optimistic update
+          setAllUserFiles((prev) =>
+            prev.map((f) => (f.id === file.id ? { ...f, visibility: newVisibility } : f))
+          );
+        }
+      } else if (file.source === 'subject_file' && file.subjectFileSubjectId) {
+        const response = await fetch(`/api/subjects/${file.subjectFileSubjectId}/files/visibility`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ fileId: file.id, visibility: newVisibility }),
+        });
+
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          toast.error(result.error || 'حدث خطأ أثناء تحديث الظهور');
+        } else {
+          toast.success(newVisibility === 'public' ? 'تم تغيير الملف إلى عام' : 'تم تغيير الملف إلى خاص');
+          // Update subject files map
+          setSubjectFilesMap((prev) => {
+            const updated = { ...prev };
+            if (updated[file.subjectFileSubjectId!]) {
+              updated[file.subjectFileSubjectId!] = updated[file.subjectFileSubjectId!].map((f) =>
+                f.id === file.id ? { ...f, visibility: newVisibility } : f
+              );
+            }
+            return updated;
+          });
+        }
+      }
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setTogglingVisibilityId(null);
+    }
+  };
+
+  // ─── Handle delete ───
+  const handleDeleteClick = (file: UnifiedFileItem) => {
+    setDeleteTarget({ id: file.id, source: file.source });
     setDeleteConfirmOpen(true);
   };
 
   const handleDeleteConfirm = async () => {
-    if (!deleteTargetId) return;
-    setDeletingFileId(deleteTargetId);
+    if (!deleteTarget) return;
+    setDeletingFileId(deleteTarget.id);
     setDeleteConfirmOpen(false);
 
     try {
@@ -554,27 +832,47 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
         return;
       }
 
-      const response = await fetch(`/api/user-files?fileId=${deleteTargetId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
+      let response: Response;
+
+      if (deleteTarget.source === 'user_file') {
+        response = await fetch(`/api/user-files?fileId=${deleteTarget.id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+      } else if (deleteTarget.source === 'subject_file') {
+        // Find the subject_id for this file
+        let subjectId = '';
+        for (const [sid, files] of Object.entries(subjectFilesMap)) {
+          if (files.some((f) => f.id === deleteTarget.id)) {
+            subjectId = sid;
+            break;
+          }
+        }
+        response = await fetch(`/api/subjects/${subjectId}/files?fileId=${deleteTarget.id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+      } else {
+        toast.error('لا يمكن حذف هذا الملف');
+        return;
+      }
 
       const result = await response.json();
       if (!response.ok || !result.success) {
         toast.error(result.error || 'حدث خطأ أثناء حذف الملف');
       } else {
         toast.success('تم حذف الملف بنجاح');
-        fetchCurrentTabData();
+        fetchAllData();
       }
     } catch {
       toast.error('حدث خطأ غير متوقع');
     } finally {
       setDeletingFileId(null);
-      setDeleteTargetId(null);
+      setDeleteTarget(null);
     }
   };
 
-  // ─── Handle file download ───
+  // ─── Handle download ───
   const handleDownload = (fileUrl: string, fileName: string) => {
     const link = document.createElement('a');
     link.href = fileUrl;
@@ -587,7 +885,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
   };
 
   // ─── Handle preview ───
-  const handlePreview = (file: UserFile | FileShare) => {
+  const handlePreview = (file: UnifiedFileItem) => {
     setPreviewFile(file);
     setPreviewOpen(true);
   };
@@ -595,54 +893,67 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
   // ─── Handle share dialog open ───
   const handleShareClick = (fileId: string) => {
     setSharingFileId(fileId);
-    setShareEmail('');
-    setShareLookupResult(null);
+    setShareSearchQuery('');
+    setShareSearchResults([]);
+    setSelectedShareUsers([]);
     setShareDialogOpen(true);
   };
 
-  // ─── Debounced email lookup ───
-  const handleShareEmailChange = (email: string) => {
-    setShareEmail(email);
-    setShareLookupResult(null);
+  // ─── Debounced share search ───
+  const handleShareSearchChange = (query: string) => {
+    setShareSearchQuery(query);
+    setShareSearchResults([]);
 
-    if (emailLookupTimerRef.current) {
-      clearTimeout(emailLookupTimerRef.current);
+    if (shareSearchTimerRef.current) {
+      clearTimeout(shareSearchTimerRef.current);
     }
 
-    if (!email.trim() || !email.includes('@')) return;
+    if (!query.trim()) return;
 
-    emailLookupTimerRef.current = setTimeout(async () => {
-      setShareLookupLoading(true);
+    shareSearchTimerRef.current = setTimeout(async () => {
+      setShareSearchLoading(true);
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
 
-        const response = await fetch(`/api/users/lookup?email=${encodeURIComponent(email.trim())}`, {
+        const response = await fetch(`/api/users/lookup?search=${encodeURIComponent(query.trim())}`, {
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
         const result = await response.json();
-        if (result.success && result.data) {
-          setShareLookupResult(result.data as { id: string; name: string; role: string; email: string });
+        if (result.success && Array.isArray(result.data)) {
+          // Filter out already selected users
+          const selectedIds = new Set(selectedShareUsers.map((u) => u.id));
+          setShareSearchResults(
+            (result.data as UserLookupResult[]).filter((u) => !selectedIds.has(u.id))
+          );
         } else {
-          setShareLookupResult(null);
+          setShareSearchResults([]);
         }
       } catch {
-        setShareLookupResult(null);
+        setShareSearchResults([]);
       } finally {
-        setShareLookupLoading(false);
+        setShareSearchLoading(false);
       }
-    }, 500);
+    }, 300);
+  };
+
+  // ─── Add user to selected share list ───
+  const addShareUser = (user: UserLookupResult) => {
+    if (!selectedShareUsers.some((u) => u.id === user.id)) {
+      setSelectedShareUsers((prev) => [...prev, user]);
+    }
+    setShareSearchResults((prev) => prev.filter((u) => u.id !== user.id));
+  };
+
+  // ─── Remove user from selected share list ───
+  const removeShareUser = (userId: string) => {
+    setSelectedShareUsers((prev) => prev.filter((u) => u.id !== userId));
   };
 
   // ─── Handle share submit ───
   const handleShareSubmit = async () => {
-    if (!sharingFileId || !shareEmail.trim()) {
-      toast.error('يرجى إدخال البريد الإلكتروني');
-      return;
-    }
-
-    if (!shareLookupResult) {
-      toast.error('لم يتم العثور على مستخدم بهذا البريد');
+    if (!sharingFileId || selectedShareUsers.length === 0) {
+      toast.error('يرجى اختيار مستخدم واحد على الأقل');
       return;
     }
 
@@ -662,8 +973,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
         },
         body: JSON.stringify({
           fileId: sharingFileId,
-          fileType: 'user_file',
-          email: shareEmail.trim(),
+          userIds: selectedShareUsers.map((u) => u.id),
         }),
       });
 
@@ -671,10 +981,12 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
       if (!response.ok || !result.success) {
         toast.error(result.error || 'حدث خطأ أثناء مشاركة الملف');
       } else {
-        toast.success(`تمت مشاركة الملف مع ${shareLookupResult.name} بنجاح`);
+        const names = selectedShareUsers.map((u) => u.name).join('، ');
+        toast.success(`تمت مشاركة الملف مع ${names} بنجاح`);
         setShareDialogOpen(false);
-        setShareEmail('');
-        setShareLookupResult(null);
+        setShareSearchQuery('');
+        setShareSearchResults([]);
+        setSelectedShareUsers([]);
       }
     } catch {
       toast.error('حدث خطأ غير متوقع');
@@ -721,15 +1033,19 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
   );
 
   // =====================================================
-  // Render: File Card
+  // Render: File Card (unified)
   // =====================================================
-  const renderFileCard = (file: UserFile, isOwn: boolean = true) => (
+  const renderFileCard = (file: UnifiedFileItem) => (
     <motion.div variants={itemVariants}>
       <Card className="shadow-sm hover:shadow-md transition-shadow group">
         <CardContent className="p-4">
           <div className="flex items-start gap-3">
             {/* File icon */}
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 border border-emerald-100">
+            <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${
+              file.source === 'shared'
+                ? 'bg-blue-50 border-blue-100'
+                : 'bg-emerald-50 border-emerald-100'
+            }`}>
               {getFileIcon(file.file_type)}
             </div>
 
@@ -737,7 +1053,13 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1 flex-wrap">
                 <h4 className="text-sm font-semibold text-foreground truncate">{file.file_name}</h4>
-                {file.visibility === 'private' ? (
+                {/* Visibility badge */}
+                {file.source === 'shared' ? (
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-100 text-blue-700 shrink-0">
+                    <Share2 className="h-2.5 w-2.5 ml-0.5" />
+                    مشارك
+                  </Badge>
+                ) : file.visibility === 'private' ? (
                   <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-700 shrink-0">
                     <Lock className="h-2.5 w-2.5 ml-0.5" />
                     خاصة
@@ -749,13 +1071,29 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                   </Badge>
                 )}
                 {/* Subject badge */}
-                {file.subject_id && subjectNameMap[file.subject_id] && (
+                {file.subject_id && subjectNameMap[file.subject_id] && activeTab === '__general__' && (
                   <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-teal-100 text-teal-700 shrink-0">
                     <BookOpen className="h-2.5 w-2.5 ml-0.5" />
                     {subjectNameMap[file.subject_id]}
                   </Badge>
                 )}
+                {/* Source badge for subject files */}
+                {file.source === 'subject_file' && (
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-teal-100 text-teal-700 shrink-0">
+                    <BookOpen className="h-2.5 w-2.5 ml-0.5" />
+                    مقرر
+                  </Badge>
+                )}
               </div>
+
+              {file.source === 'shared' && file.shared_by_name && (
+                <div className="flex items-center gap-1 mb-1">
+                  <User className="h-3 w-3 text-blue-500 shrink-0" />
+                  <p className="text-xs text-blue-600">
+                    شاركه {file.shared_by_name}
+                  </p>
+                </div>
+              )}
 
               {file.description && (
                 <p className="text-xs text-muted-foreground line-clamp-1 mb-0.5">{file.description}</p>
@@ -772,10 +1110,30 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                 <span>{formatFileSize(file.file_size)}</span>
                 <span className="flex items-center gap-0.5">
                   <Clock className="h-2.5 w-2.5" />
-                  {formatDate(file.created_at)}
+                  {formatArabicDate(file.created_at)}
                 </span>
               </div>
             </div>
+
+            {/* Visibility toggle button */}
+            {file.isOwn && file.source !== 'shared' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 shrink-0 hover:bg-emerald-50"
+                onClick={() => handleVisibilityToggle(file)}
+                disabled={togglingVisibilityId === file.id}
+                title={file.visibility === 'private' ? 'تغيير إلى عام' : 'تغيير إلى خاص'}
+              >
+                {togglingVisibilityId === file.id ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
+                ) : file.visibility === 'private' ? (
+                  <Lock className="h-4 w-4 text-amber-500" />
+                ) : (
+                  <Globe className="h-4 w-4 text-emerald-500" />
+                )}
+              </Button>
+            )}
           </div>
 
           {/* Actions */}
@@ -798,7 +1156,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
               <Download className="h-3.5 w-3.5 ml-1" />
               تحميل
             </Button>
-            {isOwn && (
+            {file.isOwn && file.source !== 'shared' && (
               <>
                 <Button
                   variant="ghost"
@@ -813,7 +1171,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                   variant="ghost"
                   size="sm"
                   className="h-7 px-2 text-xs text-rose-700 hover:text-rose-800 hover:bg-rose-50 mr-auto"
-                  onClick={() => handleDeleteClick(file.id)}
+                  onClick={() => handleDeleteClick(file)}
                   disabled={deletingFileId === file.id}
                 >
                   {deletingFileId === file.id ? (
@@ -832,91 +1190,12 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
   );
 
   // =====================================================
-  // Render: Shared File Card
-  // =====================================================
-  const renderSharedFileCard = (share: FileShare) => (
-    <motion.div variants={itemVariants}>
-      <Card className="shadow-sm hover:shadow-md transition-shadow group">
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            {/* File icon */}
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 border border-blue-100">
-              {getFileIcon(share.file_url?.split('.').pop())}
-            </div>
-
-            {/* File info */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <h4 className="text-sm font-semibold text-foreground truncate">
-                  {share.file_name || 'ملف مشترك'}
-                </h4>
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-100 text-blue-700 shrink-0">
-                  <Share2 className="h-2.5 w-2.5 ml-0.5" />
-                  مشارك
-                </Badge>
-              </div>
-
-              {/* Who shared it */}
-              <div className="flex items-center gap-1 mb-1">
-                <User className="h-3 w-3 text-blue-500 shrink-0" />
-                <p className="text-xs text-blue-600">
-                  شاركه {share.shared_by_name || 'مستخدم'}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                <span className="flex items-center gap-0.5">
-                  <Clock className="h-2.5 w-2.5" />
-                  {formatDate(share.created_at)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Actions - preview & download only */}
-          <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-border/50">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
-              onClick={() => handlePreview(share)}
-            >
-              <Eye className="h-3.5 w-3.5 ml-1" />
-              معاينة
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-teal-700 hover:text-teal-800 hover:bg-teal-50"
-              onClick={() => {
-                if (share.file_url && share.file_name) {
-                  handleDownload(share.file_url, share.file_name);
-                }
-              }}
-            >
-              <Download className="h-3.5 w-3.5 ml-1" />
-              تحميل
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </motion.div>
-  );
-
-  // =====================================================
   // Render: Preview Dialog
   // =====================================================
   const renderPreviewDialog = () => {
     if (!previewFile) return null;
 
-    const fileUrl = 'file_url' in previewFile ? previewFile.file_url : (previewFile as FileShare).file_url || '';
-    const fileType = 'file_type' in previewFile ? previewFile.file_type : undefined;
-    const fileName = 'file_name' in previewFile ? previewFile.file_name : (previewFile as FileShare).file_name || 'ملف';
-    const fileSize = 'file_size' in previewFile ? previewFile.file_size : undefined;
-    const fileDescription = 'description' in previewFile ? (previewFile as UserFile).description : undefined;
-    const fileNotes = 'notes' in previewFile ? (previewFile as UserFile).notes : undefined;
-    const fileVisibility = 'visibility' in previewFile ? (previewFile as UserFile).visibility : undefined;
-    const fileSubjectId = 'subject_id' in previewFile ? (previewFile as UserFile).subject_id : undefined;
+    const { fileUrl, fileType, fileName, fileSize, description, notes, visibility, subject_id } = previewFile;
 
     return (
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
@@ -970,31 +1249,31 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
 
           {/* Metadata */}
           <div className="space-y-2 pt-2">
-            {fileDescription && (
+            {description && (
               <div className="flex items-start gap-2">
                 <span className="text-xs font-medium text-muted-foreground shrink-0 pt-0.5">الوصف:</span>
-                <p className="text-xs text-foreground">{fileDescription}</p>
+                <p className="text-xs text-foreground">{description}</p>
               </div>
             )}
-            {fileNotes && (
+            {notes && (
               <div className="flex items-start gap-2">
                 <StickyNote className="h-3.5 w-3.5 text-teal-500 shrink-0 mt-0.5" />
                 <span className="text-xs font-medium text-muted-foreground shrink-0 pt-0.5">ملاحظات:</span>
-                <p className="text-xs text-foreground">{fileNotes}</p>
+                <p className="text-xs text-foreground">{notes}</p>
               </div>
             )}
             <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
               <span>الحجم: {formatFileSize(fileSize)}</span>
-              {fileVisibility && (
+              {visibility && (
                 <span className="flex items-center gap-1">
-                  {fileVisibility === 'private' ? <Lock className="h-3 w-3" /> : <Globe className="h-3 w-3" />}
-                  {fileVisibility === 'private' ? 'خاص' : 'عام'}
+                  {visibility === 'private' ? <Lock className="h-3 w-3" /> : <Globe className="h-3 w-3" />}
+                  {visibility === 'private' ? 'خاص' : 'عام'}
                 </span>
               )}
-              {fileSubjectId && subjectNameMap[fileSubjectId] && (
+              {subject_id && subjectNameMap[subject_id] && (
                 <span className="flex items-center gap-1">
                   <BookOpen className="h-3 w-3 text-teal-500" />
-                  {subjectNameMap[fileSubjectId]}
+                  {subjectNameMap[subject_id]}
                 </span>
               )}
             </div>
@@ -1023,7 +1302,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
   };
 
   // =====================================================
-  // Render: Upload Dialog (Multi-file with custom names)
+  // Render: Upload Dialog
   // =====================================================
   const renderUploadDialog = () => {
     const pendingCount = uploadItems.filter((i) => i.status === 'pending').length;
@@ -1038,47 +1317,47 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
         }
         setUploadDialogOpen(open);
       }}>
-        <DialogContent className="sm:max-w-xl" dir="rtl">
+        <DialogContent className="sm:max-w-xl max-h-[85vh]" dir="rtl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-right">
               <Upload className="h-5 w-5 text-emerald-600" />
-              رفع ملفات شخصية
+              رفع ملفات
             </DialogTitle>
             <DialogDescription className="sr-only">
               رفع ملفات شخصية جديدة
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            {/* File picker area */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">الملفات</Label>
-              <div
-                className="border-2 border-dashed border-emerald-200 rounded-xl p-4 text-center cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/50 transition-colors"
-                onClick={() => !isUploading && fileInputRef.current?.click()}
-              >
-                <div className="space-y-1">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 mx-auto">
-                    <Upload className="h-5 w-5 text-emerald-600" />
+          <ScrollArea className="max-h-[65vh]">
+            <div className="space-y-4 px-1">
+              {/* File picker area */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">الملفات</Label>
+                <div
+                  className="border-2 border-dashed border-emerald-200 rounded-xl p-4 text-center cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/50 transition-colors"
+                  onClick={() => !isUploading && fileInputRef.current?.click()}
+                >
+                  <div className="space-y-1">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 mx-auto">
+                      <Upload className="h-5 w-5 text-emerald-600" />
+                    </div>
+                    <p className="text-sm text-muted-foreground">اضغط لاختيار ملفات أو اسحبها هنا</p>
+                    <p className="text-xs text-muted-foreground">الحد الأقصى لكل ملف: 10 ميجابايت</p>
                   </div>
-                  <p className="text-sm text-muted-foreground">اضغط لاختيار ملفات أو اسحبها هنا</p>
-                  <p className="text-xs text-muted-foreground">الحد الأقصى لكل ملف: 10 ميجابايت</p>
                 </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileSelect}
+                  accept="*/*"
+                  multiple
+                />
               </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                onChange={handleFileSelect}
-                accept="*/*"
-                multiple
-              />
-            </div>
 
-            {/* File list */}
-            {hasAnyFiles && (
-              <ScrollArea className="max-h-60">
-                <div className="space-y-2 pr-1">
+              {/* File list */}
+              {hasAnyFiles && (
+                <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
                   <AnimatePresence mode="popLayout">
                     {uploadItems.map((item) => (
                       <motion.div
@@ -1096,7 +1375,6 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                         }`}>
                           <CardContent className="p-3">
                             <div className="flex items-start gap-2">
-                              {/* File icon */}
                               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-background border mt-0.5">
                                 {item.status === 'done' ? (
                                   <CheckCircle2 className="h-4 w-4 text-emerald-500" />
@@ -1109,7 +1387,6 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                                 )}
                               </div>
 
-                              {/* File details + name input */}
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-1">
                                   <span className="text-xs text-muted-foreground truncate" title={item.file.name}>
@@ -1132,17 +1409,14 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                                     الامتداد: .{item.originalExtension}
                                   </span>
                                 )}
-                                {/* Per-file progress */}
                                 {item.status === 'uploading' && (
                                   <Progress value={item.progress} className="h-1.5 mt-1.5" />
                                 )}
-                                {/* Error message */}
                                 {item.status === 'error' && item.errorMessage && (
                                   <p className="text-[10px] text-rose-500 mt-1">{item.errorMessage}</p>
                                 )}
                               </div>
 
-                              {/* Remove button */}
                               {!isUploading && item.status !== 'done' && (
                                 <Button
                                   variant="ghost"
@@ -1160,124 +1434,124 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                     ))}
                   </AnimatePresence>
                 </div>
-              </ScrollArea>
-            )}
+              )}
 
-            {/* Shared fields */}
-            {hasAnyFiles && (
-              <>
-                {/* Visibility */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">الظهور</Label>
-                  <div className="flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setUploadVisibility('private')}
-                      disabled={isUploading}
-                      className={`flex-1 flex items-center justify-center gap-2 rounded-lg border-2 p-2.5 text-sm font-medium transition-all ${
-                        uploadVisibility === 'private'
-                          ? 'border-amber-400 bg-amber-50 text-amber-700'
-                          : 'border-muted bg-background text-muted-foreground hover:border-muted-foreground/30'
-                      }`}
-                    >
-                      <Lock className="h-4 w-4" />
-                      خاص
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setUploadVisibility('public')}
-                      disabled={isUploading}
-                      className={`flex-1 flex items-center justify-center gap-2 rounded-lg border-2 p-2.5 text-sm font-medium transition-all ${
-                        uploadVisibility === 'public'
-                          ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
-                          : 'border-muted bg-background text-muted-foreground hover:border-muted-foreground/30'
-                      }`}
-                    >
-                      <Globe className="h-4 w-4" />
-                      عام
-                    </button>
+              {/* Shared fields */}
+              {hasAnyFiles && (
+                <>
+                  {/* Visibility */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">الظهور</Label>
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setUploadVisibility('private')}
+                        disabled={isUploading}
+                        className={`flex-1 flex items-center justify-center gap-2 rounded-lg border-2 p-2.5 text-sm font-medium transition-all ${
+                          uploadVisibility === 'private'
+                            ? 'border-amber-400 bg-amber-50 text-amber-700'
+                            : 'border-muted bg-background text-muted-foreground hover:border-muted-foreground/30'
+                        }`}
+                      >
+                        <Lock className="h-4 w-4" />
+                        خاص
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setUploadVisibility('public')}
+                        disabled={isUploading}
+                        className={`flex-1 flex items-center justify-center gap-2 rounded-lg border-2 p-2.5 text-sm font-medium transition-all ${
+                          uploadVisibility === 'public'
+                            ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
+                            : 'border-muted bg-background text-muted-foreground hover:border-muted-foreground/30'
+                        }`}
+                      >
+                        <Globe className="h-4 w-4" />
+                        عام
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                {/* Subject selector */}
+                  {/* Subject selector */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium flex items-center gap-1">
+                      <BookOpen className="h-3.5 w-3.5 text-teal-500" />
+                      المقرر
+                    </Label>
+                    <Select
+                      value={uploadSubjectId}
+                      onValueChange={setUploadSubjectId}
+                      disabled={isUploading || subjects.length === 0}
+                    >
+                      <SelectTrigger className="text-sm">
+                        <SelectValue placeholder={subjects.length === 0 ? 'بدون مقرر' : 'اختر مقرراً (اختياري)'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">بدون مقرر</SelectItem>
+                        {subjects.map((subject) => (
+                          <SelectItem key={subject.id} value={subject.id}>
+                            {subject.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Description */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">الوصف</Label>
+                    <Textarea
+                      value={uploadDescription}
+                      onChange={(e) => setUploadDescription(e.target.value)}
+                      placeholder="وصف مختصر للملفات (اختياري)"
+                      className="text-sm resize-none"
+                      rows={2}
+                      disabled={isUploading}
+                    />
+                  </div>
+
+                  {/* Notes */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium flex items-center gap-1">
+                      <StickyNote className="h-3.5 w-3.5 text-teal-500" />
+                      ملاحظات
+                    </Label>
+                    <Textarea
+                      value={uploadNotes}
+                      onChange={(e) => setUploadNotes(e.target.value)}
+                      placeholder="ملاحظات لتسهيل البحث لاحقاً (اختياري)"
+                      className="text-sm resize-none"
+                      rows={2}
+                      disabled={isUploading}
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* Overall progress */}
+              {isUploading && (
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium flex items-center gap-1">
-                    <BookOpen className="h-3.5 w-3.5 text-teal-500" />
-                    المقرر
-                  </Label>
-                  <Select
-                    value={uploadSubjectId}
-                    onValueChange={setUploadSubjectId}
-                    disabled={isUploading || subjects.length === 0}
-                  >
-                    <SelectTrigger className="text-sm">
-                      <SelectValue placeholder={subjects.length === 0 ? 'بدون مقرر' : 'اختر مقرراً (اختياري)'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">بدون مقرر</SelectItem>
-                      {subjects.map((subject) => (
-                        <SelectItem key={subject.id} value={subject.id}>
-                          {subject.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">
+                      جارٍ الرفع... ({overallProgress.completed}/{overallProgress.total} ملفات)
+                    </span>
+                    <span className="font-medium text-emerald-700">{uploadProgress}%</span>
+                  </div>
+                  <Progress value={uploadProgress} className="h-2" />
                 </div>
+              )}
 
-                {/* Description */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">الوصف</Label>
-                  <Textarea
-                    value={uploadDescription}
-                    onChange={(e) => setUploadDescription(e.target.value)}
-                    placeholder="وصف مختصر للملفات (اختياري)"
-                    className="text-sm resize-none"
-                    rows={2}
-                    disabled={isUploading}
-                  />
+              {/* All done message */}
+              {allDone && !isUploading && (
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-50 border border-emerald-200">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                  <p className="text-sm text-emerald-700">
+                    تم الانتهاء من رفع الملفات
+                  </p>
                 </div>
-
-                {/* Notes */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium flex items-center gap-1">
-                    <StickyNote className="h-3.5 w-3.5 text-teal-500" />
-                    ملاحظات
-                  </Label>
-                  <Textarea
-                    value={uploadNotes}
-                    onChange={(e) => setUploadNotes(e.target.value)}
-                    placeholder="ملاحظات لتسهيل البحث لاحقاً (اختياري)"
-                    className="text-sm resize-none"
-                    rows={2}
-                    disabled={isUploading}
-                  />
-                </div>
-              </>
-            )}
-
-            {/* Overall progress */}
-            {isUploading && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">
-                    جارٍ الرفع... ({overallProgress.completed}/{overallProgress.total} ملفات)
-                  </span>
-                  <span className="font-medium text-emerald-700">{uploadProgress}%</span>
-                </div>
-                <Progress value={uploadProgress} className="h-2" />
-              </div>
-            )}
-
-            {/* All done message */}
-            {allDone && !isUploading && (
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-50 border border-emerald-200">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
-                <p className="text-sm text-emerald-700">
-                  تم الانتهاء من رفع الملفات
-                </p>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          </ScrollArea>
 
           <DialogFooter>
             <Button
@@ -1320,92 +1594,111 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
   };
 
   // =====================================================
-  // Render: Share Dialog
+  // Render: Enhanced Share Dialog (Multi-select)
   // =====================================================
   const renderShareDialog = () => (
     <Dialog open={shareDialogOpen} onOpenChange={(open) => {
       if (!open && !sharingInProgress) {
-        setShareEmail('');
-        setShareLookupResult(null);
+        setShareSearchQuery('');
+        setShareSearchResults([]);
+        setSelectedShareUsers([]);
       }
       setShareDialogOpen(open);
     }}>
-      <DialogContent className="sm:max-w-md" dir="rtl">
+      <DialogContent className="sm:max-w-md max-h-[85vh]" dir="rtl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-right">
             <Share2 className="h-5 w-5 text-blue-600" />
             مشاركة الملف
           </DialogTitle>
           <DialogDescription className="sr-only">
-            مشاركة الملف مع مستخدم آخر عبر البريد الإلكتروني
+            مشاركة الملف مع مستخدمين آخرين
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Email input */}
+          {/* Search input */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium">البريد الإلكتروني للمستخدم</Label>
+            <Label className="text-sm font-medium">البحث عن مستخدم</Label>
             <div className="relative">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                value={shareEmail}
-                onChange={(e) => handleShareEmailChange(e.target.value)}
-                placeholder="أدخل البريد الإلكتروني"
+                value={shareSearchQuery}
+                onChange={(e) => handleShareSearchChange(e.target.value)}
+                placeholder="ابحث بالاسم أو البريد الإلكتروني"
                 className="pr-9 text-sm"
-                dir="ltr"
+                dir="rtl"
                 disabled={sharingInProgress}
               />
-              {shareLookupLoading && (
+              {shareSearchLoading && (
                 <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-emerald-600" />
               )}
             </div>
           </div>
 
-          {/* Lookup result */}
-          <AnimatePresence mode="wait">
-            {shareLookupResult && (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2 }}
-              >
-                <Card className="border-emerald-200 bg-emerald-50/50">
-                  <CardContent className="p-3">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 border border-emerald-200">
-                        <UserCheck className="h-5 w-5 text-emerald-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-foreground truncate">
-                          {shareLookupResult.name}
-                        </p>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span dir="ltr">{shareLookupResult.email}</span>
-                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                            {shareLookupResult.role === 'teacher' ? 'معلم' :
-                             shareLookupResult.role === 'student' ? 'طالب' :
-                             shareLookupResult.role === 'admin' ? 'مدير' : shareLookupResult.role}
-                          </Badge>
-                        </div>
-                      </div>
+          {/* Search results */}
+          {shareSearchResults.length > 0 && (
+            <div className="max-h-40 overflow-y-auto custom-scrollbar space-y-1 border rounded-lg p-2">
+              {shareSearchResults.map((user) => (
+                <button
+                  key={user.id}
+                  onClick={() => addShareUser(user)}
+                  className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-emerald-50 transition-colors text-right"
+                >
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 border border-emerald-200">
+                    <User className="h-4 w-4 text-emerald-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{user.name}</p>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span dir="ltr">{user.email}</span>
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                        {user.role === 'teacher' ? 'معلم' :
+                         user.role === 'student' ? 'طالب' :
+                         user.role === 'admin' ? 'مدير' : user.role}
+                      </Badge>
                     </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                  </div>
+                  <Plus className="h-4 w-4 text-emerald-500 shrink-0" />
+                </button>
+              ))}
+            </div>
+          )}
 
-          {/* Not found hint */}
-          {shareEmail.includes('@') && !shareLookupLoading && !shareLookupResult && shareEmail.trim().length > 3 && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex items-center gap-2 text-xs text-rose-500"
-            >
+          {/* No results hint */}
+          {shareSearchQuery.trim().length > 2 && !shareSearchLoading && shareSearchResults.length === 0 && (
+            <div className="flex items-center gap-2 text-xs text-rose-500">
               <AlertCircle className="h-3.5 w-3.5" />
-              لم يتم العثور على مستخدم بهذا البريد
-            </motion.div>
+              لم يتم العثور على مستخدمين
+            </div>
+          )}
+
+          {/* Selected users chips */}
+          {selectedShareUsers.length > 0 && (
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">المستخدمون المحددون</Label>
+              <div className="flex flex-wrap gap-2">
+                {selectedShareUsers.map((user) => (
+                  <motion.div
+                    key={user.id}
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className="flex items-center gap-1.5 bg-emerald-100 text-emerald-700 rounded-full px-3 py-1.5 text-xs font-medium"
+                  >
+                    <User className="h-3 w-3" />
+                    <span>{user.name}</span>
+                    <button
+                      onClick={() => removeShareUser(user.id)}
+                      className="hover:text-rose-600 transition-colors mr-0.5"
+                      disabled={sharingInProgress}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
 
@@ -1414,8 +1707,9 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
             variant="outline"
             onClick={() => {
               if (!sharingInProgress) {
-                setShareEmail('');
-                setShareLookupResult(null);
+                setShareSearchQuery('');
+                setShareSearchResults([]);
+                setSelectedShareUsers([]);
                 setShareDialogOpen(false);
               }
             }}
@@ -1426,7 +1720,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
           </Button>
           <Button
             onClick={handleShareSubmit}
-            disabled={sharingInProgress || !shareLookupResult}
+            disabled={sharingInProgress || selectedShareUsers.length === 0}
             className="bg-blue-600 hover:bg-blue-700 text-white"
             size="sm"
           >
@@ -1438,7 +1732,7 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
             ) : (
               <>
                 <Share2 className="h-4 w-4 ml-1.5" />
-                مشاركة
+                مشاركة مع {selectedShareUsers.length} مستخدم
               </>
             )}
           </Button>
@@ -1505,7 +1799,10 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100">
             <FolderOpen className="h-4 w-4 text-emerald-600" />
           </div>
-          <h3 className="text-lg font-bold text-foreground">قسم الملفات الشخصية</h3>
+          <h3 className="text-lg font-bold text-foreground">ملفاتي</h3>
+          <Badge variant="secondary" className="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-700">
+            {unifiedFiles.length} ملف
+          </Badge>
         </div>
         <Button
           onClick={() => setUploadDialogOpen(true)}
@@ -1517,106 +1814,91 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
         </Button>
       </div>
 
-      {/* Sub-tabs */}
-      <Tabs value={activeSubTab} onValueChange={(v) => setActiveSubTab(v as 'private' | 'public')}>
-        <TabsList className="bg-muted/60">
-          <TabsTrigger value="private" className="text-xs gap-1.5 data-[state=active]:bg-amber-50 data-[state=active]:text-amber-700">
-            <Lock className="h-3.5 w-3.5" />
-            خاصة
-          </TabsTrigger>
-          <TabsTrigger value="public" className="text-xs gap-1.5 data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
-            <Globe className="h-3.5 w-3.5" />
+      {/* Search bar */}
+      <div className="relative">
+        <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="ابحث بالاسم، التاريخ (اليوم، أمس، هذا الأسبوع)..."
+          className="pr-9 text-sm h-10 border-emerald-200 focus:border-emerald-400"
+          dir="rtl"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {/* Subject tabs */}
+      <div className="border-b overflow-x-auto custom-scrollbar">
+        <div className="flex gap-1 min-w-max pb-px">
+          {/* General tab */}
+          <button
+            onClick={() => setActiveTab('__general__')}
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+              activeTab === '__general__'
+                ? 'border-emerald-500 text-emerald-700'
+                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30'
+            }`}
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
             عام
-          </TabsTrigger>
-        </TabsList>
+          </button>
 
-        {/* Private tab */}
-        <TabsContent value="private">
-          {loading ? (
-            renderSkeletons()
-          ) : privateFiles.length === 0 ? (
-            renderEmptyState(
-              'لا توجد ملفات خاصة بعد. ارفع ملفاً جديداً للبدء.',
-              <Lock className="h-7 w-7 text-amber-500" />
-            )
-          ) : (
-            <motion.div
-              variants={containerVariants}
-              initial="hidden"
-              animate="visible"
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+          {/* Subject tabs */}
+          {subjects.map((subject) => (
+            <button
+              key={subject.id}
+              onClick={() => setActiveTab(subject.id)}
+              className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === subject.id
+                  ? 'border-emerald-500 text-emerald-700'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30'
+              }`}
             >
-              {privateFiles.map((file) => renderFileCard(file, true))}
-            </motion.div>
-          )}
-        </TabsContent>
+              <BookOpen className="h-3.5 w-3.5" />
+              {subject.name}
+            </button>
+          ))}
+        </div>
+      </div>
 
-        {/* Public tab */}
-        <TabsContent value="public">
-          {loading ? (
-            renderSkeletons()
-          ) : (
-            <div className="space-y-6">
-              {/* Own public files */}
-              <div>
-                <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                  <Globe className="h-4 w-4 text-emerald-600" />
-                  ملفاتي العامة
-                </h4>
-                {publicFiles.length === 0 ? (
-                  renderEmptyState(
-                    'لا توجد ملفات عامة بعد.',
-                    <Globe className="h-7 w-7 text-emerald-500" />
-                  )
-                ) : (
-                  <motion.div
-                    variants={containerVariants}
-                    initial="hidden"
-                    animate="visible"
-                    className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
-                  >
-                    {publicFiles.map((file) => renderFileCard(file, true))}
-                  </motion.div>
-                )}
-              </div>
-
-              {/* Separator */}
-              {sharedFiles.length > 0 && <Separator className="my-2" />}
-
-              {/* Files shared with me */}
-              {sharedFiles.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                    <Share2 className="h-4 w-4 text-blue-600" />
-                    ملفات مشاركة معي
-                  </h4>
-                  <motion.div
-                    variants={containerVariants}
-                    initial="hidden"
-                    animate="visible"
-                    className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
-                  >
-                    {sharedFiles.map((share) => renderSharedFileCard(share))}
-                  </motion.div>
-                </div>
-              )}
-
-              {/* Empty shared files */}
-              {publicFiles.length === 0 && sharedFiles.length === 0 && (
-                renderEmptyState(
-                  'لا توجد ملفات عامة أو مشاركة بعد.',
-                  <Globe className="h-7 w-7 text-emerald-500" />
-                )
-              )}
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
+      {/* File grid */}
+      {loading ? (
+        renderSkeletons()
+      ) : filteredFiles.length === 0 ? (
+        renderEmptyState(
+          searchQuery
+            ? 'لا توجد نتائج مطابقة للبحث'
+            : activeTab === '__general__'
+              ? 'لا توجد ملفات عامة بعد. ارفع ملفاً جديداً للبدء.'
+              : `لا توجد ملفات في ${subjectNameMap[activeTab] || 'هذا المقرر'}.`,
+          searchQuery
+            ? <Search className="h-7 w-7 text-muted-foreground" />
+            : activeTab === '__general__'
+              ? <FolderOpen className="h-7 w-7 text-emerald-500" />
+              : <BookOpen className="h-7 w-7 text-emerald-500" />
+        )
+      ) : (
+        <motion.div
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+        >
+          {filteredFiles.map((file) => renderFileCard(file))}
+        </motion.div>
+      )}
 
       {/* Dialogs */}
+      {renderPreviewDialog()}
       {renderUploadDialog()}
       {renderShareDialog()}
-      {renderPreviewDialog()}
       {renderDeleteDialog()}
     </div>
   );
