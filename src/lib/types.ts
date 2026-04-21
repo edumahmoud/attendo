@@ -304,7 +304,7 @@ export function isActiveRole(role: UserRole): role is 'student' | 'teacher' | 'a
 export type AdminSection = 'dashboard' | 'users' | 'subjects' | 'quizzes' | 'settings';
 
 // Subject detail sub-sections
-export type SubjectSection = 'overview' | 'notes' | 'quizzes' | 'lectures' | 'chat' | 'students' | 'assignments';
+export type SubjectSection = 'overview' | 'notes' | 'files' | 'quizzes' | 'lectures' | 'chat' | 'students' | 'assignments';
 
 // API response types
 export interface ApiResponse<T = unknown> {
