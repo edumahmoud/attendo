@@ -206,8 +206,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
     let query = authResult.supabase
       .from('subject_files')
       .select(hasVisibility
-        ? 'id, subject_id, uploaded_by, file_name, file_url, file_type, file_size, created_at, visibility'
-        : 'id, subject_id, uploaded_by, file_name, file_url, file_type, file_size, created_at'
+        ? 'id, subject_id, uploaded_by, file_name, file_url, file_type, file_size, created_at, visibility, category, description'
+        : 'id, subject_id, uploaded_by, file_name, file_url, file_type, file_size, created_at, category, description'
       )
       .eq('subject_id', subjectId)
       .order('created_at', { ascending: false });
@@ -226,7 +226,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         visibilityColumnExists = false;
         const { data: retryData, error: retryError } = await authResult.supabase
           .from('subject_files')
-          .select('id, subject_id, uploaded_by, file_name, file_url, file_type, file_size, created_at')
+          .select('id, subject_id, uploaded_by, file_name, file_url, file_type, file_size, created_at, category, description')
           .eq('subject_id', subjectId)
           .order('created_at', { ascending: false });
 
@@ -353,6 +353,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const file = formData.get('file') as File | null;
     const displayName = formData.get('name') as string | null;
+    const categoryInput = formData.get('category') as string | null;
+    const descriptionInput = formData.get('description') as string | null;
+    const visibilityInput = formData.get('visibility') as string | null;
 
     if (!file) {
       console.error('[FILES UPLOAD] No file in form data. Keys:', Array.from(formData.keys()));
@@ -451,6 +454,20 @@ export async function POST(request: NextRequest, context: RouteContext) {
     // Check if visibility column exists
     const hasVisibility = await checkVisibilityColumn();
 
+    // Determine category: use user-provided category or auto-detect from file type
+    const defaultCategoryMap: Record<string, string> = {
+      pdf: 'PDF',
+      image: 'صور',
+      video: 'فيديو',
+      audio: 'صوتيات',
+      document: 'مستندات',
+      spreadsheet: 'جداول',
+      presentation: 'عروض',
+      other: 'أخرى',
+    };
+    const category = categoryInput?.trim() || defaultCategoryMap[fileType] || 'عام';
+    const description = descriptionInput?.trim() || null;
+
     // Build insert payload
     const insertPayload: Record<string, unknown> = {
       subject_id: subjectId,
@@ -459,10 +476,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       file_url: fileUrl,
       file_type: fileType,
       file_size: file.size,
+      category,
+      description,
     };
 
     if (hasVisibility) {
-      insertPayload.visibility = 'public';
+      insertPayload.visibility = (visibilityInput === 'public' || visibilityInput === 'private') ? visibilityInput : 'public';
     }
 
     // Save metadata to database using the USER'S JWT client (respects RLS)

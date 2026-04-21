@@ -196,6 +196,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const file = formData.get('file') as File | null;
     const displayName = formData.get('name') as string | null;
     const visibility = formData.get('visibility') as string | null;
+    const categoryInput = formData.get('category') as string | null;
+    const descriptionInput = formData.get('description') as string | null;
 
     if (!file) {
       console.error('[STUDENT UPLOAD] No file in form data. Keys:', Array.from(formData.keys()));
@@ -312,6 +314,20 @@ export async function POST(request: NextRequest, context: RouteContext) {
     // Determine visibility
     const fileVisibility = (visibility === 'public' || visibility === 'private') ? visibility : (isStudent ? 'private' : 'public');
 
+    // Determine category
+    const defaultCategoryMap: Record<string, string> = {
+      pdf: 'PDF',
+      image: 'صور',
+      video: 'فيديو',
+      audio: 'صوتيات',
+      document: 'مستندات',
+      spreadsheet: 'جداول',
+      presentation: 'عروض',
+      other: 'أخرى',
+    };
+    const category = categoryInput?.trim() || defaultCategoryMap[fileType] || 'عام';
+    const description = descriptionInput?.trim() || null;
+
     // Check visibility column existence
     const hasVisibility = await checkVisibilityColumn();
 
@@ -324,6 +340,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       file_url: fileUrl,
       file_type: fileType,
       file_size: file.size,
+      category,
+      description,
     };
 
     if (hasVisibility) {

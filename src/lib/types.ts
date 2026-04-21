@@ -124,9 +124,75 @@ export interface SubjectFile {
   file_type?: string;
   file_size?: number;
   visibility?: 'public' | 'private';
+  category?: string;
+  description?: string;
   created_at: string;
   // Joined data
   uploader_name?: string;
+}
+
+// Personal user file (not tied to a subject)
+export interface UserFile {
+  id: string;
+  user_id: string;
+  file_name: string;
+  file_url: string;
+  file_type?: string;
+  file_size?: number;
+  visibility: 'public' | 'private';
+  description?: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// File share record
+export interface FileShare {
+  id: string;
+  file_id: string;
+  file_type: 'subject_file' | 'user_file';
+  shared_by: string;
+  shared_with: string;
+  created_at: string;
+  // Joined data
+  shared_with_name?: string;
+  shared_with_email?: string;
+  shared_with_role?: string;
+  shared_by_name?: string;
+  file_name?: string;
+  file_url?: string;
+}
+
+// Assignment for a subject
+export interface Assignment {
+  id: string;
+  subject_id: string;
+  teacher_id: string;
+  title: string;
+  description: string;
+  deadline?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  // Joined data
+  submission_count?: number;
+  student_submitted?: boolean;
+}
+
+// Student submission for an assignment
+export interface AssignmentSubmission {
+  id: string;
+  assignment_id: string;
+  student_id: string;
+  file_name?: string;
+  file_url?: string;
+  file_type?: string;
+  file_size?: number;
+  notes?: string;
+  submitted_at: string;
+  // Joined data
+  student_name?: string;
+  student_email?: string;
 }
 
 export interface SubjectNote {
@@ -208,7 +274,7 @@ export interface Notification {
   user_id: string;
   title: string;
   content: string;
-  type: 'quiz' | 'note' | 'message' | 'lecture' | 'system';
+  type: 'quiz' | 'note' | 'message' | 'lecture' | 'system' | 'assignment';
   reference_id?: string;
   is_read: boolean;
   created_at: string;
@@ -237,7 +303,7 @@ export function isActiveRole(role: UserRole): role is 'student' | 'teacher' | 'a
 export type AdminSection = 'dashboard' | 'users' | 'subjects' | 'quizzes' | 'settings';
 
 // Subject detail sub-sections
-export type SubjectSection = 'overview' | 'files' | 'notes' | 'quizzes' | 'lectures' | 'chat' | 'students';
+export type SubjectSection = 'overview' | 'files' | 'notes' | 'quizzes' | 'lectures' | 'chat' | 'students' | 'assignments';
 
 // API response types
 export interface ApiResponse<T = unknown> {

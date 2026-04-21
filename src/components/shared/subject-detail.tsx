@@ -8,6 +8,7 @@ import {
   FileText,
   StickyNote,
   ClipboardList,
+  ClipboardCheck,
   Video,
   MessageCircle,
   GraduationCap,
@@ -78,6 +79,9 @@ import {
   TabsTrigger,
   TabsContent,
 } from '@/components/ui/tabs';
+import AssignmentsSection from '@/components/shared/assignments-section';
+import CourseFilesSection from '@/components/shared/course-files-section';
+import PersonalFilesSection from '@/components/shared/personal-files-section';
 import type {
   UserProfile,
   Subject,
@@ -198,6 +202,7 @@ const teacherTabs: TabConfig[] = [
   { id: 'files', label: 'الملفات', icon: <FolderOpen className="h-4 w-4" /> },
   { id: 'notes', label: 'الملاحظات', icon: <StickyNote className="h-4 w-4" /> },
   { id: 'quizzes', label: 'الاختبارات', icon: <ClipboardList className="h-4 w-4" /> },
+  { id: 'assignments', label: 'المهام', icon: <ClipboardCheck className="h-4 w-4" /> },
   { id: 'lectures', label: 'المحاضرات', icon: <Video className="h-4 w-4" /> },
   { id: 'chat', label: 'المحادثة', icon: <MessageCircle className="h-4 w-4" /> },
   { id: 'students', label: 'الطلاب', icon: <Users className="h-4 w-4" /> },
@@ -208,6 +213,7 @@ const studentTabs: TabConfig[] = [
   { id: 'files', label: 'الملفات', icon: <FolderOpen className="h-4 w-4" /> },
   { id: 'notes', label: 'الملاحظات', icon: <StickyNote className="h-4 w-4" /> },
   { id: 'quizzes', label: 'الاختبارات', icon: <ClipboardList className="h-4 w-4" /> },
+  { id: 'assignments', label: 'المهام', icon: <ClipboardCheck className="h-4 w-4" /> },
   { id: 'lectures', label: 'المحاضرات', icon: <Video className="h-4 w-4" /> },
   { id: 'chat', label: 'المحادثة', icon: <MessageCircle className="h-4 w-4" /> },
 ];
@@ -3511,10 +3517,32 @@ export default function SubjectDetail({ subjectId, profile, onBack, onCreateQuiz
         </TabsList>
 
         <TabsContent value="overview">{renderOverview()}</TabsContent>
-        <TabsContent value="files">{renderFiles()}</TabsContent>
+        <TabsContent value="files">
+          <div className="space-y-8">
+            {/* Course Files Section */}
+            <CourseFilesSection
+              subjectId={subjectId}
+              profile={profile}
+              isTeacher={isTeacher}
+              subject={subject}
+            />
+            {/* Personal Files Section */}
+            <PersonalFilesSection profile={profile} />
+          </div>
+        </TabsContent>
         <TabsContent value="notes">{renderNotes()}</TabsContent>
         <TabsContent value="quizzes">{renderQuizzes()}</TabsContent>
         <TabsContent value="lectures">{renderLectures()}</TabsContent>
+        <TabsContent value="assignments">
+          {subject && (
+            <AssignmentsSection
+              subjectId={subjectId}
+              profile={profile}
+              isTeacher={isTeacher}
+              subject={subject}
+            />
+          )}
+        </TabsContent>
         <TabsContent value="chat">{renderChat()}</TabsContent>
         {isTeacher && <TabsContent value="students">{renderStudents()}</TabsContent>}
       </Tabs>

@@ -44,3 +44,24 @@ Stage Summary:
 - Files section now has type-based tabs, source filter, preview, visibility toggle, and sharing
 - All new features use existing shadcn/ui components and RTL Arabic labels
 - 0 lint errors, dev server running cleanly
+---
+Task ID: 3
+Agent: Main Agent
+Task: Implement file management, personal files, and assignments features
+
+Work Log:
+- Created SQL migration (supabase/V3_FILES_ASSIGNMENTS.sql) with 5 new tables: user_files, file_shares, assignments, assignment_submissions, plus new columns on subject_files (category, description)
+- Updated TypeScript types with UserFile, FileShare, Assignment, AssignmentSubmission interfaces
+- Updated SubjectSection type to include 'assignments'
+- Updated Notification type to include 'assignment'
+- Created 5 new API routes: user-files (CRUD), user-files/share, users/lookup, subjects/[id]/assignments (CRUD), subjects/[id]/assignments/submit
+- Updated existing files API routes to accept category and description fields
+- Created CourseFilesSection component with: classification tabs by category, upload with progress bar (XHR), preview dialog, share dialog with email lookup, visibility toggle
+- Created PersonalFilesSection component with: private/public sub-tabs, upload with progress, file sharing with email lookup, shared files display, preview dialog
+- Created AssignmentsSection component with: teacher create/edit/delete assignments with deadlines, student submit with progress bar, expired assignment auto-hide, submissions view
+- Integrated all new components into subject-detail.tsx: added assignments tab, replaced old files tab with CourseFilesSection + PersonalFilesSection
+
+Stage Summary:
+- All features compile successfully (0 lint errors)
+- User needs to run V3_FILES_ASSIGNMENTS.sql in Supabase SQL Editor
+- Key new features: file classification tabs, personal files (private/public), file sharing with email lookup, assignments with deadlines, upload progress bars
