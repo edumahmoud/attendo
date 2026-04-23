@@ -30,8 +30,9 @@ function HomeContent() {
   // ─── Setup Wizard state ───
   const [setupCheckDone, setSetupCheckDone] = useState(false);
   const [needsSetup, setNeedsSetup] = useState(false);
+  const [wizardInProgress, setWizardInProgress] = useState(false);
 
-  // Check if the system needs initial setup (no institution data)
+  // Check if the system needs initial setup (no users in DB)
   const checkSetupStatus = useCallback(async () => {
     try {
       const res = await fetch('/api/setup');
@@ -47,9 +48,15 @@ function HomeContent() {
     setSetupCheckDone(true);
   }, []);
 
+  // Handle setup wizard start (wizard is now active, don't interrupt it)
+  const handleWizardStart = useCallback(() => {
+    setWizardInProgress(true);
+  }, []);
+
   // Handle setup wizard completion
   const handleSetupComplete = useCallback(() => {
     setNeedsSetup(false);
+    setWizardInProgress(false);
     // Re-initialize auth to pick up the new admin account
     initialize();
   }, [initialize]);
@@ -86,6 +93,9 @@ function HomeContent() {
   useEffect(() => {
     if (!initialized) return;
 
+    // Don't redirect away from the setup wizard while it's in progress
+    if (wizardInProgress) return;
+
     if (user) {
       if (currentPage === 'auth') {
         setCurrentPage(
@@ -99,7 +109,7 @@ function HomeContent() {
     } else {
       setCurrentPage('auth');
     }
-  }, [user, initialized, currentPage, setCurrentPage]);
+  }, [user, initialized, currentPage, setCurrentPage, wizardInProgress]);
 
   // Show auth error toast if present in URL
   useEffect(() => {
@@ -153,9 +163,12 @@ function HomeContent() {
     );
   }
 
-  // Setup Wizard — shown when system is not initialized (no institution data)
-  if (needsSetup && !user) {
-    return <SetupWizard onComplete={handleSetupComplete} />;
+  // Setup Wizard — shown when system is not initialized (no users in DB)
+  // Once the wizard starts (wizardInProgress), keep showing it even after
+  // the user creates their admin account and gets a session, so they can
+  // complete the institution details step.
+  if (needsSetup && (!user || wizardInProgress)) {
+    return <SetupWizard onComplete={handleSetupComplete} onStart={handleWizardStart} />;
   }
 
   // Auth pages (login / register)

@@ -4,12 +4,31 @@ import { supabaseServer } from '@/lib/supabase-server';
 // ─── GET: Check if the system is initialized ───
 export async function GET() {
   try {
-    // Also count users to determine if this is truly a fresh install
+    // Count users to determine if this is truly a fresh install
     const { count: userCount } = await supabaseServer
       .from('users')
       .select('*', { count: 'exact', head: true });
 
-    // Try to fetch institution settings
+    // If there are already users in the database, the system is considered initialized
+    // even if institution_settings hasn't been configured yet.
+    // The setup wizard is ONLY for the very first time (no users at all).
+    if (userCount && userCount > 0) {
+      // Try to fetch institution settings for the response
+      const { data: instData } = await supabaseServer
+        .from('institution_settings')
+        .select('*')
+        .limit(1)
+        .maybeSingle();
+
+      return NextResponse.json({
+        initialized: true,
+        institution: instData || null,
+        tableExists: true,
+        hasUsers: true,
+      });
+    }
+
+    // No users — check if institution_settings table exists
     const { data, error } = await supabaseServer
       .from('institution_settings')
       .select('*')
@@ -25,17 +44,15 @@ export async function GET() {
         error.message?.includes('relation') ||
         error.message?.includes('Could not find the table');
 
-      if (isTableMissing || userCount === 0) {
-        return NextResponse.json({ initialized: false, tableExists: false });
-      }
-      return NextResponse.json({ initialized: false, tableExists: false });
+      return NextResponse.json({ initialized: false, tableExists: !isTableMissing, hasUsers: false });
     }
 
     if (data) {
-      return NextResponse.json({ initialized: true, institution: data, tableExists: true });
+      // No users but institution data exists — still needs setup (create admin account)
+      return NextResponse.json({ initialized: false, institution: data, tableExists: true, hasUsers: false });
     }
 
-    return NextResponse.json({ initialized: false, tableExists: true });
+    return NextResponse.json({ initialized: false, tableExists: true, hasUsers: false });
   } catch (err) {
     console.error('[setup] Error:', err);
     return NextResponse.json({ initialized: false, error: 'Internal server error' }, { status: 500 });

@@ -37,6 +37,7 @@ type WizardStep = 'db-migration' | 'admin-account' | 'institution-info' | 'compl
 
 interface SetupWizardProps {
   onComplete: () => void;
+  onStart?: () => void;
 }
 
 // ─── Password Strength ───
@@ -109,7 +110,7 @@ function StepIndicator({ currentStep, showMigration }: { currentStep: WizardStep
 
 // ─── Main Component ───
 
-export default function SetupWizard({ onComplete }: SetupWizardProps) {
+export default function SetupWizard({ onComplete, onStart }: SetupWizardProps) {
   const [step, setStep] = useState<WizardStep>('admin-account');
   const [tableExists, setTableExists] = useState(true); // assume table exists until proven otherwise
 
@@ -244,6 +245,9 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
 
       setAdminUserId(authUser.id);
       toast.success('تم إنشاء حساب المدير بنجاح');
+      // Signal that the wizard is now in progress (user will get a session,
+      // but we must not interrupt the wizard flow)
+      onStart?.();
       setStep('institution-info');
     } catch {
       toast.error('حدث خطأ غير متوقع');
