@@ -22,10 +22,16 @@ import {
   CalendarDays,
   ZoomIn,
   X,
+  Mail,
+  Shield,
+  Activity,
+  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Separator } from '@/components/ui/separator';
 import {
   Dialog,
   DialogContent,
@@ -80,18 +86,18 @@ const containerVariants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
-    transition: { staggerChildren: 0.07 },
+    transition: { staggerChildren: 0.06 },
   },
 };
 
 const itemVariants = {
-  hidden: { opacity: 0, y: 18 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+  hidden: { opacity: 0, y: 14 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
 };
 
 const cardHover = {
   rest: { scale: 1 },
-  hover: { scale: 1.015, transition: { duration: 0.2 } },
+  hover: { scale: 1.012, transition: { duration: 0.2 } },
 };
 
 // ─── Helpers ─────────────────────────────────────────────
@@ -162,6 +168,42 @@ function getRoleBadgeVariant(role: string): 'default' | 'secondary' | 'outline' 
   }
 }
 
+function getStatusColor(status: UserStatus) {
+  switch (status) {
+    case 'online': return 'bg-emerald-500';
+    case 'busy': return 'bg-amber-500';
+    case 'away': return 'bg-orange-500';
+    default: return 'bg-gray-400';
+  }
+}
+
+function getStatusLabel(status: UserStatus) {
+  switch (status) {
+    case 'online': return 'متصل';
+    case 'busy': return 'مشغول';
+    case 'away': return 'بعيد';
+    default: return 'غير متصل';
+  }
+}
+
+function getStatusTextColor(status: UserStatus) {
+  switch (status) {
+    case 'online': return 'text-emerald-600';
+    case 'busy': return 'text-amber-600';
+    case 'away': return 'text-orange-600';
+    default: return 'text-gray-500';
+  }
+}
+
+function getStatusBorderColor(status: UserStatus) {
+  switch (status) {
+    case 'online': return 'border-emerald-300';
+    case 'busy': return 'border-amber-300';
+    case 'away': return 'border-orange-300';
+    default: return 'border-gray-300';
+  }
+}
+
 // ─── Component ───────────────────────────────────────────
 export default function UserProfilePage({ userId, currentUser, onBack }: UserProfilePageProps) {
   // ─── State ───────────────────────────────────────────
@@ -214,14 +256,12 @@ export default function UserProfilePage({ userId, currentUser, onBack }: UserPro
       const data = await res.json();
       setProfile(data.profile);
 
-      // Fetch file request statuses for the current user
       const files: PublicFile[] = (data.publicFiles || []).map((f: UserFile) => ({
         ...f,
         requestStatus: null,
         requestId: undefined,
       }));
 
-      // Check request statuses for each file (if viewing another user's profile)
       if (userId !== currentUser.id && files.length > 0) {
         const { data: myRequests } = await supabase
           .from('file_requests')
@@ -319,7 +359,6 @@ export default function UserProfilePage({ userId, currentUser, onBack }: UserPro
       const data = await res.json();
       if (res.ok && data.success) {
         toast.success('تم إرسال طلب الملف بنجاح');
-        // Update local state
         setPublicFiles((prev) =>
           prev.map((f) =>
             f.id === requestingFileId
@@ -396,427 +435,462 @@ export default function UserProfilePage({ userId, currentUser, onBack }: UserPro
   }
 
   return (
-    <div dir="rtl" className="max-w-4xl mx-auto pb-8">
-      {/* ─── Header Section ──────────────────────────── */}
+    <div dir="rtl" className="max-w-5xl mx-auto pb-8">
+      {/* ─── Cover Banner ─────────────────────────────── */}
       <motion.div
-        initial={{ opacity: 0, y: -12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="mb-8"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5 }}
+        className="relative"
       >
-        {/* Back button */}
+        {/* Back button - positioned over the banner */}
         <Button
           variant="ghost"
           size="sm"
           onClick={onBack}
-          className="mb-4 gap-2 text-muted-foreground hover:text-foreground"
+          className="absolute top-4 right-4 z-10 gap-2 text-white/90 hover:text-white hover:bg-white/20 bg-black/20 backdrop-blur-sm"
         >
           <ArrowRight className="h-4 w-4" />
           العودة
         </Button>
 
-        {/* Profile card */}
-        <Card className="border-0 shadow-lg bg-gradient-to-bl from-emerald-50 via-white to-teal-50 dark:from-emerald-950/30 dark:via-background dark:to-teal-950/30 overflow-hidden">
-          <CardContent className="p-6 sm:p-8">
-            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
-              {/* Avatar */}
-              <div className="shrink-0">
-                <div className="relative cursor-pointer" onClick={() => profile.avatar_url && setPhotoEnlarged(true)}>
-                  <UserAvatar
-                    name={profile.name}
-                    avatarUrl={profile.avatar_url}
-                    size="xl"
-                    className="ring-4 ring-emerald-200/60 dark:ring-emerald-800/40"
-                  />
-                  {profile.avatar_url && (
-                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/0 hover:bg-black/20 transition-colors">
-                      <ZoomIn className="h-6 w-6 text-white opacity-0 hover:opacity-100 transition-opacity" />
-                    </div>
-                  )}
-                  {/* Status indicator */}
-                  <span className={`absolute bottom-1 left-1 h-4 w-4 rounded-full ring-2 ring-white dark:ring-gray-900 ${
-                    profileUserStatus === 'online' ? 'bg-emerald-500' :
-                    profileUserStatus === 'busy' ? 'bg-amber-500' :
-                    profileUserStatus === 'away' ? 'bg-orange-500' :
-                    'bg-gray-400'
-                  } ${profileUserStatus === 'online' ? 'animate-pulse' : ''}`} />
-                </div>
-              </div>
-
-              {/* Info */}
-              <div className="flex-1 text-center sm:text-right min-w-0">
-                {/* Name with title */}
-                <div className="flex flex-col sm:flex-row items-center sm:items-baseline gap-1 sm:gap-2 mb-1">
-                  {titleLabel && (
-                    <span className="text-emerald-600 dark:text-emerald-400 text-sm font-medium">
-                      {titleLabel}
-                    </span>
-                  )}
-                  <h1 className="text-2xl font-bold text-foreground truncate">
-                    {profile.name}
-                  </h1>
-                </div>
-
-                {/* Username */}
-                {profile.username && (
-                  <p className="text-muted-foreground text-sm mb-2">
-                    @{profile.username}
-                  </p>
-                )}
-
-                {/* Role badge + Status */}
-                <div className="flex items-center justify-center sm:justify-start gap-2 mb-3">
-                  <Badge
-                    variant={getRoleBadgeVariant(profile.role)}
-                    className="text-xs font-medium"
-                  >
-                    {roleLabel}
-                  </Badge>
-                  {/* Status indicator */}
-                  {profileUserStatus && profileUserStatus !== 'invisible' && (
-                    <Badge
-                      variant="outline"
-                      className={`text-[10px] font-medium gap-1 ${
-                        profileUserStatus === 'online' ? 'border-emerald-300 text-emerald-600' :
-                        profileUserStatus === 'busy' ? 'border-amber-300 text-amber-600' :
-                        profileUserStatus === 'away' ? 'border-orange-300 text-orange-600' :
-                        'border-gray-300 text-gray-500'
-                      }`}
-                    >
-                      <span className={`h-1.5 w-1.5 rounded-full ${
-                        profileUserStatus === 'online' ? 'bg-emerald-500' :
-                        profileUserStatus === 'busy' ? 'bg-amber-500' :
-                        profileUserStatus === 'away' ? 'bg-orange-500' :
-                        'bg-gray-400'
-                      }`} />
-                      {profileUserStatus === 'online' ? 'متصل' :
-                       profileUserStatus === 'busy' ? 'مشغول' :
-                       profileUserStatus === 'away' ? 'بعيد' :
-                       'غير متصل'}
-                    </Badge>
-                  )}
-                </div>
-
-                {/* Join date */}
-                <div className="flex items-center justify-center sm:justify-start gap-1.5 text-muted-foreground text-xs">
-                  <CalendarDays className="h-3.5 w-3.5" />
-                  <span>انضم في {formatDate(profile.created_at)}</span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* ─── Public Files Section ──────────────────────── */}
-      <motion.section
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-        className="mb-8"
-      >
-        <div className="flex items-center gap-2 mb-4">
-          <FolderOpen className="h-5 w-5 text-emerald-600" />
-          <h2 className="text-lg font-bold text-foreground">
-            {isOwnProfile ? 'ملفاتي العامة' : 'الملفات العامة'}
-          </h2>
-          {publicFiles.length > 0 && (
-            <Badge variant="outline" className="text-xs mr-auto">
-              {publicFiles.length} ملف
-            </Badge>
-          )}
+        {/* Banner gradient */}
+        <div className="h-40 sm:h-52 rounded-b-2xl bg-gradient-to-bl from-emerald-600 via-teal-500 to-emerald-700 relative overflow-hidden">
+          {/* Decorative patterns */}
+          <div className="absolute inset-0 opacity-10">
+            <div className="absolute top-0 left-0 w-64 h-64 bg-white rounded-full -translate-x-1/2 -translate-y-1/2" />
+            <div className="absolute bottom-0 right-0 w-48 h-48 bg-white rounded-full translate-x-1/4 translate-y-1/4" />
+            <div className="absolute top-1/2 left-1/2 w-32 h-32 bg-white rounded-full -translate-x-1/2 -translate-y-1/2" />
+          </div>
+          {/* Subtle grid pattern */}
+          <div className="absolute inset-0 opacity-5" style={{
+            backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)',
+            backgroundSize: '24px 24px'
+          }} />
         </div>
 
-        {publicFiles.length === 0 ? (
-          <motion.div variants={itemVariants}>
-            <Card className="border-dashed border-2 bg-muted/30">
-              <CardContent className="py-12 flex flex-col items-center gap-3">
-                <div className="h-14 w-14 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                  <Inbox className="h-7 w-7 text-emerald-500" />
-                </div>
-                <p className="text-muted-foreground text-sm font-medium">لا توجد ملفات عامة</p>
-                <p className="text-muted-foreground/70 text-xs">
-                  {isOwnProfile
-                    ? 'لم تقم برفع أي ملفات عامة بعد'
-                    : 'لم يقم هذا المستخدم برفع ملفات عامة بعد'}
-                </p>
-              </CardContent>
-            </Card>
+        {/* Avatar - overlapping the banner */}
+        <div className="absolute -bottom-16 right-6 sm:right-10">
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.4, delay: 0.2 }}
+            className="relative cursor-pointer group"
+            onClick={() => profile.avatar_url && setPhotoEnlarged(true)}
+          >
+            <div className="rounded-full p-1 bg-white dark:bg-gray-900 shadow-xl">
+              <UserAvatar
+                name={profile.name}
+                avatarUrl={profile.avatar_url}
+                size="xl"
+                className="ring-4 ring-emerald-400/30"
+              />
+            </div>
+            {/* Zoom overlay */}
+            {profile.avatar_url && (
+              <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/0 group-hover:bg-black/30 transition-all duration-200 p-1">
+                <ZoomIn className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+              </div>
+            )}
+            {/* Status indicator */}
+            <span className={`absolute bottom-2 left-2 h-5 w-5 rounded-full ring-3 ring-white dark:ring-gray-900 ${
+              getStatusColor(profileUserStatus)
+            } ${profileUserStatus === 'online' ? 'animate-pulse' : ''}`} />
           </motion.div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {publicFiles.map((file) => (
-              <motion.div key={file.id} variants={itemVariants}>
-                <motion.div
-                  variants={cardHover}
-                  initial="rest"
-                  whileHover="hover"
+        </div>
+      </motion.div>
+
+      {/* ─── Profile Info Section ──────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.3 }}
+        className="mt-20 sm:mt-20 px-6 sm:px-10"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+          {/* Name & identity */}
+          <div className="flex-1 min-w-0">
+            {/* Name with title */}
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              {titleLabel && (
+                <span className="text-emerald-600 dark:text-emerald-400 text-sm font-semibold bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded-md">
+                  {titleLabel}
+                </span>
+              )}
+              <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
+                {profile.name}
+              </h1>
+            </div>
+
+            {/* Username */}
+            {profile.username && (
+              <p className="text-muted-foreground text-sm mb-2 flex items-center gap-1.5">
+                <span dir="ltr">@{profile.username}</span>
+              </p>
+            )}
+
+            {/* Badges row */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge
+                variant={getRoleBadgeVariant(profile.role)}
+                className="text-xs font-medium gap-1"
+              >
+                <Shield className="h-3 w-3" />
+                {roleLabel}
+              </Badge>
+              {profileUserStatus && profileUserStatus !== 'invisible' && (
+                <Badge
+                  variant="outline"
+                  className={`text-[11px] font-medium gap-1.5 ${getStatusBorderColor(profileUserStatus)} ${getStatusTextColor(profileUserStatus)}`}
                 >
-                  <Card className="h-full border shadow-sm hover:shadow-md transition-shadow bg-card">
-                    <CardContent className="p-4 flex flex-col gap-3">
-                      {/* File info row */}
-                      <div className="flex items-start gap-3">
-                        <div className="shrink-0 h-10 w-10 rounded-lg bg-muted/60 flex items-center justify-center">
-                          {getFileIcon(file.file_type)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-foreground truncate" title={file.file_name}>
-                            {file.file_name}
-                          </p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[11px] text-muted-foreground font-medium uppercase">
-                              {file.file_type.split('/').pop()?.substring(0, 8) || 'ملف'}
-                            </span>
-                            <span className="text-[11px] text-muted-foreground/60">•</span>
-                            <span className="text-[11px] text-muted-foreground">
-                              {formatFileSize(file.file_size)}
-                            </span>
-                          </div>
-                        </div>
+                  <span className={`h-2 w-2 rounded-full ${getStatusColor(profileUserStatus)} ${profileUserStatus === 'online' ? 'animate-pulse' : ''}`} />
+                  {getStatusLabel(profileUserStatus)}
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          {/* Quick info cards */}
+          <div className="flex items-center gap-3 text-sm text-muted-foreground shrink-0">
+            <div className="flex items-center gap-1.5 bg-muted/50 rounded-lg px-3 py-1.5">
+              <CalendarDays className="h-4 w-4 text-emerald-500" />
+              <span className="text-xs">انضم {formatDate(profile.created_at)}</span>
+            </div>
+            <div className="flex items-center gap-1.5 bg-muted/50 rounded-lg px-3 py-1.5">
+              <FolderOpen className="h-4 w-4 text-emerald-500" />
+              <span className="text-xs">{publicFiles.length} ملف</span>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* ─── Separator ─────────────────────────────────── */}
+      <div className="px-6 sm:px-10 mt-5">
+        <Separator />
+      </div>
+
+      {/* ─── Content Tabs ──────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.4 }}
+        className="px-6 sm:px-10 mt-5"
+      >
+        <Tabs defaultValue="files" dir="rtl" className="w-full">
+          <TabsList className="mb-5 bg-muted/60">
+            <TabsTrigger value="files" className="gap-1.5 text-xs sm:text-sm">
+              <FolderOpen className="h-4 w-4" />
+              {isOwnProfile ? 'ملفاتي العامة' : 'الملفات العامة'}
+            </TabsTrigger>
+            {isOwnProfile && (
+              <TabsTrigger value="requests" className="gap-1.5 text-xs sm:text-sm">
+                <Download className="h-4 w-4" />
+                طلبات الملفات
+                {fileRequests.length > 0 && (
+                  <Badge className="h-5 min-w-5 px-1.5 text-[10px] bg-emerald-600 text-white border-0">
+                    {fileRequests.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            )}
+          </TabsList>
+
+          {/* ─── Public Files Tab ──────────────────────── */}
+          <TabsContent value="files">
+            <motion.section
+              variants={containerVariants}
+              initial="hidden"
+              animate="visible"
+            >
+              {publicFiles.length === 0 ? (
+                <motion.div variants={itemVariants}>
+                  <Card className="border-dashed border-2 bg-muted/20">
+                    <CardContent className="py-16 flex flex-col items-center gap-4">
+                      <div className="h-16 w-16 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                        <Inbox className="h-8 w-8 text-emerald-500" />
                       </div>
+                      <div className="text-center">
+                        <p className="text-muted-foreground text-sm font-medium">لا توجد ملفات عامة</p>
+                        <p className="text-muted-foreground/60 text-xs mt-1">
+                          {isOwnProfile
+                            ? 'لم تقم برفع أي ملفات عامة بعد'
+                            : 'لم يقم هذا المستخدم برفع ملفات عامة بعد'}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {publicFiles.map((file) => (
+                    <motion.div key={file.id} variants={itemVariants}>
+                      <motion.div
+                        variants={cardHover}
+                        initial="rest"
+                        whileHover="hover"
+                      >
+                        <Card className="h-full border shadow-sm hover:shadow-md transition-all duration-200 bg-card group">
+                          <CardContent className="p-4 flex flex-col gap-3">
+                            {/* File info row */}
+                            <div className="flex items-start gap-3">
+                              <div className="shrink-0 h-11 w-11 rounded-xl bg-muted/60 flex items-center justify-center group-hover:bg-muted/80 transition-colors">
+                                {getFileIcon(file.file_type)}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-foreground truncate" title={file.file_name}>
+                                  {file.file_name}
+                                </p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-[11px] text-muted-foreground font-medium uppercase">
+                                    {file.file_type.split('/').pop()?.substring(0, 8) || 'ملف'}
+                                  </span>
+                                  <span className="text-[11px] text-muted-foreground/40">•</span>
+                                  <span className="text-[11px] text-muted-foreground">
+                                    {formatFileSize(file.file_size)}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
 
-                      {/* Date */}
-                      <p className="text-[11px] text-muted-foreground/60 flex items-center gap-1">
-                        <CalendarDays className="h-3 w-3" />
-                        {formatDate(file.created_at)}
-                      </p>
+                            {/* Date */}
+                            <p className="text-[11px] text-muted-foreground/50 flex items-center gap-1">
+                              <CalendarDays className="h-3 w-3" />
+                              {formatDate(file.created_at)}
+                            </p>
 
-                      {/* Action area */}
-                      {!isOwnProfile && (
-                        <div className="mt-auto pt-1">
-                          {file.requestStatus === 'approved' ? (
-                            <Badge
-                              className="w-full justify-center gap-1.5 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-0 text-xs py-1.5"
-                            >
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                              تمت الموافقة
-                            </Badge>
-                          ) : file.requestStatus === 'pending' ? (
-                            <Badge
-                              className="w-full justify-center gap-1.5 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-0 text-xs py-1.5"
-                            >
-                              <Clock className="h-3.5 w-3.5" />
-                              قيد الانتظار
-                            </Badge>
-                          ) : file.requestStatus === 'rejected' ? (
-                            <Badge
-                              className="w-full justify-center gap-1.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-0 text-xs py-1.5"
-                            >
-                              <XCircle className="h-3.5 w-3.5" />
-                              مرفوض
-                            </Badge>
-                          ) : (
-                            <Dialog
-                              open={requestDialogOpen && requestingFileId === file.id}
-                              onOpenChange={(open) => {
-                                setRequestDialogOpen(open);
-                                if (!open) {
-                                  setRequestDescription('');
-                                  setRequestingFileId(null);
-                                }
-                              }}
-                            >
-                              <DialogTrigger asChild>
+                            {/* Action area */}
+                            {!isOwnProfile && (
+                              <div className="mt-auto pt-1">
+                                {file.requestStatus === 'approved' ? (
+                                  <Badge
+                                    className="w-full justify-center gap-1.5 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-0 text-xs py-1.5"
+                                  >
+                                    <CheckCircle2 className="h-3.5 w-3.5" />
+                                    تمت الموافقة
+                                  </Badge>
+                                ) : file.requestStatus === 'pending' ? (
+                                  <Badge
+                                    className="w-full justify-center gap-1.5 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-0 text-xs py-1.5"
+                                  >
+                                    <Clock className="h-3.5 w-3.5" />
+                                    قيد الانتظار
+                                  </Badge>
+                                ) : file.requestStatus === 'rejected' ? (
+                                  <Badge
+                                    className="w-full justify-center gap-1.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-0 text-xs py-1.5"
+                                  >
+                                    <XCircle className="h-3.5 w-3.5" />
+                                    مرفوض
+                                  </Badge>
+                                ) : (
+                                  <Dialog
+                                    open={requestDialogOpen && requestingFileId === file.id}
+                                    onOpenChange={(open) => {
+                                      setRequestDialogOpen(open);
+                                      if (!open) {
+                                        setRequestDescription('');
+                                        setRequestingFileId(null);
+                                      }
+                                    }}
+                                  >
+                                    <DialogTrigger asChild>
+                                      <Button
+                                        size="sm"
+                                        className="w-full gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8"
+                                        onClick={() => setRequestingFileId(file.id)}
+                                      >
+                                        <Send className="h-3.5 w-3.5" />
+                                        طلب ملف
+                                      </Button>
+                                    </DialogTrigger>
+                                    <DialogContent dir="rtl" className="sm:max-w-md">
+                                      <DialogHeader>
+                                        <DialogTitle className="flex items-center gap-2 text-right">
+                                          <MessageSquare className="h-5 w-5 text-emerald-600" />
+                                          طلب ملف
+                                        </DialogTitle>
+                                      </DialogHeader>
+                                      <div className="space-y-4 pt-2">
+                                        {/* File info */}
+                                        <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                                          <div className="shrink-0 h-9 w-9 rounded-md bg-background flex items-center justify-center shadow-sm">
+                                            {getFileIcon(file.file_type)}
+                                          </div>
+                                          <div className="min-w-0">
+                                            <p className="text-sm font-medium truncate">{file.file_name}</p>
+                                            <p className="text-xs text-muted-foreground">
+                                              {formatFileSize(file.file_size)} • {formatDate(file.created_at)}
+                                            </p>
+                                          </div>
+                                        </div>
+
+                                        {/* Description textarea */}
+                                        <div>
+                                          <label className="text-sm font-medium text-foreground mb-1.5 block">
+                                            وصف الطلب{' '}
+                                            <span className="text-muted-foreground font-normal">(اختياري)</span>
+                                          </label>
+                                          <Textarea
+                                            value={requestDescription}
+                                            onChange={(e) => setRequestDescription(e.target.value)}
+                                            placeholder="أخبر المالك لماذا تحتاج هذا الملف..."
+                                            className="resize-none min-h-[80px] text-sm"
+                                            maxLength={500}
+                                          />
+                                          <p className="text-[11px] text-muted-foreground/60 mt-1 text-left" dir="ltr">
+                                            {requestDescription.length}/500
+                                          </p>
+                                        </div>
+
+                                        {/* Submit button */}
+                                        <Button
+                                          onClick={handleSendRequest}
+                                          disabled={sendingRequest}
+                                          className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                        >
+                                          {sendingRequest ? (
+                                            <>
+                                              <Loader2 className="h-4 w-4 animate-spin" />
+                                              جارٍ الإرسال...
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Send className="h-4 w-4" />
+                                              إرسال الطلب
+                                            </>
+                                          )}
+                                        </Button>
+                                      </div>
+                                    </DialogContent>
+                                  </Dialog>
+                                )}
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      </motion.div>
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+            </motion.section>
+          </TabsContent>
+
+          {/* ─── File Requests Tab (own profile only) ──── */}
+          {isOwnProfile && (
+            <TabsContent value="requests">
+              <motion.section
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35 }}
+              >
+                {loadingRequests ? (
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 className="h-8 w-8 text-emerald-500 animate-spin" />
+                  </div>
+                ) : fileRequests.length === 0 ? (
+                  <Card className="border-dashed border-2 bg-muted/20">
+                    <CardContent className="py-16 flex flex-col items-center gap-4">
+                      <div className="h-16 w-16 rounded-2xl bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center">
+                        <CheckCircle2 className="h-8 w-8 text-teal-500" />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-muted-foreground text-sm font-medium">لا توجد طلبات معلقة</p>
+                        <p className="text-muted-foreground/60 text-xs mt-1">
+                          ستظهر هنا طلبات المستخدمين الآخرين لملفاتك
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="space-y-3 max-h-[500px] overflow-y-auto scrollbar-thin">
+                    {fileRequests.map((req, index) => (
+                      <motion.div
+                        key={req.id}
+                        initial={{ opacity: 0, x: -12 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.3, delay: index * 0.05 }}
+                      >
+                        <Card className="border shadow-sm hover:shadow-md transition-all duration-200">
+                          <CardContent className="p-4">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                              {/* Requester info */}
+                              <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                                <UserLink
+                                  userId={req.requester_id}
+                                  name={req.requester_name || 'مستخدم'}
+                                  avatarUrl={req.requester_avatar}
+                                  size="sm"
+                                  showAvatar={true}
+                                  showRole={false}
+                                />
+                                <span className="text-muted-foreground text-xs shrink-0">طلب ملف</span>
+                              </div>
+
+                              {/* File name */}
+                              <div className="flex items-center gap-2 shrink-0 bg-muted/50 rounded-lg px-3 py-1.5">
+                                <FileText className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+                                <span className="text-xs font-medium truncate max-w-[180px]">
+                                  {req.file_name || 'ملف'}
+                                </span>
+                              </div>
+
+                              {/* Description */}
+                              {req.description && (
+                                <p className="text-xs text-muted-foreground italic truncate max-w-[200px]">
+                                  &ldquo;{req.description}&rdquo;
+                                </p>
+                              )}
+
+                              {/* Actions */}
+                              <div className="flex items-center gap-2 shrink-0 mr-auto sm:mr-0">
                                 <Button
                                   size="sm"
-                                  className="w-full gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8"
-                                  onClick={() => setRequestingFileId(file.id)}
+                                  variant="outline"
+                                  className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
+                                  disabled={processingRequestId === req.id}
+                                  onClick={() => handleRequestAction(req.id, 'approve')}
                                 >
-                                  <Send className="h-3.5 w-3.5" />
-                                  طلب ملف
+                                  {processingRequestId === req.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="h-3.5 w-3.5" />
+                                  )}
+                                  موافقة
                                 </Button>
-                              </DialogTrigger>
-                              <DialogContent dir="rtl" className="sm:max-w-md">
-                                <DialogHeader>
-                                  <DialogTitle className="flex items-center gap-2 text-right">
-                                    <MessageSquare className="h-5 w-5 text-emerald-600" />
-                                    طلب ملف
-                                  </DialogTitle>
-                                </DialogHeader>
-                                <div className="space-y-4 pt-2">
-                                  {/* File info */}
-                                  <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                                    <div className="shrink-0 h-9 w-9 rounded-md bg-background flex items-center justify-center shadow-sm">
-                                      {getFileIcon(file.file_type)}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <p className="text-sm font-medium truncate">{file.file_name}</p>
-                                      <p className="text-xs text-muted-foreground">
-                                        {formatFileSize(file.file_size)} • {formatDate(file.created_at)}
-                                      </p>
-                                    </div>
-                                  </div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 text-xs gap-1.5 border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30"
+                                  disabled={processingRequestId === req.id}
+                                  onClick={() => handleRequestAction(req.id, 'reject')}
+                                >
+                                  {processingRequestId === req.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <XCircle className="h-3.5 w-3.5" />
+                                  )}
+                                  رفض
+                                </Button>
+                              </div>
+                            </div>
 
-                                  {/* Description textarea */}
-                                  <div>
-                                    <label className="text-sm font-medium text-foreground mb-1.5 block">
-                                      وصف الطلب{' '}
-                                      <span className="text-muted-foreground font-normal">(اختياري)</span>
-                                    </label>
-                                    <Textarea
-                                      value={requestDescription}
-                                      onChange={(e) => setRequestDescription(e.target.value)}
-                                      placeholder="أخبر المالك لماذا تحتاج هذا الملف..."
-                                      className="resize-none min-h-[80px] text-sm"
-                                      maxLength={500}
-                                    />
-                                    <p className="text-[11px] text-muted-foreground/60 mt-1 text-left" dir="ltr">
-                                      {requestDescription.length}/500
-                                    </p>
-                                  </div>
-
-                                  {/* Submit button */}
-                                  <Button
-                                    onClick={handleSendRequest}
-                                    disabled={sendingRequest}
-                                    className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
-                                  >
-                                    {sendingRequest ? (
-                                      <>
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                        جارٍ الإرسال...
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Send className="h-4 w-4" />
-                                        إرسال الطلب
-                                      </>
-                                    )}
-                                  </Button>
-                                </div>
-                              </DialogContent>
-                            </Dialog>
-                          )}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </motion.section>
-
-      {/* ─── File Requests Section (own profile only) ──── */}
-      {isOwnProfile && (
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.2 }}
-        >
-          <div className="flex items-center gap-2 mb-4">
-            <Download className="h-5 w-5 text-teal-600" />
-            <h2 className="text-lg font-bold text-foreground">طلبات الملفات</h2>
-            {fileRequests.length > 0 && (
-              <Badge variant="outline" className="text-xs mr-auto">
-                {fileRequests.length} طلب
-              </Badge>
-            )}
-          </div>
-
-          {loadingRequests ? (
-            <div className="flex items-center justify-center py-10">
-              <Loader2 className="h-6 w-6 text-emerald-500 animate-spin" />
-            </div>
-          ) : fileRequests.length === 0 ? (
-            <Card className="border-dashed border-2 bg-muted/30">
-              <CardContent className="py-12 flex flex-col items-center gap-3">
-                <div className="h-14 w-14 rounded-full bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center">
-                  <CheckCircle2 className="h-7 w-7 text-teal-500" />
-                </div>
-                <p className="text-muted-foreground text-sm font-medium">لا توجد طلبات معلقة</p>
-                <p className="text-muted-foreground/70 text-xs">
-                  ستظهر هنا طلبات المستخدمين الآخرين لملفاتك
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin">
-              {fileRequests.map((req) => (
-                <motion.div
-                  key={req.id}
-                  initial={{ opacity: 0, x: -12 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <Card className="border shadow-sm hover:shadow-md transition-shadow">
-                    <CardContent className="p-4">
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                        {/* Requester info */}
-                        <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                          <UserLink
-                            userId={req.requester_id}
-                            name={req.requester_name || 'مستخدم'}
-                            avatarUrl={req.requester_avatar}
-                            size="sm"
-                            showAvatar={true}
-                            showRole={false}
-                          />
-                          <span className="text-muted-foreground text-xs shrink-0">طلب ملف</span>
-                        </div>
-
-                        {/* File name */}
-                        <div className="flex items-center gap-2 shrink-0 bg-muted/50 rounded-md px-2.5 py-1.5">
-                          <FileText className="h-3.5 w-3.5 text-rose-500 shrink-0" />
-                          <span className="text-xs font-medium truncate max-w-[180px]">
-                            {req.file_name || 'ملف'}
-                          </span>
-                        </div>
-
-                        {/* Description */}
-                        {req.description && (
-                          <p className="text-xs text-muted-foreground italic truncate max-w-[200px]">
-                            &ldquo;{req.description}&rdquo;
-                          </p>
-                        )}
-
-                        {/* Actions */}
-                        <div className="flex items-center gap-2 shrink-0 mr-auto sm:mr-0">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
-                            disabled={processingRequestId === req.id}
-                            onClick={() => handleRequestAction(req.id, 'approve')}
-                          >
-                            {processingRequestId === req.id ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                            )}
-                            موافقة
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs gap-1 border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30"
-                            disabled={processingRequestId === req.id}
-                            onClick={() => handleRequestAction(req.id, 'reject')}
-                          >
-                            {processingRequestId === req.id ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <XCircle className="h-3.5 w-3.5" />
-                            )}
-                            رفض
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Request date */}
-                      <p className="text-[11px] text-muted-foreground/50 mt-2 flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {formatDate(req.created_at)}
-                      </p>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
-            </div>
+                            {/* Request date */}
+                            <p className="text-[11px] text-muted-foreground/40 mt-2.5 flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {formatDate(req.created_at)}
+                            </p>
+                          </CardContent>
+                        </Card>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </motion.section>
+            </TabsContent>
           )}
-        </motion.section>
-      )}
+        </Tabs>
+      </motion.div>
 
       {/* Photo enlargement dialog */}
       <Dialog open={photoEnlarged} onOpenChange={setPhotoEnlarged}>
