@@ -1,6 +1,38 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer, getSupabaseServerClient } from '@/lib/supabase-server';
 
+/** Helper: send notification using service role (bypasses RLS) */
+async function notifyUser(userId: string, type: string, title: string, message: string, link?: string) {
+  try {
+    await supabaseServer.from('notifications').insert({
+      user_id: userId,
+      type,
+      title,
+      message,
+      link: link || null,
+    });
+  } catch (err) {
+    console.error('[enrollment] Failed to send notification:', err);
+  }
+}
+
+/** Helper: send notification to multiple users */
+async function notifyUsers(userIds: string[], type: string, title: string, message: string, link?: string) {
+  if (userIds.length === 0) return;
+  try {
+    const rows = userIds.map((userId) => ({
+      user_id: userId,
+      type,
+      title,
+      message,
+      link: link || null,
+    }));
+    await supabaseServer.from('notifications').insert(rows);
+  } catch (err) {
+    console.error('[enrollment] Failed to send bulk notifications:', err);
+  }
+}
+
 /**
  * POST /api/enrollment
  * Manage subject enrollment requests (approve, reject, approveAll, rejectAll, add, remove).
@@ -50,10 +82,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'يجب تسجيل الدخول أولاً' }, { status: 401 });
     }
 
-    // Get teacher profile
+    // Get teacher profile (with name for notification messages)
     const { data: profile, error: profileError } = await supabaseServer
       .from('users')
-      .select('id, role')
+      .select('id, role, name')
       .eq('id', authUser.id)
       .single();
 
@@ -65,10 +97,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'هذه الميزة متاحة للمعلمين فقط' }, { status: 403 });
     }
 
-    // Verify the teacher owns this subject
+    // Verify the teacher owns this subject and get subject name
     const { data: subject, error: subjectError } = await supabaseServer
       .from('subjects')
-      .select('id, teacher_id')
+      .select('id, teacher_id, name')
       .eq('id', subjectId)
       .single();
 
@@ -79,6 +111,9 @@ export async function POST(request: Request) {
     if (subject.teacher_id !== profile.id) {
       return NextResponse.json({ error: 'ليس لديك صلاحية على هذا المقرر' }, { status: 403 });
     }
+
+    const subjectName = subject.name;
+    const teacherName = profile.name || 'المعلم';
 
     // 2. Perform the requested action
     if (action === 'approve') {
@@ -97,6 +132,15 @@ export async function POST(request: Request) {
         console.error('[enrollment] Error approving:', error);
         return NextResponse.json({ error: 'حدث خطأ أثناء قبول الطلب' }, { status: 500 });
       }
+
+      // Notify the student their request was approved
+      await notifyUser(
+        studentId,
+        'enrollment',
+        'تم قبول طلب الانضمام',
+        `تم قبول طلب انضمامك إلى مقرر "${subjectName}" بواسطة ${teacherName}`,
+        `subject:${subjectId}`
+      );
 
       return NextResponse.json({ success: true, message: 'تم قبول الطالب بنجاح' });
 
@@ -117,10 +161,19 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'حدث خطأ أثناء رفض الطلب' }, { status: 500 });
       }
 
+      // Notify the student their request was rejected
+      await notifyUser(
+        studentId,
+        'enrollment',
+        'تم رفض طلب الانضمام',
+        `تم رفض طلب انضمامك إلى مقرر "${subjectName}" بواسطة ${teacherName}`,
+        `subject:${subjectId}`
+      );
+
       return NextResponse.json({ success: true, message: 'تم رفض الطلب' });
 
     } else if (action === 'approveAll') {
-      // Get count first
+      // Get pending students list first
       const { data: pendingList } = await supabaseServer
         .from('subject_students')
         .select('student_id')
@@ -144,6 +197,16 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'حدث خطأ أثناء قبول جميع الطلبات' }, { status: 500 });
       }
 
+      // Notify all approved students
+      const studentIds = pendingList!.map((s: { student_id: string }) => s.student_id);
+      await notifyUsers(
+        studentIds,
+        'enrollment',
+        'تم قبول طلب الانضمام',
+        `تم قبول طلب انضمامك إلى مقرر "${subjectName}" بواسطة ${teacherName}`,
+        `subject:${subjectId}`
+      );
+
       return NextResponse.json({
         success: true,
         message: `تم قبول ${count} طلب بنجاح`,
@@ -151,7 +214,7 @@ export async function POST(request: Request) {
       });
 
     } else if (action === 'rejectAll') {
-      // Get count first
+      // Get pending students list first
       const { data: pendingList } = await supabaseServer
         .from('subject_students')
         .select('student_id')
@@ -159,6 +222,10 @@ export async function POST(request: Request) {
         .eq('status', 'pending');
 
       const count = pendingList?.length || 0;
+
+      if (count === 0) {
+        return NextResponse.json({ success: true, message: 'لا توجد طلبات معلقة', count: 0 });
+      }
 
       const { error } = await supabaseServer
         .from('subject_students')
@@ -170,6 +237,16 @@ export async function POST(request: Request) {
         console.error('[enrollment] Error rejecting all:', error);
         return NextResponse.json({ error: 'حدث خطأ أثناء رفض جميع الطلبات' }, { status: 500 });
       }
+
+      // Notify all rejected students
+      const studentIds = pendingList!.map((s: { student_id: string }) => s.student_id);
+      await notifyUsers(
+        studentIds,
+        'enrollment',
+        'تم رفض طلب الانضمام',
+        `تم رفض طلب انضمامك إلى مقرر "${subjectName}" بواسطة ${teacherName}`,
+        `subject:${subjectId}`
+      );
 
       return NextResponse.json({
         success: true,
@@ -196,6 +273,15 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'حدث خطأ أثناء إضافة الطالب' }, { status: 500 });
       }
 
+      // Notify the student they were added to the course
+      await notifyUser(
+        studentId,
+        'enrollment',
+        'تم إضافتك إلى مقرر',
+        `تم إضافتك إلى مقرر "${subjectName}" بواسطة ${teacherName}`,
+        `subject:${subjectId}`
+      );
+
       return NextResponse.json({ success: true, message: 'تم إضافة الطالب بنجاح' });
 
     } else if (action === 'remove') {
@@ -213,6 +299,15 @@ export async function POST(request: Request) {
         console.error('[enrollment] Error removing student:', error);
         return NextResponse.json({ error: 'حدث خطأ أثناء إزالة الطالب' }, { status: 500 });
       }
+
+      // Notify the student they were removed from the course
+      await notifyUser(
+        studentId,
+        'enrollment',
+        'تم إزالتك من المقرر',
+        `تم إزالتك من مقرر "${subjectName}" بواسطة ${teacherName}`,
+        `subject:${subjectId}`
+      );
 
       return NextResponse.json({ success: true, message: 'تم إزالة الطالب من المقرر' });
     }

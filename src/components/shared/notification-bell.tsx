@@ -195,6 +195,17 @@ export default function NotificationBell() {
       return;
     }
 
+    // Handle enrollment/subject links - navigate to the course
+    if (notif.link?.startsWith('enrollment:') || notif.link?.startsWith('subject:')) {
+      const subjectId = notif.link.includes(':') ? notif.link.split(':')[1] : null;
+      if (subjectId) {
+        setIsOpen(false);
+        const { setSelectedSubjectId } = useAppStore.getState();
+        setSelectedSubjectId(subjectId);
+      }
+      return;
+    }
+
     // Handle profile: links - navigate to user profile
     if (notif.link?.startsWith('profile:')) {
       const targetUserId = notif.link.replace('profile:', '');

@@ -513,3 +513,36 @@ Stage Summary:
 - **z-index fix**: Student detail modal now renders at top level, works from dashboard section
 - **Status on profile**: Shows user's online/busy/away/offline status with colored indicators
 - **Notifications section**: Dedicated page accessible from sidebar with clickable notifications
+
+---
+Task ID: 9
+Agent: Main
+Task: Add enrollment notifications — notify students when added/approved/rejected/removed from courses, notify teacher when student requests to join
+
+Work Log:
+- Analyzed all enrollment flows: /api/join-subject (student joins by code), /api/enrollment (teacher manages enrollments)
+- Found that NO notifications were being sent for any enrollment action
+- Added notifyUser() helper using supabaseServer (bypasses RLS) to /api/join-subject
+- Added notifyUser() and notifyUsers() helpers to /api/enrollment
+- /api/join-subject: When student joins by code, teacher gets "طلب انضمام جديد" notification
+- /api/enrollment approve: Student gets "تم قبول طلب الانضمام" notification
+- /api/enrollment reject: Student gets "تم رفض طلب الانضمام" notification
+- /api/enrollment approveAll: All students get "تم قبول طلب الانضمام" bulk notification
+- /api/enrollment rejectAll: All students get "تم رفض طلب الانضمام" bulk notification
+- /api/enrollment add: Student gets "تم إضافتك إلى مقرر" notification (this was the user's specific request)
+- /api/enrollment remove: Student gets "تم إزالتك من المقرر" notification
+- Added enrollment:SUBJECT_ID and subject:SUBJECT_ID link handling in notification-bell.tsx
+- Added enrollment:SUBJECT_ID and subject:SUBJECT_ID link handling in notifications-section.tsx
+- Clicking enrollment notification navigates to the course page (uses setSelectedSubjectId)
+- Updated subject query to include name field for richer notification messages
+- Updated teacher profile query to include name field for notification messages
+- All notifications use type 'enrollment' with link format 'subject:SUBJECT_ID' or 'enrollment:SUBJECT_ID'
+- All lint checks pass, dev server running correctly
+
+Stage Summary:
+- All 7 enrollment actions now send notifications to the appropriate users
+- Teacher is notified when a student requests to join their course by code
+- Students are notified when: approved, rejected, added directly, or removed from a course
+- Bulk approve/reject sends bulk notifications to all affected students
+- Clicking an enrollment notification navigates directly to the course page
+- All notifications use service role (supabaseServer) to bypass RLS

@@ -1,6 +1,21 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer, getSupabaseServerClient } from '@/lib/supabase-server';
 
+/** Helper: send notification using service role (bypasses RLS) */
+async function notifyUser(userId: string, type: string, title: string, message: string, link?: string) {
+  try {
+    await supabaseServer.from('notifications').insert({
+      user_id: userId,
+      type,
+      title,
+      message,
+      link: link || null,
+    });
+  } catch (err) {
+    console.error('[join-subject] Failed to send notification:', err);
+  }
+}
+
 /**
  * POST /api/join-subject
  * Two modes:
@@ -174,6 +189,17 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'حدث خطأ أثناء طلب الانضمام' },
         { status: 500 }
+      );
+    }
+
+    // Notify the teacher about the new join request
+    if (subject.teacher_id) {
+      await notifyUser(
+        subject.teacher_id,
+        'enrollment',
+        'طلب انضمام جديد',
+        `طلب الطالب ${profile.name || 'طالب'} الانضمام إلى مقرر "${subject.name}"`,
+        `enrollment:${subject.id}`
       );
     }
 
