@@ -93,35 +93,6 @@ export async function POST(request: Request) {
         );
       }
 
-      // Also auto-enroll the student in all of the teacher's subjects
-      try {
-        const { data: teacherSubjects } = await supabaseServer
-          .from('subjects')
-          .select('id')
-          .eq('teacher_id', profile.id);
-
-        if (teacherSubjects && teacherSubjects.length > 0) {
-          const enrollments = teacherSubjects.map((subject: { id: string }) => ({
-            subject_id: subject.id,
-            student_id: studentId,
-            status: 'approved',
-          }));
-
-          // Use upsert to avoid conflicts if student is already enrolled
-          const { error: enrollError } = await supabaseServer
-            .from('subject_students')
-            .upsert(enrollments, { onConflict: 'subject_id,student_id' });
-
-          if (enrollError) {
-            console.error('[link-teacher-approve] Error enrolling in subjects:', enrollError);
-            // Don't fail the whole request — the link was approved successfully
-          }
-        }
-      } catch (enrollErr) {
-        console.error('[link-teacher-approve] Error auto-enrolling:', enrollErr);
-        // Don't fail — approval succeeded, enrollment is bonus
-      }
-
       // Send notification to the student about approval
       try {
         await supabaseServer.from('notifications').insert({
@@ -201,31 +172,6 @@ export async function POST(request: Request) {
           { error: 'حدث خطأ أثناء قبول جميع الطلبات' },
           { status: 500 }
         );
-      }
-
-      // Also auto-enroll all approved students in the teacher's subjects
-      try {
-        const { data: teacherSubjects } = await supabaseServer
-          .from('subjects')
-          .select('id')
-          .eq('teacher_id', profile.id);
-
-        if (teacherSubjects && teacherSubjects.length > 0) {
-          const approvedStudentIds = pendingLinks.map((l: { student_id: string }) => l.student_id);
-          const enrollments = teacherSubjects.flatMap((subject: { id: string }) =>
-            approvedStudentIds.map((sid: string) => ({
-              subject_id: subject.id,
-              student_id: sid,
-              status: 'approved',
-            }))
-          );
-
-          await supabaseServer
-            .from('subject_students')
-            .upsert(enrollments, { onConflict: 'subject_id,student_id' });
-        }
-      } catch (enrollErr) {
-        console.error('[link-teacher-approve] Error auto-enrolling all:', enrollErr);
       }
 
       // Send notifications to all approved students

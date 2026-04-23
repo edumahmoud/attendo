@@ -110,28 +110,6 @@ export async function POST(request: Request) {
         }
       }
 
-      // Auto-enroll in teacher's subjects
-      try {
-        const { data: teacherSubjects } = await supabaseServer
-          .from('subjects')
-          .select('id')
-          .eq('teacher_id', tid);
-
-        if (teacherSubjects && teacherSubjects.length > 0) {
-          const enrollments = teacherSubjects.map((subject: { id: string }) => ({
-            subject_id: subject.id,
-            student_id: profile.id,
-            status: 'approved',
-          }));
-
-          await supabaseServer
-            .from('subject_students')
-            .upsert(enrollments, { onConflict: 'subject_id,student_id' });
-        }
-      } catch (enrollErr) {
-        console.error('[link-student-approve] Error auto-enrolling:', enrollErr);
-      }
-
       // Send notification to teacher about acceptance
       try {
         await supabaseServer.from('notifications').insert({

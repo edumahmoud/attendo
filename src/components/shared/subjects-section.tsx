@@ -383,6 +383,15 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
   // -------------------------------------------------------
   // Join subject by code - Step 1: Search for subject
   // -------------------------------------------------------
+  const getAuthHeaders = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token || '';
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    };
+  };
+
   const handleSearchSubject = async () => {
     const code = joinCodeInput.trim().toUpperCase();
     if (!code) {
@@ -395,7 +404,7 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
     try {
       const response = await fetch('/api/join-subject', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ joinCode: code, action: 'search' }),
       });
 
@@ -426,7 +435,7 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
     try {
       const response = await fetch('/api/join-subject', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ joinCode: joinCodeInput.trim().toUpperCase() }),
       });
 
