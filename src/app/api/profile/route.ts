@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 
 // Allowed fields that can be updated
-const ALLOWED_FIELDS = ['name', 'gender', 'title_id', 'avatar_url'] as const;
+const ALLOWED_FIELDS = ['name', 'gender', 'title_id', 'avatar_url', 'username'] as const;
 type AllowedField = (typeof ALLOWED_FIELDS)[number];
 
 // Input sanitization
@@ -76,6 +76,18 @@ export async function POST(request: NextRequest) {
             sanitizedUpdates.avatar_url = null;
           }
           break;
+
+        case 'username':
+          if (typeof value === 'string') {
+            const clean = value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+            if (clean.length < 3 || clean.length > 30) {
+              return NextResponse.json({ error: 'اسم المستخدم يجب أن يكون بين 3 و 30 حرف' }, { status: 400 });
+            }
+            sanitizedUpdates.username = clean;
+          } else if (value === null) {
+            sanitizedUpdates.username = null;
+          }
+          break;
       }
     }
 
@@ -92,6 +104,30 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (updateError) {
+      // If username column doesn't exist, retry without it
+      if (updateError.message?.includes('username') || updateError.code === 'PGRST204') {
+        const { username, ...updatesWithoutUsername } = sanitizedUpdates;
+        if (Object.keys(updatesWithoutUsername).length === 0) {
+          // Only username was being updated but column doesn't exist
+          return NextResponse.json({ 
+            success: false, 
+            error: 'عمود اسم المستخدم غير موجود بعد. يرجى تشغيل ترحيل قاعدة البيانات أولاً.',
+            needsMigration: true,
+          }, { status: 400 });
+        }
+        const { data: retryProfile, error: retryError } = await supabaseServer
+          .from('users')
+          .update(updatesWithoutUsername)
+          .eq('id', userId)
+          .select()
+          .single();
+        
+        if (retryError) {
+          console.error('Profile update retry error:', retryError);
+          return NextResponse.json({ error: 'حدث خطأ أثناء تحديث الملف الشخصي' }, { status: 500 });
+        }
+        return NextResponse.json({ success: true, data: retryProfile });
+      }
       console.error('Profile update error:', updateError);
       return NextResponse.json({ error: 'حدث خطأ أثناء تحديث الملف الشخصي' }, { status: 500 });
     }

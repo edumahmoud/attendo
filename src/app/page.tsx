@@ -15,12 +15,13 @@ import TeacherDashboard from '@/components/teacher/teacher-dashboard';
 import AdminDashboard from '@/components/admin/admin-dashboard';
 import QuizView from '@/components/shared/quiz-view';
 import SummaryView from '@/components/shared/summary-view';
+import UserProfilePage from '@/components/shared/user-profile-page';
 
 type AuthMode = 'login' | 'register' | 'forgot-password';
 
 function HomeContent() {
   const { user, loading, initialized, initialize, signOut, sessionKickedMessage } = useAuthStore();
-  const { currentPage, viewingQuizId, viewingSummaryId, setCurrentPage, reset: resetAppStore } = useAppStore();
+  const { currentPage, viewingQuizId, viewingSummaryId, profileUserId, setCurrentPage, reset: resetAppStore } = useAppStore();
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const searchParams = useSearchParams();
 
@@ -219,6 +220,22 @@ function HomeContent() {
         <SummaryView
           summaryId={viewingSummaryId}
           onBack={() => setCurrentPage(user.role === 'superadmin' || user.role === 'admin' ? 'admin-dashboard' : user.role === 'teacher' ? 'teacher-dashboard' : 'student-dashboard')}
+        />
+      </div>
+    );
+  }
+
+  // Profile view
+  if (currentPage === 'profile' && profileUserId) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-teal-50" dir="rtl">
+        <UserProfilePage
+          userId={profileUserId}
+          currentUser={user}
+          onBack={() => setCurrentPage(
+            user.role === 'superadmin' || user.role === 'admin' ? 'admin-dashboard' :
+            user.role === 'teacher' ? 'teacher-dashboard' : 'student-dashboard'
+          )}
         />
       </div>
     );

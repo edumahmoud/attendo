@@ -160,6 +160,9 @@ export default function SettingsSection({
 
   // ─── Form state ───
   const [name, setName] = useState(profile.name);
+  const [username, setUsername] = useState(profile.username || '');
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
+  const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [gender, setGender] = useState(profile.gender || '');
   // Default title for teachers is 'teacher' (معلم/معلمة), others have no title
   const [titleId, setTitleId] = useState(profile.title_id || (profile.role === 'teacher' ? 'teacher' : ''));
@@ -232,12 +235,62 @@ export default function SettingsSection({
     toast.success(`تم تغيير الحالة إلى: ${statusLabel}`);
   }, [profile.id, emitStatusChange]);
 
+  // ─── Auth headers helper ───
+  const getAuthHeaders = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token || '';
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    };
+  };
+
+  // ─── Username availability check (debounced) ───
+  useEffect(() => {
+    const clean = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const originalUsername = (profile.username || '').toLowerCase();
+
+    // If username hasn't changed from profile, it's available
+    if (clean === originalUsername) {
+      setUsernameAvailable(true);
+      setIsCheckingUsername(false);
+      return;
+    }
+
+    if (clean.length < 3) {
+      setUsernameAvailable(false);
+      setIsCheckingUsername(false);
+      return;
+    }
+
+    setIsCheckingUsername(true);
+    const timeout = setTimeout(async () => {
+      try {
+        const headers = await getAuthHeaders();
+        const res = await fetch('/api/username-check', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ username: clean, currentUserId: profile.id }),
+        });
+        const data = await res.json();
+        setUsernameAvailable(data.available === true);
+      } catch {
+        setUsernameAvailable(null);
+      } finally {
+        setIsCheckingUsername(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeout);
+  }, [username, profile.username, profile.id]);
+
   // ─── Keep local state in sync ───
   useEffect(() => {
     setName(profile.name);
+    setUsername(profile.username || '');
     setGender(profile.gender || '');
     setTitleId(profile.title_id || (profile.role === 'teacher' ? 'teacher' : ''));
-  }, [profile.name, profile.gender, profile.title_id, profile.role]);
+  }, [profile.name, profile.username, profile.gender, profile.title_id, profile.role]);
 
   // ─── Check migration on mount ───
   useEffect(() => {
@@ -263,12 +316,14 @@ export default function SettingsSection({
   // ─── Track changes ───
   useEffect(() => {
     const nameChanged = name.trim() !== profile.name;
+    const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const usernameChanged = cleanUsername !== (profile.username || '').toLowerCase();
     const genderChanged = (gender || '') !== (profile.gender || '');
     // For teachers, 'teacher' title is the default (equivalent to null/empty in DB)
     const effectiveTitleId = titleId === 'teacher' ? '' : titleId;
     const titleChanged = (effectiveTitleId || '') !== (profile.title_id || '');
-    setHasChanges(nameChanged || genderChanged || titleChanged);
-  }, [name, gender, titleId, profile.name, profile.gender, profile.title_id]);
+    setHasChanges(nameChanged || usernameChanged || genderChanged || titleChanged);
+  }, [name, username, gender, titleId, profile.name, profile.username, profile.gender, profile.title_id]);
 
   // Gender-aware role labels (teachers show their academic title)
   const getRoleLabel = (role: string, g: string | null | undefined, tid: string | null | undefined) => {
@@ -328,9 +383,27 @@ export default function SettingsSection({
       return;
     }
 
+    // Validate username if changed
+    const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const usernameChanged = cleanUsername !== (profile.username || '').toLowerCase();
+    if (usernameChanged) {
+      if (cleanUsername.length < 3) {
+        toast.error('اسم المستخدم يجب أن يكون 3 أحرف على الأقل');
+        return;
+      }
+      if (!usernameAvailable) {
+        toast.error('اسم المستخدم غير متاح');
+        return;
+      }
+    }
+
     setIsSaving(true);
     try {
       const updates: Partial<UserProfile> = { name: trimmed };
+
+      if (usernameChanged) {
+        updates.username = cleanUsername;
+      }
 
       if ((gender || '') !== (profile.gender || '')) {
         updates.gender = gender || null;
@@ -560,18 +633,49 @@ export default function SettingsSection({
                   />
                 </div>
                 <div className="flex-1 space-y-2">
-                  <div>
-                    <Label htmlFor="settings-name" className="text-xs text-muted-foreground">
-                      الاسم
-                    </Label>
-                    <Input
-                      id="settings-name"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="أدخل اسمك"
-                      className="text-right h-9 text-sm"
-                      disabled={isSaving}
-                    />
+                  <div className="space-y-2">
+                    <div>
+                      <Label htmlFor="settings-name" className="text-xs text-muted-foreground">
+                        الاسم
+                      </Label>
+                      <Input
+                        id="settings-name"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="أدخل اسمك"
+                        className="text-right h-9 text-sm"
+                        disabled={isSaving}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="settings-username" className="text-xs text-muted-foreground">
+                        اسم المستخدم
+                      </Label>
+                      <div className="relative">
+                        <div className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">@</div>
+                        <Input
+                          id="settings-username"
+                          value={username}
+                          onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase())}
+                          placeholder="username"
+                          className="text-left pl-9 pr-8 h-9 text-sm"
+                          disabled={isSaving}
+                          dir="ltr"
+                        />
+                        <div className="absolute left-2.5 top-1/2 -translate-y-1/2">
+                          {isCheckingUsername && (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                          )}
+                          {!isCheckingUsername && usernameAvailable === true && username.trim().length >= 3 && (
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                          )}
+                          {!isCheckingUsername && usernameAvailable === false && (
+                            <X className="h-3.5 w-3.5 text-rose-500" />
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-1">سيظهر في رابط صفحتك الشخصية</p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button

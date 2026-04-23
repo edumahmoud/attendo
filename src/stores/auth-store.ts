@@ -22,6 +22,47 @@ function isValidName(name: string): boolean {
   return sanitized.length > 0 && sanitized.length <= 100;
 }
 
+/** Auto-generate username from name (supports Arabic transliteration) */
+function generateUsername(name: string, userId: string): string {
+  const base = name
+    .trim()
+    .toLowerCase()
+    .replace(/[أإآا]/g, 'a')
+    .replace(/[ب]/g, 'b')
+    .replace(/[ت]/g, 't')
+    .replace(/[ث]/g, 'th')
+    .replace(/[ج]/g, 'j')
+    .replace(/[ح]/g, 'h')
+    .replace(/[خ]/g, 'kh')
+    .replace(/[د]/g, 'd')
+    .replace(/[ذ]/g, 'dh')
+    .replace(/[ر]/g, 'r')
+    .replace(/[ز]/g, 'z')
+    .replace(/[س]/g, 's')
+    .replace(/[ش]/g, 'sh')
+    .replace(/[ص]/g, 's')
+    .replace(/[ض]/g, 'd')
+    .replace(/[ط]/g, 't')
+    .replace(/[ظ]/g, 'z')
+    .replace(/[ع]/g, 'a')
+    .replace(/[غ]/g, 'gh')
+    .replace(/[ف]/g, 'f')
+    .replace(/[ق]/g, 'q')
+    .replace(/[ك]/g, 'k')
+    .replace(/[ل]/g, 'l')
+    .replace(/[م]/g, 'm')
+    .replace(/[ن]/g, 'n')
+    .replace(/[ه]/g, 'h')
+    .replace(/[و]/g, 'w')
+    .replace(/[ي]/g, 'y')
+    .replace(/[^a-z0-9]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+  
+  const suffix = userId.substring(0, 6);
+  return `${base || 'user'}_${suffix}`;
+}
+
 // --- Rate Limiting ---
 
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
@@ -184,6 +225,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             id: session.user.id,
             email: session.user.email || '',
             name: userName,
+            username: generateUsername(userName, session.user.id),
             role: userRole,
             avatar_url: avatarUrl,
           });
@@ -296,6 +338,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             id: session.user.id,
             email: session.user.email || '',
             name: userName,
+            username: generateUsername(userName, session.user.id),
             role: userRole,
             avatar_url: avatarUrl,
           });
@@ -424,6 +467,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           id: authUser.id,
           email: authUser.email || sanitizedEmail,
           name: userName,
+          username: generateUsername(userName, authUser.id),
           role: userRole,
         });
       
@@ -455,6 +499,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           id: authUser.id,
           email: authUser.email || sanitizedEmail,
           name: userName,
+          username: generateUsername(userName, authUser.id),
           role: (userRole === 'teacher' || userRole === 'admin' || userRole === 'superadmin' ? userRole : 'student') as UserRole,
           avatar_url: authUser.user_metadata?.avatar_url || null,
           created_at: authUser.created_at || new Date().toISOString(),
@@ -503,6 +548,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         id: authUser.id,
         email: authUser.email || sanitizedEmail,
         name: userName,
+        username: generateUsername(userName, authUser.id),
         role: (userRole === 'teacher' || userRole === 'admin' || userRole === 'superadmin' ? userRole : 'student') as UserRole,
         avatar_url: authUser.user_metadata?.avatar_url || null,
         created_at: authUser.created_at || new Date().toISOString(),
@@ -589,6 +635,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           id: authUser.id,
           email: sanitizedEmail,
           name: sanitizedName,
+          username: generateUsername(sanitizedName, authUser.id),
           role: defaultRole,
         });
       
@@ -617,6 +664,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           id: authUser.id,
           email: sanitizedEmail,
           name: sanitizedName,
+          username: generateUsername(sanitizedName, authUser.id),
           role: defaultRole as UserRole,
           avatar_url: null,
           created_at: authUser.created_at || new Date().toISOString(),

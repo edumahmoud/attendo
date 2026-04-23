@@ -7,6 +7,11 @@ interface AppState {
   currentPage: AppPage;
   setCurrentPage: (page: AppPage) => void;
   
+  // Profile page navigation
+  profileUserId: string | null;
+  setProfileUserId: (id: string | null) => void;
+  openProfile: (userId: string) => void;
+  
   // Student navigation
   studentSection: StudentSection;
   setStudentSection: (section: StudentSection) => void;
@@ -42,6 +47,7 @@ interface AppState {
 
 const initialState = {
   currentPage: 'auth' as AppPage,
+  profileUserId: null as string | null,
   studentSection: 'dashboard' as StudentSection,
   teacherSection: 'dashboard' as TeacherSection,
   viewingQuizId: null as string | null,
@@ -58,6 +64,8 @@ export const useAppStore = create<AppState>()(
       ...initialState,
       
       setCurrentPage: (page) => set({ currentPage: page }),
+      setProfileUserId: (id) => set({ profileUserId: id }),
+      openProfile: (userId) => set({ profileUserId: userId, currentPage: 'profile' }),
       setStudentSection: (section) => set({ studentSection: section }),
       setTeacherSection: (section) => set({ teacherSection: section }),
       setViewingQuizId: (id) => set({ viewingQuizId: id, currentPage: id ? 'quiz' : 'student-dashboard' }),

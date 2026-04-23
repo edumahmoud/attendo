@@ -10,6 +10,7 @@ export interface UserProfile {
   id: string;
   email: string;
   name: string;
+  username?: string;
   role: UserRole;
   teacher_code?: string;
   avatar_url?: string | null;
@@ -270,6 +271,25 @@ export interface BannedUser {
 }
 
 // =====================================================
+// File Requests
+// =====================================================
+
+export interface FileRequest {
+  id: string;
+  file_id: string;
+  requester_id: string;
+  owner_id: string;
+  description?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+  updated_at: string;
+  // Joined data
+  file_name?: string;
+  requester_name?: string;
+  owner_name?: string;
+}
+
+// =====================================================
 // Announcements
 // =====================================================
 
@@ -291,7 +311,8 @@ export type AppPage =
   | 'teacher-dashboard'
   | 'admin-dashboard'
   | 'quiz'
-  | 'summary';
+  | 'summary'
+  | 'profile';
 
 export type StudentSection = 'dashboard' | 'subjects' | 'summaries' | 'files' | 'assignments' | 'teachers' | 'chat' | 'settings';
 export type TeacherSection = 'dashboard' | 'subjects' | 'students' | 'files' | 'assignments' | 'analytics' | 'chat' | 'settings';
