@@ -16,6 +16,23 @@ async function notifyUser(userId: string, type: string, title: string, message: 
   }
 }
 
+/** Helper: send notification to multiple users */
+async function notifyUsers(userIds: string[], type: string, title: string, message: string, link?: string) {
+  if (userIds.length === 0) return;
+  try {
+    const rows = userIds.map((userId) => ({
+      user_id: userId,
+      type,
+      title,
+      message,
+      link: link || null,
+    }));
+    await supabaseServer.from('notifications').insert(rows);
+  } catch (err) {
+    console.error('[join-subject] Failed to send bulk notifications:', err);
+  }
+}
+
 /**
  * POST /api/join-subject
  * Two modes:
@@ -201,6 +218,26 @@ export async function POST(request: Request) {
         `طلب الطالب ${profile.name || 'طالب'} الانضمام إلى مقرر "${subject.name}"`,
         `enrollment:${subject.id}`
       );
+    }
+
+    // Also notify co-teachers
+    try {
+      const { data: coTeachers } = await supabaseServer
+        .from('subject_teachers')
+        .select('teacher_id')
+        .eq('subject_id', subject.id)
+        .eq('role', 'co_teacher');
+      if (coTeachers && coTeachers.length > 0) {
+        await notifyUsers(
+          coTeachers.map((ct: { teacher_id: string }) => ct.teacher_id),
+          'enrollment',
+          'طلب انضمام جديد',
+          `طلب الطالب ${profile.name || 'طالب'} الانضمام إلى مقرر "${subject.name}"`,
+          `enrollment:${subject.id}`
+        );
+      }
+    } catch {
+      // subject_teachers table may not exist yet — ignore
     }
 
     return NextResponse.json({

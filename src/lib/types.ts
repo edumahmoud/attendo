@@ -96,6 +96,23 @@ export interface Subject {
   join_code?: string;
   created_at: string;
   updated_at: string;
+  // Joined data
+  co_teachers?: SubjectTeacher[];
+  is_co_teacher?: boolean;
+}
+
+export interface SubjectTeacher {
+  id: string;
+  subject_id: string;
+  teacher_id: string;
+  role: 'owner' | 'co_teacher';
+  added_by: string;
+  created_at: string;
+  // Joined data
+  teacher_name?: string;
+  teacher_avatar_url?: string | null;
+  teacher_title_id?: string | null;
+  teacher_gender?: string | null;
 }
 
 export interface SubjectStudent {

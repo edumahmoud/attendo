@@ -280,14 +280,39 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
   }, [profile.id]);
 
   const fetchTeacherSubjects = useCallback(async () => {
+    // Fetch owned subjects
     const { data, error } = await supabase
       .from('subjects')
       .select('*')
       .eq('teacher_id', profile.id)
       .order('name');
+    let ownedSubjects: Subject[] = [];
     if (!error && data) {
-      setTeacherSubjects(data as Subject[]);
+      ownedSubjects = (data as Subject[]).map(s => ({ ...s, is_co_teacher: false }));
     }
+
+    // Fetch co-taught subjects
+    let coTaughtSubjects: Subject[] = [];
+    try {
+      const { data: coTeacherEntries, error: coTeacherError } = await supabase
+        .from('subject_teachers')
+        .select('subject_id, role, subjects(*)')
+        .eq('teacher_id', profile.id)
+        .eq('role', 'co_teacher');
+
+      if (!coTeacherError && coTeacherEntries) {
+        (coTeacherEntries as Record<string, unknown>[]).forEach((entry) => {
+          const subject = entry.subjects as Subject | null;
+          if (subject && !ownedSubjects.find(s => s.id === subject.id)) {
+            coTaughtSubjects.push({ ...subject, is_co_teacher: true });
+          }
+        });
+      }
+    } catch {
+      // subject_teachers table may not exist yet — ignore
+    }
+
+    setTeacherSubjects([...ownedSubjects, ...coTaughtSubjects]);
   }, [profile.id]);
 
   const fetchTeacherFilesCount = useCallback(async () => {

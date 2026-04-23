@@ -32,6 +32,10 @@ import {
   Unlock,
   ToggleLeft,
   ToggleRight,
+  Activity,
+  Radio,
+  ArrowUpRight,
+  ArrowDownRight,
 } from 'lucide-react';
 import {
   BarChart as RechartsBarChart,
@@ -45,6 +49,8 @@ import {
   Pie,
   Cell,
   Legend,
+  LineChart,
+  Line,
 } from 'recharts';
 // Admin dashboard uses API routes with service role client — no direct Supabase data calls
 import { supabase } from '@/lib/supabase';
@@ -224,6 +230,32 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false);
   const [deletingAnnouncementId, setDeletingAnnouncementId] = useState<string | null>(null);
 
+  // ─── Usage stats state (reports section) ───
+  const [usageStats, setUsageStats] = useState<{
+    activeLectures: number;
+    period: string;
+    activeUsers: number;
+    newRegistrations: number;
+    attendanceSessions: number;
+    quizzesTaken: number;
+    changes: {
+      activeUsers: number;
+      newRegistrations: number;
+      attendanceSessions: number;
+      quizzesTaken: number;
+    };
+    prevData: {
+      activeUsers: number;
+      newRegistrations: number;
+      attendanceSessions: number;
+      quizzesTaken: number;
+    };
+    chartData: { date: string; users: number; sessions: number; quizzes: number }[];
+    registrationTrends: { month: string; count: number; label: string }[];
+  } | null>(null);
+  const [usagePeriod, setUsagePeriod] = useState<'day' | 'month' | 'year'>('month');
+  const [loadingUsageStats, setLoadingUsageStats] = useState(false);
+
   // -------------------------------------------------------
   // Data fetching — uses API routes with service role key
   // -------------------------------------------------------
@@ -293,7 +325,37 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
     // Fetch section-specific data
     if (section === 'banned') fetchBannedUsers();
     if (section === 'announcements') fetchAnnouncements();
+    if (section === 'reports') fetchUsageStats(usagePeriod);
   };
+
+  // -------------------------------------------------------
+  // Fetch usage statistics (reports section)
+  // -------------------------------------------------------
+  const fetchUsageStats = useCallback(async (period: 'day' | 'month' | 'year') => {
+    setLoadingUsageStats(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+      const res = await fetch(`/api/admin/usage-stats?period=${period}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const result = await res.json();
+      if (result.success && result.data) {
+        setUsageStats(result.data);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoadingUsageStats(false);
+    }
+  }, []);
+
+  // Refetch usage stats when period changes (only if reports section is active)
+  useEffect(() => {
+    if (activeSection === 'reports') {
+      fetchUsageStats(usagePeriod);
+    }
+  }, [usagePeriod, activeSection, fetchUsageStats]);
 
   // -------------------------------------------------------
   // Computed values
@@ -749,6 +811,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                               titleId={user.title_id}
                               size="xs"
                               showAvatar={true}
+                              showRole={false}
                               showUsername={false}
                             />
                           </td>
@@ -947,6 +1010,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                     titleId={user.title_id}
                     size="sm"
                     showAvatar={true}
+                    showRole={false}
                     showUsername={false}
                     className="flex-1 min-w-0"
                   />
@@ -1716,8 +1780,16 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
   };
 
   // -------------------------------------------------------
-  // Render: Reports Section
+  // Period label helper (reports section)
   // -------------------------------------------------------
+  const getPeriodLabel = (p: 'day' | 'month' | 'year') => {
+    switch (p) {
+      case 'day': return 'اليوم';
+      case 'month': return 'الشهر';
+      case 'year': return 'السنة';
+    }
+  };
+
   const renderReports = () => (
     <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
       {/* Header */}
@@ -1726,33 +1798,220 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
           <h2 className="text-2xl font-bold text-foreground">التقارير</h2>
           <p className="text-muted-foreground mt-1">تقارير وإحصائيات المنصة</p>
         </div>
-        <button
-          onClick={handleExportReport}
-          className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-purple-700 whitespace-nowrap"
-        >
-          <Download className="h-4 w-4" />
-          تصدير التقرير (Excel)
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleExportReport}
+            className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-purple-700 whitespace-nowrap"
+          >
+            <Download className="h-4 w-4" />
+            تصدير التقرير
+          </button>
+        </div>
       </motion.div>
 
-      {/* Charts */}
+      {/* ─── Stats Cards Row ─── */}
+      <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Active Lectures */}
+        <motion.div {...cardHover}>
+          <div className="rounded-xl border bg-card p-4 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-l from-emerald-400 to-emerald-600" />
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100">
+                <Radio className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  المحاضرات النشطة
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                  </span>
+                </p>
+                <p className="text-2xl font-bold text-foreground">
+                  {loadingUsageStats ? <Loader2 className="h-5 w-5 animate-spin text-emerald-600 inline" /> : (usageStats?.activeLectures ?? 0)}
+                </p>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Active Users */}
+        <motion.div {...cardHover}>
+          <div className="rounded-xl border bg-card p-4 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-l from-teal-400 to-teal-600" />
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-100">
+                <Activity className="h-5 w-5 text-teal-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-muted-foreground">المستخدمون النشطون ({getPeriodLabel(usagePeriod)})</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-2xl font-bold text-foreground">
+                    {loadingUsageStats ? <Loader2 className="h-5 w-5 animate-spin text-teal-600 inline" /> : (usageStats?.activeUsers ?? 0)}
+                  </p>
+                  {usageStats && usageStats.changes && (
+                    <span className={`inline-flex items-center gap-0.5 text-xs font-bold ${usageStats.changes.activeUsers >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {usageStats.changes.activeUsers >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                      {Math.abs(usageStats.changes.activeUsers)}%
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* New Registrations */}
+        <motion.div {...cardHover}>
+          <div className="rounded-xl border bg-card p-4 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-l from-amber-400 to-amber-600" />
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-100">
+                <Users className="h-5 w-5 text-amber-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-muted-foreground">التسجيلات الجديدة ({getPeriodLabel(usagePeriod)})</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-2xl font-bold text-foreground">
+                    {loadingUsageStats ? <Loader2 className="h-5 w-5 animate-spin text-amber-600 inline" /> : (usageStats?.newRegistrations ?? 0)}
+                  </p>
+                  {usageStats && usageStats.changes && (
+                    <span className={`inline-flex items-center gap-0.5 text-xs font-bold ${usageStats.changes.newRegistrations >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {usageStats.changes.newRegistrations >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                      {Math.abs(usageStats.changes.newRegistrations)}%
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Attendance Sessions */}
+        <motion.div {...cardHover}>
+          <div className="rounded-xl border bg-card p-4 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-l from-purple-400 to-purple-600" />
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-purple-100">
+                <ClipboardList className="h-5 w-5 text-purple-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-muted-foreground">جلسات الحضور ({getPeriodLabel(usagePeriod)})</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-2xl font-bold text-foreground">
+                    {loadingUsageStats ? <Loader2 className="h-5 w-5 animate-spin text-purple-600 inline" /> : (usageStats?.attendanceSessions ?? 0)}
+                  </p>
+                  {usageStats && usageStats.changes && (
+                    <span className={`inline-flex items-center gap-0.5 text-xs font-bold ${usageStats.changes.attendanceSessions >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {usageStats.changes.attendanceSessions >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                      {Math.abs(usageStats.changes.attendanceSessions)}%
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+
+      {/* ─── Period Filter ─── */}
+      <motion.div variants={itemVariants}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-medium text-muted-foreground ml-1">الفترة الزمنية:</span>
+          {(['day', 'month', 'year'] as const).map((p) => (
+            <button
+              key={p}
+              onClick={() => setUsagePeriod(p)}
+              className={`rounded-lg border px-4 py-2 text-sm font-medium transition-all whitespace-nowrap ${
+                usagePeriod === p
+                  ? 'border-purple-500 bg-purple-50 text-purple-700 shadow-sm'
+                  : 'border-border text-muted-foreground hover:bg-muted/50'
+              }`}
+            >
+              {getPeriodLabel(p)}
+            </button>
+          ))}
+        </div>
+      </motion.div>
+
+      {/* ─── Charts Section ─── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* User Registration Chart */}
+        {/* Daily Activity Bar Chart */}
         <motion.div variants={itemVariants}>
           <div className="rounded-xl border bg-card shadow-sm p-5">
             <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-purple-600" />
-              تسجيلات المستخدمين
+              النشاط اليومي
+              <span className="text-xs font-normal text-muted-foreground mr-1">آخر 30 يوم</span>
             </h3>
-            {userGrowthByMonth.length > 0 ? (
-              <div className="h-56 sm:h-72 min-h-[250px]">
+            {usageStats && usageStats.chartData && usageStats.chartData.some((d) => d.users > 0 || d.sessions > 0 || d.quizzes > 0) ? (
+              <div className="h-72 min-h-[280px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <RechartsBarChart data={userGrowthByMonth} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                  <RechartsBarChart data={usageStats.chartData} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 10, fill: '#6b7280' }}
+                      tickLine={false}
+                      tickFormatter={(val: string) => {
+                        const d = new Date(val);
+                        return `${d.getDate()}/${d.getMonth() + 1}`;
+                      }}
+                      interval={4}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: '#6b7280' }}
+                      tickLine={false}
+                      allowDecimals={false}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        borderRadius: '8px',
+                        border: '1px solid #e5e7eb',
+                        fontSize: '12px',
+                        direction: 'rtl',
+                      }}
+                      labelFormatter={(val: string) => {
+                        const d = new Date(val);
+                        return d.toLocaleDateString('ar-SA', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+                      }}
+                    />
+                    <Bar dataKey="users" name="تسجيلات جديدة" fill="#f59e0b" radius={[2, 2, 0, 0]} />
+                    <Bar dataKey="sessions" name="جلسات حضور" fill="#8b5cf6" radius={[2, 2, 0, 0]} />
+                    <Bar dataKey="quizzes" name="اختبارات" fill="#10b981" radius={[2, 2, 0, 0]} />
+                    <Legend wrapperStyle={{ fontSize: '12px', direction: 'rtl' }} />
+                  </RechartsBarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="h-72 flex items-center justify-center text-muted-foreground text-sm">
+                <div className="flex flex-col items-center gap-2">
+                  <BarChart3 className="h-10 w-10 opacity-30" />
+                  <span>لا توجد بيانات نشاط بعد</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </motion.div>
+
+        {/* Registration Trends Line Chart */}
+        <motion.div variants={itemVariants}>
+          <div className="rounded-xl border bg-card shadow-sm p-5">
+            <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-teal-600" />
+              اتجاه التسجيلات
+              <span className="text-xs font-normal text-muted-foreground mr-1">آخر 12 شهر</span>
+            </h3>
+            {usageStats && usageStats.registrationTrends && usageStats.registrationTrends.some((d) => d.count > 0) ? (
+              <div className="h-72 min-h-[280px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={usageStats.registrationTrends} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis
                       dataKey="label"
-                      tick={{ fontSize: 11, fill: '#6b7280' }}
+                      tick={{ fontSize: 10, fill: '#6b7280' }}
                       tickLine={false}
+                      interval={1}
                     />
                     <YAxis
                       tick={{ fontSize: 11, fill: '#6b7280' }}
@@ -1767,19 +2026,33 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                         direction: 'rtl',
                       }}
                     />
-                    <Bar dataKey="count" name="عدد المستخدمين" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                  </RechartsBarChart>
+                    <Line
+                      type="monotone"
+                      dataKey="count"
+                      name="عدد التسجيلات"
+                      stroke="#14b8a6"
+                      strokeWidth={2.5}
+                      dot={{ r: 4, fill: '#14b8a6', stroke: '#fff', strokeWidth: 2 }}
+                      activeDot={{ r: 6, fill: '#0d9488' }}
+                    />
+                  </LineChart>
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="h-56 flex items-center justify-center text-muted-foreground text-sm">
-                لا توجد بيانات كافية
+              <div className="h-72 flex items-center justify-center text-muted-foreground text-sm">
+                <div className="flex flex-col items-center gap-2">
+                  <TrendingUp className="h-10 w-10 opacity-30" />
+                  <span>لا توجد بيانات تسجيلات بعد</span>
+                </div>
               </div>
             )}
           </div>
         </motion.div>
+      </div>
 
-        {/* Score Distribution Chart */}
+      {/* ─── Score Distribution + Quiz Performance ─── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Score Distribution Pie Chart */}
         <motion.div variants={itemVariants}>
           <div className="rounded-xl border bg-card shadow-sm p-5">
             <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
@@ -1837,109 +2110,6 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
             )}
           </div>
         </motion.div>
-      </div>
-
-      {/* Platform Stats Summary */}
-      <motion.div variants={itemVariants}>
-        <div className="rounded-xl border bg-card shadow-sm p-5">
-          <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-emerald-600" />
-            ملخص إحصائيات المنصة
-          </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="text-center p-3 rounded-lg bg-purple-50 border border-purple-100">
-              <p className="text-2xl font-bold text-purple-700">{allUsers.length}</p>
-              <p className="text-xs text-purple-600 mt-1">مستخدم</p>
-            </div>
-            <div className="text-center p-3 rounded-lg bg-emerald-50 border border-emerald-100">
-              <p className="text-2xl font-bold text-emerald-700">{allSubjects.length}</p>
-              <p className="text-xs text-emerald-600 mt-1">مقرر</p>
-            </div>
-            <div className="text-center p-3 rounded-lg bg-teal-50 border border-teal-100">
-              <p className="text-2xl font-bold text-teal-700">{totalQuizzes}</p>
-              <p className="text-xs text-teal-600 mt-1">اختبار</p>
-            </div>
-            <div className="text-center p-3 rounded-lg bg-amber-50 border border-amber-100">
-              <p className="text-2xl font-bold text-amber-700">{avgPlatformScore}%</p>
-              <p className="text-xs text-amber-600 mt-1">متوسط الدرجات</p>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Platform overview stats */}
-      <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          icon={<Users className="h-5 w-5" />}
-          label="إجمالي المستخدمين"
-          value={allUsers.length}
-          color="emerald"
-        />
-        <StatCard
-          icon={<ClipboardList className="h-5 w-5" />}
-          label="الاختبارات"
-          value={totalQuizzes}
-          color="teal"
-        />
-        <StatCard
-          icon={<Award className="h-5 w-5" />}
-          label="التسليمات"
-          value={totalSubmissions}
-          color="amber"
-        />
-        <StatCard
-          icon={<TrendingUp className="h-5 w-5" />}
-          label="متوسط الدرجات"
-          value={`${avgPlatformScore}%`}
-          color="rose"
-        />
-      </motion.div>
-
-      {/* Two columns: User growth + Quiz performance */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* User growth */}
-        <motion.div variants={itemVariants}>
-          <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between border-b p-4">
-              <h3 className="font-semibold text-foreground flex items-center gap-2">
-                <Users className="h-4 w-4 text-purple-600" />
-                نمو المستخدمين
-              </h3>
-              <span className="text-xs text-muted-foreground">آخر 6 أشهر</span>
-            </div>
-            <div className="p-5">
-              {userGrowthByMonth.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                  <BarChart3 className="h-10 w-10 mb-2 opacity-40" />
-                  <p className="text-sm">لا توجد بيانات كافية بعد</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {userGrowthByMonth.map((item) => {
-                    const maxCount = Math.max(...userGrowthByMonth.map((m) => m.count));
-                    const widthPct = maxCount > 0 ? Math.round((item.count / maxCount) * 100) : 0;
-                    return (
-                      <div key={item.month} className="space-y-1">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-muted-foreground">{item.label}</span>
-                          <span className="font-bold text-foreground">{item.count} مستخدم</span>
-                        </div>
-                        <div className="h-2.5 rounded-full bg-muted overflow-hidden">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${widthPct}%` }}
-                            transition={{ duration: 0.6, ease: 'easeOut' }}
-                            className="h-full rounded-full bg-purple-500"
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        </motion.div>
 
         {/* Quiz performance overview */}
         <motion.div variants={itemVariants}>
@@ -1959,7 +2129,6 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {/* Score distribution */}
                   <div>
                     <p className="text-sm font-medium text-foreground mb-3">توزيع الدرجات</p>
                     {(() => {
@@ -1998,8 +2167,6 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                       );
                     })()}
                   </div>
-
-                  {/* Recent scores */}
                   <div className="pt-3 border-t">
                     <p className="text-sm font-medium text-foreground mb-3">أحدث النتائج</p>
                     <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
@@ -2028,7 +2195,204 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
         </motion.div>
       </div>
 
-      {/* Additional report cards */}
+      {/* ─── Detailed Statistics Table ─── */}
+      <motion.div variants={itemVariants}>
+        <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between border-b p-4">
+            <h3 className="font-semibold text-foreground flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-emerald-600" />
+              إحصائيات تفصيلية
+            </h3>
+            <span className="text-xs text-muted-foreground">مقارنة مع الفترة السابقة</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-muted/50 sticky top-0">
+                <tr className="text-xs text-muted-foreground">
+                  <th className="text-right font-medium p-3">المؤشر</th>
+                  <th className="text-center font-medium p-3">العدد الحالي</th>
+                  <th className="text-center font-medium p-3">الفترة السابقة</th>
+                  <th className="text-center font-medium p-3">التغيير</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {usageStats ? (
+                  <>
+                    <tr className="hover:bg-muted/30 transition-colors">
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-teal-100">
+                            <Activity className="h-3.5 w-3.5 text-teal-600" />
+                          </div>
+                          <span className="text-sm font-medium text-foreground">المستخدمون النشطون</span>
+                        </div>
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className="text-sm font-bold text-foreground">{usageStats.activeUsers}</span>
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className="text-sm text-muted-foreground">{usageStats.prevData?.activeUsers ?? '—'}</span>
+                      </td>
+                      <td className="p-3 text-center">
+                        {usageStats.changes && (
+                          <span className={`inline-flex items-center gap-0.5 rounded-full px-2.5 py-0.5 text-xs font-bold ${usageStats.changes.activeUsers >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                            {usageStats.changes.activeUsers >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                            {Math.abs(usageStats.changes.activeUsers)}%
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-muted/30 transition-colors">
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-100">
+                            <Users className="h-3.5 w-3.5 text-amber-600" />
+                          </div>
+                          <span className="text-sm font-medium text-foreground">التسجيلات الجديدة</span>
+                        </div>
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className="text-sm font-bold text-foreground">{usageStats.newRegistrations}</span>
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className="text-sm text-muted-foreground">{usageStats.prevData?.newRegistrations ?? '—'}</span>
+                      </td>
+                      <td className="p-3 text-center">
+                        {usageStats.changes && (
+                          <span className={`inline-flex items-center gap-0.5 rounded-full px-2.5 py-0.5 text-xs font-bold ${usageStats.changes.newRegistrations >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                            {usageStats.changes.newRegistrations >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                            {Math.abs(usageStats.changes.newRegistrations)}%
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-muted/30 transition-colors">
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-purple-100">
+                            <ClipboardList className="h-3.5 w-3.5 text-purple-600" />
+                          </div>
+                          <span className="text-sm font-medium text-foreground">جلسات الحضور</span>
+                        </div>
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className="text-sm font-bold text-foreground">{usageStats.attendanceSessions}</span>
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className="text-sm text-muted-foreground">{usageStats.prevData?.attendanceSessions ?? '—'}</span>
+                      </td>
+                      <td className="p-3 text-center">
+                        {usageStats.changes && (
+                          <span className={`inline-flex items-center gap-0.5 rounded-full px-2.5 py-0.5 text-xs font-bold ${usageStats.changes.attendanceSessions >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                            {usageStats.changes.attendanceSessions >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                            {Math.abs(usageStats.changes.attendanceSessions)}%
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-muted/30 transition-colors">
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-100">
+                            <Award className="h-3.5 w-3.5 text-emerald-600" />
+                          </div>
+                          <span className="text-sm font-medium text-foreground">الاختبارات المؤدّاة</span>
+                        </div>
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className="text-sm font-bold text-foreground">{usageStats.quizzesTaken}</span>
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className="text-sm text-muted-foreground">{usageStats.prevData?.quizzesTaken ?? '—'}</span>
+                      </td>
+                      <td className="p-3 text-center">
+                        {usageStats.changes && (
+                          <span className={`inline-flex items-center gap-0.5 rounded-full px-2.5 py-0.5 text-xs font-bold ${usageStats.changes.quizzesTaken >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                            {usageStats.changes.quizzesTaken >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                            {Math.abs(usageStats.changes.quizzesTaken)}%
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-muted/30 transition-colors">
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-rose-100">
+                            <Radio className="h-3.5 w-3.5 text-rose-600" />
+                          </div>
+                          <span className="text-sm font-medium text-foreground">المحاضرات النشطة حالياً</span>
+                        </div>
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className="text-sm font-bold text-foreground flex items-center justify-center gap-1.5">
+                          {usageStats.activeLectures}
+                          {usageStats.activeLectures > 0 && (
+                            <span className="relative flex h-2.5 w-2.5">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                            </span>
+                          )}
+                        </span>
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className="text-xs text-muted-foreground">—</span>
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold bg-emerald-100 text-emerald-700">
+                          مباشر
+                        </span>
+                      </td>
+                    </tr>
+                  </>
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="p-6 text-center text-muted-foreground text-sm">
+                      {loadingUsageStats ? (
+                        <div className="flex items-center justify-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          جاري تحميل الإحصائيات...
+                        </div>
+                      ) : (
+                        'لا توجد بيانات'
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* ─── Platform Overview Summary ─── */}
+      <motion.div variants={itemVariants}>
+        <div className="rounded-xl border bg-card shadow-sm p-5">
+          <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-purple-600" />
+            ملخص إحصائيات المنصة
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="text-center p-3 rounded-lg bg-purple-50 border border-purple-100">
+              <p className="text-2xl font-bold text-purple-700">{allUsers.length}</p>
+              <p className="text-xs text-purple-600 mt-1">مستخدم</p>
+            </div>
+            <div className="text-center p-3 rounded-lg bg-emerald-50 border border-emerald-100">
+              <p className="text-2xl font-bold text-emerald-700">{allSubjects.length}</p>
+              <p className="text-xs text-emerald-600 mt-1">مقرر</p>
+            </div>
+            <div className="text-center p-3 rounded-lg bg-teal-50 border border-teal-100">
+              <p className="text-2xl font-bold text-teal-700">{totalQuizzes}</p>
+              <p className="text-xs text-teal-600 mt-1">اختبار</p>
+            </div>
+            <div className="text-center p-3 rounded-lg bg-amber-50 border border-amber-100">
+              <p className="text-2xl font-bold text-amber-700">{avgPlatformScore}%</p>
+              <p className="text-xs text-amber-600 mt-1">متوسط الدرجات</p>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* ─── User Distribution Cards ─── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <motion.div variants={itemVariants}>
           <div className="rounded-xl border bg-card p-5 shadow-sm">

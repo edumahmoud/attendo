@@ -543,6 +543,120 @@ Stage Summary:
 - All 7 enrollment actions now send notifications to the appropriate users
 - Teacher is notified when a student requests to join their course by code
 - Students are notified when: approved, rejected, added directly, or removed from a course
+
+---
+Task ID: 2
+Agent: full-stack-developer
+Task: Add ability for multiple teachers to share the same course
+
+Work Log:
+- Read worklog.md, FULL_SETUP.sql, types.ts, course-page.tsx, teacher-dashboard.tsx, subjects-section.tsx, enrollment route, join-subject route, supabase-server.ts
+- Created SQL migration at /supabase/migrations/v10_subject_teachers.sql with:
+  - subject_teachers junction table (id, subject_id, teacher_id, role, added_by, created_at)
+  - UNIQUE constraint on (subject_id, teacher_id)
+  - Indexes on subject_id, teacher_id, role
+  - RLS enabled with policies for teachers, students
+  - Updated get_teacher_subject_ids() function to UNION with subject_teachers
+  - Trigger trg_add_subject_owner to auto-add creator as 'owner' on subject creation
+  - Backfill INSERT for existing subjects
+  - Grants and realtime publication
+- Created migration API route at /src/app/api/migrate/subject-teachers/route.ts (POST)
+- Updated TypeScript types: added SubjectTeacher interface, updated Subject with co_teachers and is_co_teacher fields
+- Created co-teacher management API route at /src/app/api/subject-teachers/route.ts:
+  - GET: List co-teachers for a subject (with joined user profile data)
+  - POST: Add co-teacher by teacher_code (owner only, with notification)
+  - DELETE: Remove co-teacher (owner only, with notification)
+- Updated overview-tab.tsx with full co-teacher management UI:
+  - Co-teachers list with avatars, names, role badges
+  - "Add co-teacher" button + modal with teacher code input
+  - Remove co-teacher button (owner only)
+  - Co-teacher indicator badge for current user
+- Updated subjects-section.tsx:
+  - Fetches both owned and co-taught subjects for teachers
+  - Shows "معلم مشارك" badge on co-taught subject cards
+  - Hides join code on co-taught subjects
+- Updated teacher-dashboard.tsx:
+  - fetchTeacherSubjects now also fetches co-taught subjects from subject_teachers
+- Updated enrollment route to allow co-teachers to manage enrollments (checks subject_teachers table)
+- Updated join-subject route to also notify co-teachers when a student requests to join
+- All lint checks pass, dev server running correctly
+
+Stage Summary:
+- subject_teachers junction table enables multiple teachers per course
+- Owner can add/remove co-teachers via teacher code from course overview tab
+- Co-teachers can manage enrollments (approve, reject, add, remove students)
+- Co-teachers receive notifications for new join requests
+- Co-taught subjects appear in teacher's subject list with "معلم مشارك" badge
+- SQL migration needs to be run in Supabase SQL Editor (visit /api/migrate/subject-teachers for status)
+- get_teacher_subject_ids() updated to include co-taught subjects for RLS
 - Bulk approve/reject sends bulk notifications to all affected students
 - Clicking an enrollment notification navigates directly to the course page
 - All notifications use service role (supabaseServer) to bypass RLS
+
+---
+Task ID: 3
+Agent: full-stack-developer
+Task: Admin dashboard with active lectures and usage statistics
+
+Work Log:
+- Read worklog.md, admin-dashboard.tsx, existing API routes (stats, data), supabase-server.ts, types.ts
+- Created /src/app/api/admin/usage-stats/route.ts - API route for usage statistics with:
+  - `activeLectures`: Count of attendance_sessions with status='active'
+  - Period-based filtering: day/month/year via query parameter
+  - `activeUsers`: Count of unique users with active sessions in user_sessions table within the period
+  - `newRegistrations`: Count of users created within the period
+  - `attendanceSessions`: Count of attendance_sessions started within the period
+  - `quizzesTaken`: Count of scores completed within the period
+  - `changes`: Percentage change from previous period for each metric
+  - `prevData`: Previous period data for comparison
+  - `chartData`: 30-day daily breakdown with users/sessions/quizzes counts
+  - `registrationTrends`: 12-month monthly registration trends
+- Updated admin-dashboard.tsx with enhanced reports section:
+  - Added imports: Activity, Radio, ArrowUpRight, ArrowDownRight from lucide-react; LineChart, Line from recharts
+  - Added state: usageStats, usagePeriod, loadingUsageStats
+  - Added fetchUsageStats() function with Bearer token auth
+  - Added useEffect to refetch when period changes while on reports section
+  - Updated handleSectionChange to fetch usage stats when switching to reports
+  - Added getPeriodLabel() helper for Arabic period labels
+  - Rewrote renderReports() with:
+    - Stats cards row: Active Lectures (with live indicator dot), Active Users, New Registrations, Attendance Sessions (all with percentage change badges)
+    - Period filter: day/month/year toggle buttons with purple highlight
+    - Daily Activity bar chart: 30-day breakdown showing new registrations, attendance sessions, and quizzes per day
+    - Registration Trends line chart: 12-month registration trend with teal color
+    - Score Distribution pie chart (preserved from original)
+    - Quiz performance overview with distribution and recent scores (preserved from original)
+    - Detailed Statistics table: metric name, current count, previous period count, percentage change badge for each metric
+    - Platform overview summary and user distribution cards (preserved from original)
+- All lint checks pass (0 errors), dev server compiles successfully
+
+Stage Summary:
+- Created usage-stats API route with comprehensive time-period filtering and comparison
+- Active lectures count displayed with animated green live indicator dot
+- Usage statistics (active users, new registrations, attendance sessions, quizzes taken) with period filtering
+- Percentage change from previous period shown with colored up/down arrows
+- Bar chart showing daily activity (users + sessions + quizzes) for past 30 days
+- Line chart showing registration trends over past 12 months
+- Detailed statistics table with current vs. previous period comparison
+- All data fetched from Supabase using service role (bypasses RLS)
+- Arabic RTL layout maintained throughout
+
+---
+Task ID: 1
+Agent: Main Orchestrator
+Task: Show user role badge/title next to name everywhere, multiple teachers per course, admin usage stats
+
+Work Log:
+- Updated UserLink component: changed showRole default from false to true
+- Added getRoleBadgeColor() helper for inline role badges with color-coded styling per role
+- Changed role badge from plain text to visually distinct inline badge (rounded-md, colored bg/text)
+- Updated admin dashboard UserLinks to use showRole={false} where separate role column already exists
+- Delegated Task 2 (multiple teachers per course) to full-stack-developer agent
+- Delegated Task 3 (admin usage stats) to full-stack-developer agent
+- Verified lint passes clean on all changes
+- Verified dev server running without errors
+- Called migration API endpoint to run subject_teachers migration
+
+Stage Summary:
+- User role badge now shows next to names everywhere by default (colored inline badge)
+- Multiple teachers per course: subject_teachers junction table, API routes, course overview UI, teacher dashboard
+- Admin reports: active lectures count, usage stats by day/month/year, charts with Recharts, detailed stats table

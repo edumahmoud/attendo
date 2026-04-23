@@ -17,6 +17,8 @@ import {
   Clock,
   XCircle,
   LogOut,
+  UserCog,
+  Shield,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -199,15 +201,17 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
     setLoadingSubjects(true);
     try {
       if (role === 'teacher') {
-        const { data, error } = await supabase
+        // Fetch owned subjects
+        const { data: ownedData, error: ownedError } = await supabase
           .from('subjects')
           .select('*')
           .eq('teacher_id', profile.id)
           .order('created_at', { ascending: false });
 
-        if (error) {
-          console.error('Error fetching subjects:', error.message, error.code, error.details);
-          if (isAuthError(error)) {
+        let ownedSubjects: Subject[] = [];
+        if (ownedError) {
+          console.error('Error fetching owned subjects:', ownedError.message, ownedError.code, ownedError.details);
+          if (isAuthError(ownedError)) {
             const refreshed = await tryRefreshSession();
             if (refreshed) {
               const retry = await supabase
@@ -215,12 +219,40 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
                 .select('*')
                 .eq('teacher_id', profile.id)
                 .order('created_at', { ascending: false });
-              if (!retry.error) setSubjects((retry.data as Subject[]) || []);
+              if (!retry.error) ownedSubjects = (retry.data as Subject[]) || [];
             }
           }
         } else {
-          setSubjects((data as Subject[]) || []);
+          ownedSubjects = (ownedData as Subject[]) || [];
         }
+
+        // Mark owned subjects
+        ownedSubjects = ownedSubjects.map(s => ({ ...s, is_co_teacher: false }));
+
+        // Fetch co-taught subjects from subject_teachers
+        let coTaughtSubjects: Subject[] = [];
+        try {
+          const { data: coTeacherEntries, error: coTeacherError } = await supabase
+            .from('subject_teachers')
+            .select('subject_id, role, subjects(*)')
+            .eq('teacher_id', profile.id)
+            .eq('role', 'co_teacher');
+
+          if (!coTeacherError && coTeacherEntries) {
+            (coTeacherEntries as Record<string, unknown>[]).forEach((entry) => {
+              const subject = entry.subjects as Subject | null;
+              if (subject && !ownedSubjects.find(s => s.id === subject.id)) {
+                coTaughtSubjects.push({ ...subject, is_co_teacher: true });
+              }
+            });
+          }
+        } catch {
+          // subject_teachers table may not exist yet — ignore
+        }
+
+        // Combine and sort: owned first, then co-taught
+        const allSubjects = [...ownedSubjects, ...coTaughtSubjects];
+        setSubjects(allSubjects);
       } else {
         // Student: single join query — also fetch enrollment status
         const { data, error } = await supabase
@@ -699,8 +731,8 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
                             </div>
                           </div>
 
-                          {/* Join code pill — only for teachers */}
-                          {role === 'teacher' && subject.join_code && (
+                          {/* Join code pill — only for owned subjects */}
+                          {role === 'teacher' && subject.join_code && !subject.is_co_teacher && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -731,6 +763,14 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
                                 />
                               )}
                             </button>
+                          )}
+
+                          {/* Co-teacher badge */}
+                          {role === 'teacher' && subject.is_co_teacher && (
+                            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-teal-50 border border-teal-200 px-2.5 py-1 text-xs text-teal-700">
+                              <Shield className="h-3 w-3 shrink-0" />
+                              <span className="font-medium">معلم مشارك</span>
+                            </div>
                           )}
 
                           {/* Footer: creation date + teacher name + leave button */}

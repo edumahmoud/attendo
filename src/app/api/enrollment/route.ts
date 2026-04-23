@@ -109,7 +109,17 @@ export async function POST(request: Request) {
     }
 
     if (subject.teacher_id !== profile.id) {
-      return NextResponse.json({ error: 'ليس لديك صلاحية على هذا المقرر' }, { status: 403 });
+      // Also check if the teacher is a co-teacher in subject_teachers
+      const { data: coTeacherEntry } = await supabaseServer
+        .from('subject_teachers')
+        .select('id')
+        .eq('subject_id', subjectId)
+        .eq('teacher_id', profile.id)
+        .maybeSingle();
+
+      if (!coTeacherEntry) {
+        return NextResponse.json({ error: 'ليس لديك صلاحية على هذا المقرر' }, { status: 403 });
+      }
     }
 
     const subjectName = subject.name;
