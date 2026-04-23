@@ -439,6 +439,24 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
       }
 
       toast.success('تم إنشاء المحاضرة بنجاح');
+
+      // Notify all enrolled students about the new lecture
+      try {
+        await fetch('/api/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'lecture_created',
+            subjectId,
+            lectureTitle: title,
+            teacherName: profile.name,
+            lectureDate: newDate || null,
+          }),
+        });
+      } catch {
+        // Non-critical: don't block lecture creation if notification fails
+      }
+
       setCreateOpen(false);
       setNewTitle('');
       setNewDesc('');

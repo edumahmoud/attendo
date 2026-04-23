@@ -108,8 +108,28 @@ export default function NotificationsSection() {
     if (notif.link?.startsWith('enrollment:') || notif.link?.startsWith('subject:')) {
       const subjectId = notif.link.includes(':') ? notif.link.split(':')[1] : null;
       if (subjectId) {
-        const { setSelectedSubjectId } = useAppStore.getState();
+        const { setSelectedSubjectId, setStudentSection, setTeacherSection, setCurrentPage } = useAppStore.getState();
         setSelectedSubjectId(subjectId);
+        // Also navigate to the correct dashboard section
+        if (user?.role === 'student') {
+          setStudentSection('subjects');
+          setCurrentPage('student-dashboard');
+        } else if (user?.role === 'teacher' || user?.role === 'admin' || user?.role === 'superadmin') {
+          setTeacherSection('subjects');
+          setCurrentPage('teacher-dashboard');
+        }
+      }
+      return;
+    }
+
+    // Handle assignment links - navigate to assignments section
+    if (notif.link?.startsWith('assignment:')) {
+      if (user?.role === 'student') {
+        setStudentSection('assignments');
+        setCurrentPage('student-dashboard');
+      } else if (user?.role === 'teacher' || user?.role === 'admin' || user?.role === 'superadmin') {
+        setTeacherSection('assignments');
+        setCurrentPage('teacher-dashboard');
       }
       return;
     }

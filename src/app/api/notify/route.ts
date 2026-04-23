@@ -143,6 +143,26 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, notified: studentIds.length });
       }
 
+      // ─── 6) Teacher creates a new lecture → notify all students ───
+      case 'lecture_created': {
+        const { subjectId, lectureTitle, teacherName, lectureDate } = body;
+        if (!subjectId) {
+          return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+        }
+
+        const studentIds = await getStudentIds(subjectId);
+        const titleText = lectureTitle ? ` "${lectureTitle}"` : '';
+        const dateText = lectureDate ? ` (${lectureDate})` : '';
+        await notifyUsers(
+          studentIds,
+          'system',
+          'محاضرة جديدة',
+          `أنشأ المعلم ${teacherName || 'المعلم'} محاضرة${titleText}${dateText}`,
+          `subject:${subjectId}`
+        );
+        return NextResponse.json({ success: true, notified: studentIds.length });
+      }
+
       default:
         return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
     }

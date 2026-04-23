@@ -110,8 +110,8 @@ export async function POST(request: Request) {
     if (newRole === 'teacher') {
       const existing = data as Record<string, unknown>;
       if (!existing.teacher_code) {
-        // Generate a teacher code
-        const teacherCode = `TC-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+        // Generate a teacher code (6 alphanumeric characters)
+        const teacherCode = Math.random().toString(36).substring(2, 8).toUpperCase();
         await supabaseServer
           .from('users')
           .update({ teacher_code: teacherCode })

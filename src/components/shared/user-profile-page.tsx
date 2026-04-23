@@ -458,7 +458,7 @@ export default function UserProfilePage({ userId, currentUser, onBack }: UserPro
         </div>
 
         {/* Avatar - overlapping the banner */}
-        <div className="absolute -bottom-16 right-6 sm:right-10">
+        <div className="absolute -bottom-20 right-6 sm:right-10">
           <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -470,7 +470,7 @@ export default function UserProfilePage({ userId, currentUser, onBack }: UserPro
               <UserAvatar
                 name={profile.name}
                 avatarUrl={profile.avatar_url}
-                size="xl"
+                size="2xl"
                 className="ring-4 ring-emerald-400/30"
               />
             </div>
@@ -493,7 +493,7 @@ export default function UserProfilePage({ userId, currentUser, onBack }: UserPro
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, delay: 0.3 }}
-        className="mt-20 sm:mt-20 px-6 sm:px-10"
+        className="mt-24 sm:mt-24 px-6 sm:px-10"
       >
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
           {/* Name & identity */}

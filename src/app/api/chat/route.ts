@@ -1,37 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-
-function getAdminHeaders() {
-  return {
-    'apikey': SERVICE_ROLE_KEY,
-    'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
-    'Content-Type': 'application/json',
-    'Prefer': 'return=representation',
-  };
-}
+import { supabaseServer } from '@/lib/supabase-server';
 
 /**
  * Chat API Route
  * 
  * GET: Fetch conversations or messages
  * POST: Send message, create conversation, mark as read, delete/edit message
- * 
- * Query params for GET:
- *   - action=conversations → list user's conversations (requires userId)
- *   - action=messages → list messages in a conversation (requires conversationId)
- *   - action=group-conversation → get group conversation for a subject (requires subjectId)
- *   - action=participants → get participants in a conversation (requires conversationId)
- *   - action=search-users → search users in same subject (requires subjectId, query)
- * 
- * Body params for POST:
- *   - action=send-message → send a message
- *   - action=create-individual → create individual conversation
- *   - action=mark-read → mark conversation as read
- *   - action=ensure-group → ensure group conversation exists for subject
- *   - action=delete-message → soft-delete a message (sets is_deleted=true, changes content)
- *   - action=edit-message → edit a message (sets is_edited=true, updates content)
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -43,13 +17,16 @@ export async function GET(request: NextRequest) {
         const userId = searchParams.get('userId');
         if (!userId) return NextResponse.json({ error: 'userId required' }, { status: 400 });
 
-        // Get all conversations the user is part of, with last message and unread count
-        const { data: participations, error: pError } = await fetch(
-          `${SUPABASE_URL}/rest/v1/conversation_participants?select=conversation_id,last_read_at,conversations(id,type,subject_id,title,created_at,updated_at)&user_id=eq.${userId}`,
-          { headers: getAdminHeaders() }
-        ).then(r => r.json());
+        // Get all conversations the user is part of
+        const { data: participations, error: pError } = await supabaseServer
+          .from('conversation_participants')
+          .select('conversation_id, last_read_at, conversations:id!conversation_id(id, type, subject_id, title, created_at, updated_at)')
+          .eq('user_id', userId);
 
-        if (pError) return NextResponse.json({ error: pError }, { status: 500 });
+        if (pError) {
+          console.error('[Chat API] Conversations error:', pError);
+          return NextResponse.json({ error: pError.message }, { status: 500 });
+        }
 
         // For each conversation, get last message and unread count
         const conversations = await Promise.all(
@@ -58,36 +35,41 @@ export async function GET(request: NextRequest) {
             if (!conv) return null;
 
             // Get last message
-            const lastMsgRes = await fetch(
-              `${SUPABASE_URL}/rest/v1/messages?select=id,sender_id,content,created_at&conversation_id=eq.${conv.id}&order=created_at.desc&limit=1`,
-              { headers: getAdminHeaders() }
-            ).then(r => r.json());
+            const { data: lastMsgs } = await supabaseServer
+              .from('messages')
+              .select('id, sender_id, content, created_at')
+              .eq('conversation_id', conv.id)
+              .order('created_at', { ascending: false })
+              .limit(1);
 
-            // Get unread count (messages after last_read_at)
+            // Get unread count
             let unreadCount = 0;
             if (p.last_read_at) {
-              const unreadRes = await fetch(
-                `${SUPABASE_URL}/rest/v1/messages?select=id&conversation_id=eq.${conv.id}&created_at=gt.${p.last_read_at}&sender_id=neq.${userId}`,
-                { headers: getAdminHeaders() }
-              ).then(r => r.json());
-              unreadCount = (unreadRes || []).length;
+              const { count } = await supabaseServer
+                .from('messages')
+                .select('id', { count: 'exact', head: true })
+                .eq('conversation_id', conv.id)
+                .gt('created_at', p.last_read_at as string)
+                .neq('sender_id', userId);
+              unreadCount = count || 0;
             } else {
-              // No last_read means all messages are unread
-              const unreadRes = await fetch(
-                `${SUPABASE_URL}/rest/v1/messages?select=id&conversation_id=eq.${conv.id}&sender_id=neq.${userId}`,
-                { headers: getAdminHeaders() }
-              ).then(r => r.json());
-              unreadCount = (unreadRes || []).length;
+              const { count } = await supabaseServer
+                .from('messages')
+                .select('id', { count: 'exact', head: true })
+                .eq('conversation_id', conv.id)
+                .neq('sender_id', userId);
+              unreadCount = count || 0;
             }
 
             // Get other participant for individual chats
             let otherParticipant = null;
             if (conv.type === 'individual') {
-              const otherPartRes = await fetch(
-                `${SUPABASE_URL}/rest/v1/conversation_participants?select=user_id,users(id,name,email,avatar_url,title_id,gender,role)&conversation_id=eq.${conv.id}&user_id=neq.${userId}`,
-                { headers: getAdminHeaders() }
-              ).then(r => r.json());
-              otherParticipant = otherPartRes?.[0]?.users || null;
+              const { data: otherParts } = await supabaseServer
+                .from('conversation_participants')
+                .select('user_id, users!user_id(id, name, email, avatar_url, title_id, gender, role)')
+                .eq('conversation_id', conv.id as string)
+                .neq('user_id', userId);
+              otherParticipant = (otherParts as Record<string, unknown>[])?.[0]?.users || null;
             }
 
             return {
@@ -98,7 +80,7 @@ export async function GET(request: NextRequest) {
               createdAt: conv.created_at,
               updatedAt: conv.updated_at,
               lastReadAt: p.last_read_at,
-              lastMessage: lastMsgRes?.[0] || null,
+              lastMessage: lastMsgs?.[0] || null,
               unreadCount,
               otherParticipant,
             };
@@ -108,7 +90,7 @@ export async function GET(request: NextRequest) {
         // Sort by updated_at (most recent first)
         const sorted = conversations
           .filter(Boolean)
-          .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
+          .sort((a, b) => new Date((b as Record<string, unknown>).updatedAt as string || (b as Record<string, unknown>).createdAt as string).getTime() - new Date((a as Record<string, unknown>).updatedAt as string || (a as Record<string, unknown>).createdAt as string).getTime());
 
         return NextResponse.json({ conversations: sorted });
       }
@@ -116,16 +98,23 @@ export async function GET(request: NextRequest) {
       case 'messages': {
         const conversationId = searchParams.get('conversationId');
         const limit = parseInt(searchParams.get('limit') || '50');
-        const before = searchParams.get('before'); // for pagination
 
         if (!conversationId) return NextResponse.json({ error: 'conversationId required' }, { status: 400 });
 
-        let url = `${SUPABASE_URL}/rest/v1/messages?select=id,sender_id,content,created_at,is_deleted,is_edited,sender:users(id,name,email,avatar_url,title_id,gender,role)&conversation_id=eq.${conversationId}&order=created_at.desc&limit=${limit}`;
-        if (before) {
-          url += `&created_at=lt.${before}`;
+        let query = supabaseServer
+          .from('messages')
+          .select('id, sender_id, content, created_at, is_deleted, is_edited, sender:users!sender_id(id, name, email, avatar_url, title_id, gender, role)')
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: false })
+          .limit(limit);
+
+        const { data: messages, error } = await query;
+
+        if (error) {
+          console.error('[Chat API] Messages error:', error);
+          return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
-        const messages = await fetch(url, { headers: getAdminHeaders() }).then(r => r.json());
         return NextResponse.json({ messages: (messages || []).reverse() });
       }
 
@@ -133,22 +122,24 @@ export async function GET(request: NextRequest) {
         const subjectId = searchParams.get('subjectId');
         if (!subjectId) return NextResponse.json({ error: 'subjectId required' }, { status: 400 });
 
-        const { data } = await fetch(
-          `${SUPABASE_URL}/rest/v1/conversations?select=*&subject_id=eq.${subjectId}&type=eq.group`,
-          { headers: getAdminHeaders() }
-        ).then(r => r.json());
+        const { data } = await supabaseServer
+          .from('conversations')
+          .select('*')
+          .eq('subject_id', subjectId)
+          .eq('type', 'group')
+          .maybeSingle();
 
-        return NextResponse.json({ conversation: data?.[0] || null });
+        return NextResponse.json({ conversation: data || null });
       }
 
       case 'participants': {
         const conversationId = searchParams.get('conversationId');
         if (!conversationId) return NextResponse.json({ error: 'conversationId required' }, { status: 400 });
 
-        const participants = await fetch(
-          `${SUPABASE_URL}/rest/v1/conversation_participants?select=user_id,joined_at,last_read_at,users(id,name,email,avatar_url,title_id,gender,role)&conversation_id=eq.${conversationId}`,
-          { headers: getAdminHeaders() }
-        ).then(r => r.json());
+        const { data: participants } = await supabaseServer
+          .from('conversation_participants')
+          .select('user_id, joined_at, last_read_at, users!user_id(id, name, email, avatar_url, title_id, gender, role)')
+          .eq('conversation_id', conversationId);
 
         return NextResponse.json({ participants: participants || [] });
       }
@@ -161,20 +152,21 @@ export async function GET(request: NextRequest) {
         if (!subjectId || !query) return NextResponse.json({ error: 'subjectId and query required' }, { status: 400 });
 
         // Search users enrolled in the same subject
-        const users = await fetch(
-          `${SUPABASE_URL}/rest/v1/subject_students?select=student_id,users(id,name,email,avatar_url,title_id,gender,role)&subject_id=eq.${subjectId}&or=(status.eq.approved,status.is.null)`,
-          { headers: getAdminHeaders() }
-        ).then(r => r.json());
+        const { data: enrollments } = await supabaseServer
+          .from('subject_students')
+          .select('student_id, users!student_id(id, name, email, avatar_url, title_id, gender, role)')
+          .eq('subject_id', subjectId);
 
         // Also include the teacher
-        const subject = await fetch(
-          `${SUPABASE_URL}/rest/v1/subjects?select=teacher_id,users(id,name,email,avatar_url,title_id,gender,role)&id=eq.${subjectId}`,
-          { headers: getAdminHeaders() }
-        ).then(r => r.json());
+        const { data: subjectData } = await supabaseServer
+          .from('subjects')
+          .select('teacher_id, users!teacher_id(id, name, email, avatar_url, title_id, gender, role)')
+          .eq('id', subjectId)
+          .single();
 
         const allUsers = [
-          ...(users || []).map((u: Record<string, unknown>) => u.users),
-          ...(subject || []).map((s: Record<string, unknown>) => s.users),
+          ...(enrollments || []).map((e: Record<string, unknown>) => e.users),
+          subjectData?.users,
         ]
           .filter(Boolean)
           .filter((u: Record<string, unknown>) => u.id !== userId)
@@ -211,33 +203,35 @@ export async function POST(request: NextRequest) {
         }
 
         // Insert message
-        const message = await fetch(`${SUPABASE_URL}/rest/v1/messages`, {
-          method: 'POST',
-          headers: getAdminHeaders(),
-          body: JSON.stringify({
+        const { data: message, error: msgError } = await supabaseServer
+          .from('messages')
+          .insert({
             conversation_id: conversationId,
             sender_id: senderId,
             content: content.trim(),
-          }),
-        }).then(r => r.json());
+          })
+          .select()
+          .single();
 
-        // Update conversation's updated_at (triggers the trigger)
-        await fetch(`${SUPABASE_URL}/rest/v1/conversations?id=eq.${conversationId}`, {
-          method: 'PATCH',
-          headers: { ...getAdminHeaders(), 'Prefer': 'return=minimal' },
-          body: JSON.stringify({ updated_at: new Date().toISOString() }),
-        });
+        if (msgError) {
+          console.error('[Chat API] Send message error:', msgError);
+          return NextResponse.json({ error: 'فشل إرسال الرسالة' }, { status: 500 });
+        }
 
-        // Get sender info for the response
-        const sender = await fetch(
-          `${SUPABASE_URL}/rest/v1/users?select=id,name,email,avatar_url,title_id,gender,role&id=eq.${senderId}`,
-          { headers: getAdminHeaders() }
-        ).then(r => r.json());
+        // Update conversation's updated_at
+        await supabaseServer
+          .from('conversations')
+          .update({ updated_at: new Date().toISOString() })
+          .eq('id', conversationId);
 
-        return NextResponse.json({
-          message: Array.isArray(message) ? message[0] : message,
-          sender: sender?.[0] || null,
-        });
+        // Get sender info
+        const { data: sender } = await supabaseServer
+          .from('users')
+          .select('id, name, email, avatar_url, title_id, gender, role')
+          .eq('id', senderId)
+          .single();
+
+        return NextResponse.json({ message, sender: sender || null });
       }
 
       case 'create-individual': {
@@ -247,14 +241,13 @@ export async function POST(request: NextRequest) {
         }
 
         // Check if conversation already exists between these two users
-        // Get all individual conversations for userId1
-        const existing = await fetch(
-          `${SUPABASE_URL}/rest/v1/conversation_participants?select=conversation_id,conversations(id,type,subject_id)&user_id=eq.${userId1}`,
-          { headers: getAdminHeaders() }
-        ).then(r => r.json());
+        const { data: existingParts } = await supabaseServer
+          .from('conversation_participants')
+          .select('conversation_id, conversations!conversation_id(id, type, subject_id)')
+          .eq('user_id', userId1);
 
-        // Find individual conversations (with or without matching subjectId)
-        const individualConvs = (existing || []).filter((p: Record<string, unknown>) => {
+        // Find individual conversations
+        const individualConvs = (existingParts || []).filter((p: Record<string, unknown>) => {
           const conv = p.conversations as Record<string, unknown>;
           return conv?.type === 'individual';
         });
@@ -264,14 +257,13 @@ export async function POST(request: NextRequest) {
           const convId = p.conversation_id as string;
           const conv = p.conversations as Record<string, unknown>;
 
-          const otherPart = await fetch(
-            `${SUPABASE_URL}/rest/v1/conversation_participants?conversation_id=eq.${convId}&user_id=eq.${userId2}`,
-            { headers: getAdminHeaders() }
-          ).then(r => r.json());
+          const { data: otherPart } = await supabaseServer
+            .from('conversation_participants')
+            .select('user_id')
+            .eq('conversation_id', convId)
+            .eq('user_id', userId2);
 
-          if (otherPart?.length > 0) {
-            // Found an existing conversation between these two users
-            // If subjectId matches or either is null, return it
+          if (otherPart && otherPart.length > 0) {
             if (conv?.subject_id === subjectId || (!conv?.subject_id && !subjectId) || !subjectId) {
               return NextResponse.json({ conversation: conv, existed: true });
             }
@@ -279,39 +271,29 @@ export async function POST(request: NextRequest) {
         }
 
         // Create new individual conversation
-        const newConv = await fetch(`${SUPABASE_URL}/rest/v1/conversations`, {
-          method: 'POST',
-          headers: getAdminHeaders(),
-          body: JSON.stringify({
+        const { data: newConv, error: createError } = await supabaseServer
+          .from('conversations')
+          .insert({
             type: 'individual',
             subject_id: subjectId || null,
-          }),
-        }).then(r => r.json());
+          })
+          .select()
+          .single();
 
-        // Check for errors
-        if (newConv?.code || newConv?.error) {
-          console.error('[Chat API] Create conversation error:', newConv);
+        if (createError || !newConv) {
+          console.error('[Chat API] Create conversation error:', createError);
           return NextResponse.json({ error: 'فشل إنشاء المحادثة' }, { status: 500 });
         }
 
-        const convId = Array.isArray(newConv) ? newConv[0].id : newConv.id;
-
-        if (!convId) {
-          console.error('[Chat API] No conversation ID returned:', newConv);
-          return NextResponse.json({ error: 'فشل إنشاء المحادثة - لم يتم إرجاع معرف' }, { status: 500 });
-        }
-
         // Add both users as participants
-        await fetch(`${SUPABASE_URL}/rest/v1/conversation_participants`, {
-          method: 'POST',
-          headers: { ...getAdminHeaders(), 'Prefer': 'return=minimal' },
-          body: JSON.stringify([
-            { conversation_id: convId, user_id: userId1 },
-            { conversation_id: convId, user_id: userId2 },
-          ]),
-        });
+        await supabaseServer
+          .from('conversation_participants')
+          .insert([
+            { conversation_id: newConv.id, user_id: userId1 },
+            { conversation_id: newConv.id, user_id: userId2 },
+          ]);
 
-        return NextResponse.json({ conversation: Array.isArray(newConv) ? newConv[0] : newConv, existed: false });
+        return NextResponse.json({ conversation: newConv, existed: false });
       }
 
       case 'mark-read': {
@@ -320,14 +302,11 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
         }
 
-        await fetch(
-          `${SUPABASE_URL}/rest/v1/conversation_participants?conversation_id=eq.${conversationId}&user_id=eq.${userId}`,
-          {
-            method: 'PATCH',
-            headers: { ...getAdminHeaders(), 'Prefer': 'return=minimal' },
-            body: JSON.stringify({ last_read_at: new Date().toISOString() }),
-          }
-        );
+        await supabaseServer
+          .from('conversation_participants')
+          .update({ last_read_at: new Date().toISOString() })
+          .eq('conversation_id', conversationId)
+          .eq('user_id', userId);
 
         return NextResponse.json({ success: true });
       }
@@ -339,64 +318,66 @@ export async function POST(request: NextRequest) {
         }
 
         // Check if group conversation exists
-        const existing = await fetch(
-          `${SUPABASE_URL}/rest/v1/conversations?subject_id=eq.${subjectId}&type=eq.group`,
-          { headers: getAdminHeaders() }
-        ).then(r => r.json());
+        const { data: existing } = await supabaseServer
+          .from('conversations')
+          .select('*')
+          .eq('subject_id', subjectId)
+          .eq('type', 'group')
+          .maybeSingle();
 
-        if (existing?.length > 0) {
-          return NextResponse.json({ conversation: existing[0], existed: true });
+        if (existing) {
+          return NextResponse.json({ conversation: existing, existed: true });
         }
 
         // Get subject name for title
-        const subject = await fetch(
-          `${SUPABASE_URL}/rest/v1/subjects?select=name&id=eq.${subjectId}`,
-          { headers: getAdminHeaders() }
-        ).then(r => r.json());
+        const { data: subject } = await supabaseServer
+          .from('subjects')
+          .select('name')
+          .eq('id', subjectId)
+          .single();
 
-        const title = subject?.[0]?.name ? `${subject[0].name} - محادثة المقرر` : 'محادثة المقرر';
+        const title = subject?.name ? `${subject.name} - محادثة المقرر` : 'محادثة المقرر';
 
         // Create group conversation
-        const newConv = await fetch(`${SUPABASE_URL}/rest/v1/conversations`, {
-          method: 'POST',
-          headers: getAdminHeaders(),
-          body: JSON.stringify({
+        const { data: newConv, error: createError } = await supabaseServer
+          .from('conversations')
+          .insert({
             type: 'group',
             subject_id: subjectId,
             title,
-          }),
-        }).then(r => r.json());
+          })
+          .select()
+          .single();
 
-        const convId = Array.isArray(newConv) ? newConv[0].id : newConv.id;
+        if (createError || !newConv) {
+          console.error('[Chat API] Create group error:', createError);
+          return NextResponse.json({ error: 'فشل إنشاء محادثة المقرر' }, { status: 500 });
+        }
 
         // Add teacher as participant
         if (teacherId) {
-          await fetch(`${SUPABASE_URL}/rest/v1/conversation_participants`, {
-            method: 'POST',
-            headers: { ...getAdminHeaders(), 'Prefer': 'return=minimal' },
-            body: JSON.stringify({ conversation_id: convId, user_id: teacherId }),
-          });
+          await supabaseServer
+            .from('conversation_participants')
+            .insert({ conversation_id: newConv.id, user_id: teacherId });
         }
 
         // Add all enrolled students as participants
-        const students = await fetch(
-          `${SUPABASE_URL}/rest/v1/subject_students?select=student_id&subject_id=eq.${subjectId}&or=(status.eq.approved,status.is.null)`,
-          { headers: getAdminHeaders() }
-        ).then(r => r.json());
+        const { data: students } = await supabaseServer
+          .from('subject_students')
+          .select('student_id')
+          .eq('subject_id', subjectId);
 
-        if (students?.length > 0) {
+        if (students && students.length > 0) {
           const participants = students.map((s: { student_id: string }) => ({
-            conversation_id: convId,
+            conversation_id: newConv.id,
             user_id: s.student_id,
           }));
-          await fetch(`${SUPABASE_URL}/rest/v1/conversation_participants`, {
-            method: 'POST',
-            headers: { ...getAdminHeaders(), 'Prefer': 'return=minimal' },
-            body: JSON.stringify(participants),
-          });
+          await supabaseServer
+            .from('conversation_participants')
+            .insert(participants);
         }
 
-        return NextResponse.json({ conversation: Array.isArray(newConv) ? newConv[0] : newConv, existed: false });
+        return NextResponse.json({ conversation: newConv, existed: false });
       }
 
       case 'delete-message': {
@@ -405,60 +386,36 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
         }
 
-        // Verify the user is the sender of the message
-        const msgRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/messages?select=id,sender_id,conversation_id&id=eq.${messageId}`,
-          { headers: getAdminHeaders() }
-        ).then(r => r.json());
+        // Verify the user is the sender
+        const { data: msg } = await supabaseServer
+          .from('messages')
+          .select('id, sender_id, conversation_id')
+          .eq('id', messageId)
+          .single();
 
-        if (!msgRes?.length) {
+        if (!msg) {
           return NextResponse.json({ error: 'الرسالة غير موجودة' }, { status: 404 });
         }
 
-        if (msgRes[0].sender_id !== userId) {
+        if (msg.sender_id !== userId) {
           return NextResponse.json({ error: 'لا يمكنك حذف رسالة لا تخصك' }, { status: 403 });
         }
 
-        // Try to update with is_deleted column (if it exists)
-        // Fallback: just update content
-        try {
-          const updateRes = await fetch(
-            `${SUPABASE_URL}/rest/v1/messages?id=eq.${messageId}`,
-            {
-              method: 'PATCH',
-              headers: { ...getAdminHeaders(), 'Prefer': 'return=minimal' },
-              body: JSON.stringify({
-                content: 'تم حذف هذه الرسالة',
-                is_deleted: true,
-              }),
-            }
-          );
+        // Try to update with is_deleted column
+        const { error: updateError } = await supabaseServer
+          .from('messages')
+          .update({
+            content: 'تم حذف هذه الرسالة',
+            is_deleted: true,
+          })
+          .eq('id', messageId);
 
-          // If is_deleted column doesn't exist, just update content
-          if (!updateRes.ok) {
-            await fetch(
-              `${SUPABASE_URL}/rest/v1/messages?id=eq.${messageId}`,
-              {
-                method: 'PATCH',
-                headers: { ...getAdminHeaders(), 'Prefer': 'return=minimal' },
-                body: JSON.stringify({
-                  content: 'تم حذف هذه الرسالة',
-                }),
-              }
-            );
-          }
-        } catch {
-          // Fallback: just update content without is_deleted
-          await fetch(
-            `${SUPABASE_URL}/rest/v1/messages?id=eq.${messageId}`,
-            {
-              method: 'PATCH',
-              headers: { ...getAdminHeaders(), 'Prefer': 'return=minimal' },
-              body: JSON.stringify({
-                content: 'تم حذف هذه الرسالة',
-              }),
-            }
-          );
+        // If is_deleted column doesn't exist, just update content
+        if (updateError) {
+          await supabaseServer
+            .from('messages')
+            .update({ content: 'تم حذف هذه الرسالة' })
+            .eq('id', messageId);
         }
 
         return NextResponse.json({ success: true, messageId });
@@ -470,63 +427,40 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
         }
 
-        // Verify the user is the sender of the message
-        const msgRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/messages?select=id,sender_id,conversation_id,is_deleted&id=eq.${messageId}`,
-          { headers: getAdminHeaders() }
-        ).then(r => r.json());
+        // Verify the user is the sender
+        const { data: msg } = await supabaseServer
+          .from('messages')
+          .select('id, sender_id, is_deleted')
+          .eq('id', messageId)
+          .single();
 
-        if (!msgRes?.length) {
+        if (!msg) {
           return NextResponse.json({ error: 'الرسالة غير موجودة' }, { status: 404 });
         }
 
-        if (msgRes[0].sender_id !== userId) {
+        if (msg.sender_id !== userId) {
           return NextResponse.json({ error: 'لا يمكنك تعديل رسالة لا تخصك' }, { status: 403 });
         }
 
-        if (msgRes[0].is_deleted) {
+        if (msg.is_deleted) {
           return NextResponse.json({ error: 'لا يمكنك تعديل رسالة محذوفة' }, { status: 400 });
         }
 
-        // Try to update with is_edited column (if it exists)
-        try {
-          const updateRes = await fetch(
-            `${SUPABASE_URL}/rest/v1/messages?id=eq.${messageId}`,
-            {
-              method: 'PATCH',
-              headers: { ...getAdminHeaders(), 'Prefer': 'return=minimal' },
-              body: JSON.stringify({
-                content: content.trim(),
-                is_edited: true,
-              }),
-            }
-          );
+        // Try to update with is_edited column
+        const { error: updateError } = await supabaseServer
+          .from('messages')
+          .update({
+            content: content.trim(),
+            is_edited: true,
+          })
+          .eq('id', messageId);
 
-          // If is_edited column doesn't exist, just update content
-          if (!updateRes.ok) {
-            await fetch(
-              `${SUPABASE_URL}/rest/v1/messages?id=eq.${messageId}`,
-              {
-                method: 'PATCH',
-                headers: { ...getAdminHeaders(), 'Prefer': 'return=minimal' },
-                body: JSON.stringify({
-                  content: content.trim(),
-                }),
-              }
-            );
-          }
-        } catch {
-          // Fallback: just update content without is_edited
-          await fetch(
-            `${SUPABASE_URL}/rest/v1/messages?id=eq.${messageId}`,
-            {
-              method: 'PATCH',
-              headers: { ...getAdminHeaders(), 'Prefer': 'return=minimal' },
-              body: JSON.stringify({
-                content: content.trim(),
-              }),
-            }
-          );
+        // If is_edited column doesn't exist, just update content
+        if (updateError) {
+          await supabaseServer
+            .from('messages')
+            .update({ content: content.trim() })
+            .eq('id', messageId);
         }
 
         return NextResponse.json({ success: true, messageId, content: content.trim() });

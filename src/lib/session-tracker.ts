@@ -35,8 +35,9 @@ function generateFingerprint(): string {
 
 /**
  * Register a new session for the user.
- * Deactivates all other active sessions for this user (single-session enforcement).
- * Stores the new session ID in sessionStorage.
+ * 
+ * DISABLED: Single-session enforcement is currently disabled.
+ * This only stores a session record without deactivating other sessions.
  */
 export async function registerSession(userId: string): Promise<void> {
   if (typeof window === 'undefined') return;
@@ -46,7 +47,7 @@ export async function registerSession(userId: string): Promise<void> {
     const fingerprint = generateFingerprint();
     if (!fingerprint) return;
 
-    // Insert new session record
+    // Insert new session record (without deactivating others)
     const { data, error } = await supabase
       .from('user_sessions')
       .insert({
@@ -62,19 +63,12 @@ export async function registerSession(userId: string): Promise<void> {
       return;
     }
 
-    const newSessionId = data.id;
-
     // Store session ID in sessionStorage for later reference
-    sessionStorage.setItem(SESSION_STORAGE_KEY, newSessionId);
+    sessionStorage.setItem(SESSION_STORAGE_KEY, data.id);
 
-    // Deactivate all other sessions for this user (except the new one)
-    await supabase
-      .from('user_sessions')
-      .update({ is_active: false })
-      .eq('user_id', userId)
-      .neq('id', newSessionId);
+    // NOTE: We intentionally do NOT deactivate other sessions
+    // (single-session enforcement is disabled)
   } catch (err) {
-    // Don't block login if session tracking fails (e.g. table doesn't exist)
     console.warn('[SessionTracker] registerSession error:', err);
   }
 }
@@ -82,67 +76,13 @@ export async function registerSession(userId: string): Promise<void> {
 /**
  * Validate that the current session is still the active one.
  * Returns false if another session has taken over (user logged in from another device).
+ * 
+ * DISABLED: Single-session enforcement is currently disabled.
+ * This always returns true to allow multiple simultaneous sessions.
  */
 export async function validateSession(userId: string): Promise<boolean> {
-  if (typeof window === 'undefined') return true;
-  if (!isSupabaseConfigured) return true;
-
-  try {
-    const sessionId = sessionStorage.getItem(SESSION_STORAGE_KEY);
-    if (!sessionId) {
-      // No session ID stored — could be a page refresh before registerSession completed
-      // Check if there's any active session for this fingerprint
-      const fingerprint = generateFingerprint();
-      if (!fingerprint) return true;
-
-      const { data: activeSession } = await supabase
-        .from('user_sessions')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('device_fingerprint', fingerprint)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (activeSession) {
-        // Re-store the session ID
-        sessionStorage.setItem(SESSION_STORAGE_KEY, activeSession.id);
-        return true;
-      }
-
-      // No active session for this fingerprint — another session may have deactivated it
-      return false;
-    }
-
-    // Check if our session is still active
-    const { data: session } = await supabase
-      .from('user_sessions')
-      .select('is_active')
-      .eq('id', sessionId)
-      .eq('user_id', userId)
-      .single();
-
-    if (!session) {
-      // Session record not found — could have been deleted
-      return false;
-    }
-
-    if (!session.is_active) {
-      // Session was deactivated by another login
-      return false;
-    }
-
-    // Update last_activity timestamp
-    await supabase
-      .from('user_sessions')
-      .update({ last_activity: new Date().toISOString() })
-      .eq('id', sessionId);
-
-    return true;
-  } catch (err) {
-    // Don't force logout on validation errors (e.g. table doesn't exist)
-    console.warn('[SessionTracker] validateSession error:', err);
-    return true;
-  }
+  // Feature disabled — always allow
+  return true;
 }
 
 /**

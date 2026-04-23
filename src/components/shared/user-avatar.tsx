@@ -47,7 +47,7 @@ export function formatNameWithTitle(name: string, role?: string | null, titleId?
 interface UserAvatarProps {
   name: string;
   avatarUrl?: string | null;
-  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
   className?: string;
 }
 
@@ -57,6 +57,7 @@ const sizeMap = {
   md: 'h-10 w-10 text-sm',
   lg: 'h-14 w-14 text-lg',
   xl: 'h-20 w-20 text-2xl',
+  '2xl': 'h-28 w-28 text-3xl',
 };
 
 const iconSizeMap = {
@@ -65,6 +66,7 @@ const iconSizeMap = {
   md: 'h-5 w-5',
   lg: 'h-6 w-6',
   xl: 'h-8 w-8',
+  '2xl': 'h-10 w-10',
 };
 
 export default function UserAvatar({ name, avatarUrl, size = 'md', className = '' }: UserAvatarProps) {
