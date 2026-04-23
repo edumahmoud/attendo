@@ -117,7 +117,7 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 }
 
-const MAX_DISTANCE_METERS = 100;
+const GPS_MAX_DISTANCE_METERS = 20; // GPS check-in: strict 20m limit
 
 // Simple, reliable GPS position acquisition.
 // Uses getCurrentPosition with enableHighAccuracy: true.
@@ -876,10 +876,10 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
               console.warn('[GPS] QR check-in with GPS mismatch (distance:', Math.round(distance), 'm). QR scan proves proximity, allowing check-in.');
               toast(`تم التحقق من قربك عبر مسح QR. الموقع GPS غير متطابق (${Math.round(distance)} متر) — يرجى تفعيل GPS لتحسين الدقة.`, { duration: 6000 });
               // Don't return — allow QR check-in to proceed
-            } else if (distance > MAX_DISTANCE_METERS) {
+            } else if (distance > GPS_MAX_DISTANCE_METERS) {
               // Small distance mismatch (20m-1km): likely GPS inaccuracy, not IP mismatch
               // For QR, still allow — the scan proves proximity
-              console.warn('[GPS] QR check-in, distance slightly over threshold:', Math.round(distance), 'm. Allowing via QR proof.');
+              console.warn('[GPS] QR check-in, distance over GPS threshold:', Math.round(distance), 'm. Allowing via QR proof.');
             }
             // For QR: always proceed regardless of GPS distance
           } else {
@@ -890,12 +890,12 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
               return;
             }
             
-            if (distance > MAX_DISTANCE_METERS) {
+            if (distance > GPS_MAX_DISTANCE_METERS) {
               console.warn('[GPS] GPS check-in distance too far:', Math.round(distance), 'meters');
               if (studentAccuracy && studentAccuracy > 100) {
                 toast.error(`دقة الموقع ضعيفة (${Math.round(studentAccuracy)} متر) والمسافة ${Math.round(distance)} متر. يرجى تفعيل GPS أو استخدام مسح QR.`, { duration: 8000 });
               } else {
-                toast.error(`أنت بعيد عن المعلم بمسافة ${Math.round(distance)} متر. يجب أن تكون ضمن ${MAX_DISTANCE_METERS} متر.`, { duration: 6000 });
+                toast.error(`أنت بعيد عن المعلم بمسافة ${Math.round(distance)} متر. يجب أن تكون ضمن ${GPS_MAX_DISTANCE_METERS} متر.`, { duration: 6000 });
               }
               return;
             }
