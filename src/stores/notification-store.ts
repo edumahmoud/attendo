@@ -19,9 +19,11 @@ interface NotificationState {
   initializing: boolean;
   currentUserId: string | null;
   subscription: ReturnType<typeof supabase.channel> | null;
+  refetchTimer: ReturnType<typeof setInterval> | null;
 
   // Actions
   initializeNotifications: (userId: string) => Promise<void>;
+  refetchNotifications: () => Promise<void>;
   createNotification: (notification: {
     userId: string;
     type: NotificationType;
@@ -50,6 +52,9 @@ function dbToNotification(db: DBNotification): Notification {
   };
 }
 
+// Polling interval for notification fallback (milliseconds)
+const NOTIFICATION_REFETCH_INTERVAL = 15000; // 15 seconds
+
 export const useNotificationStore = create<NotificationState>((set, get) => ({
   notifications: [],
   unreadCount: 0,
@@ -57,6 +62,33 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   initializing: false,
   currentUserId: null,
   subscription: null,
+  refetchTimer: null,
+
+  refetchNotifications: async () => {
+    const userId = get().currentUserId;
+    if (!userId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (error) {
+        console.error('Failed to refetch notifications:', error);
+        return;
+      }
+
+      const notifications = (data || []).map(dbToNotification);
+      const unreadCount = notifications.filter((n) => !n.read).length;
+
+      set({ notifications, unreadCount });
+    } catch (err) {
+      console.error('Failed to refetch notifications:', err);
+    }
+  },
 
   initializeNotifications: async (userId: string) => {
     // Prevent duplicate initialization for the same user
@@ -173,6 +205,11 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         )
         .subscribe();
 
+      // 4. Set up polling fallback for when real-time subscription doesn't deliver
+      const refetchTimer = setInterval(() => {
+        get().refetchNotifications();
+      }, NOTIFICATION_REFETCH_INTERVAL);
+
       set({
         notifications,
         unreadCount,
@@ -180,6 +217,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         initializing: false,
         currentUserId: userId,
         subscription: channel,
+        refetchTimer,
       });
     } catch (err) {
       console.error('Failed to initialize notifications:', err);
@@ -203,14 +241,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         // Fallback: add to store directly (client-side only)
         get().addNotification(notification);
       }
-      // If successful, the real-time subscription will handle adding it
-      // But as a safety net for when realtime is slow, also add locally after a small delay
-      // We check if it's already there first
-      setTimeout(() => {
-        const state = get();
-        // If after 2 seconds the notification isn't in the store yet, fetch it
-        // This handles cases where realtime subscription might miss the event
-      }, 2000);
+      // If successful, the real-time subscription or polling will handle adding it
     } catch (err) {
       console.error('Failed to create notification:', err);
       // Fallback: add to store directly (client-side only)
@@ -320,16 +351,20 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   },
 
   cleanup: () => {
-    const { subscription } = get();
+    const { subscription, refetchTimer } = get();
     if (subscription) {
       subscription.unsubscribe();
       supabase.removeChannel(subscription);
+    }
+    // Clear the polling timer
+    if (refetchTimer) {
+      clearInterval(refetchTimer);
     }
     // Also remove any notification channels that might be lingering
     const notificationChannels = supabase.getChannels().filter((ch) =>
       ch.topic.includes('notifications:')
     );
     notificationChannels.forEach((ch) => supabase.removeChannel(ch));
-    set({ subscription: null, initialized: false, initializing: false });
+    set({ subscription: null, refetchTimer: null, initialized: false, initializing: false });
   },
 }));

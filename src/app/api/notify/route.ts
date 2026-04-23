@@ -5,15 +5,18 @@ import { supabaseServer } from '@/lib/supabase-server';
 
 async function notifyUser(userId: string, type: string, title: string, message: string, link?: string) {
   try {
-    await supabaseServer.from('notifications').insert({
+    const { error } = await supabaseServer.from('notifications').insert({
       user_id: userId,
       type,
       title,
       message,
       link: link || null,
     });
+    if (error) {
+      console.error('[notify] Failed to send notification:', error.message, error.details);
+    }
   } catch (err) {
-    console.error('[notify] Failed to send notification:', err);
+    console.error('[notify] Failed to send notification (exception):', err);
   }
 }
 
@@ -27,17 +30,39 @@ async function notifyUsers(userIds: string[], type: string, title: string, messa
       message,
       link: link || null,
     }));
-    await supabaseServer.from('notifications').insert(rows);
+    const { error } = await supabaseServer.from('notifications').insert(rows);
+    if (error) {
+      console.error('[notify] Failed to send bulk notifications:', error.message, error.details);
+      // Fallback: try inserting one by one (in case one bad row blocks the whole batch)
+      for (const row of rows) {
+        const { error: singleError } = await supabaseServer.from('notifications').insert(row);
+        if (singleError) {
+          console.error('[notify] Also failed for user', row.user_id, ':', singleError.message);
+        }
+      }
+    }
   } catch (err) {
-    console.error('[notify] Failed to send bulk notifications:', err);
+    console.error('[notify] Failed to send bulk notifications (exception):', err);
   }
 }
 
 async function getStudentIds(subjectId: string): Promise<string[]> {
-  const { data } = await supabaseServer
+  const { data, error } = await supabaseServer
     .from('subject_students')
     .select('student_id')
-    .eq('subject_id', subjectId);
+    .eq('subject_id', subjectId)
+    .eq('status', 'approved');
+
+  if (error) {
+    console.error('[notify] Failed to fetch student IDs:', error.message);
+    // Fallback: try without status filter (in case status column doesn't exist)
+    const { data: fallbackData } = await supabaseServer
+      .from('subject_students')
+      .select('student_id')
+      .eq('subject_id', subjectId);
+    return (fallbackData || []).map((e: { student_id: string }) => e.student_id);
+  }
+
   return (data || []).map((e: { student_id: string }) => e.student_id);
 }
 
@@ -153,14 +178,42 @@ export async function POST(request: NextRequest) {
         const studentIds = await getStudentIds(subjectId);
         const titleText = lectureTitle ? ` "${lectureTitle}"` : '';
         const dateText = lectureDate ? ` (${lectureDate})` : '';
-        await notifyUsers(
-          studentIds,
-          'system',
-          'محاضرة جديدة',
-          `أنشأ المعلم ${teacherName || 'المعلم'} محاضرة${titleText}${dateText}`,
-          `subject:${subjectId}`
-        );
-        return NextResponse.json({ success: true, notified: studentIds.length });
+
+        // Try 'lecture' type first (better categorization), fall back to 'system' if DB constraint doesn't support it
+        let usedType = 'lecture';
+        const notifTitle = 'محاضرة جديدة';
+        const notifMessage = `أنشأ المعلم ${teacherName || 'المعلم'} محاضرة${titleText}${dateText}`;
+        const notifLink = `subject:${subjectId}`;
+
+        // Try inserting with 'lecture' type for the first student
+        let lectureTypeSupported = true;
+        if (studentIds.length > 0) {
+          const { error: testError } = await supabaseServer.from('notifications').insert({
+            user_id: studentIds[0],
+            type: 'lecture',
+            title: notifTitle,
+            message: notifMessage,
+            link: notifLink,
+          });
+          if (testError) {
+            lectureTypeSupported = false;
+            usedType = 'system';
+          }
+        }
+
+        if (lectureTypeSupported) {
+          // 'lecture' type is supported - send to remaining students
+          const remainingIds = studentIds.slice(1);
+          if (remainingIds.length > 0) {
+            await notifyUsers(remainingIds, 'lecture', notifTitle, notifMessage, notifLink);
+          }
+        } else {
+          // 'lecture' type NOT supported - send to ALL students with 'system' type
+          await notifyUsers(studentIds, 'system', notifTitle, notifMessage, notifLink);
+        }
+
+        console.log(`[notify] lecture_created: notified ${studentIds.length} students for subject ${subjectId} (type: ${usedType})`);
+        return NextResponse.json({ success: true, notified: studentIds.length, type: usedType });
       }
 
       default:

@@ -37,6 +37,7 @@ function getNotifIcon(type: string, title?: string) {
     case 'file_request': return <FileText className="h-4 w-4 text-orange-600" />;
     case 'file': return <FileText className="h-4 w-4 text-blue-600" />;
     case 'attendance': return <UserCheck className="h-4 w-4 text-violet-600" />;
+    case 'lecture': return <BookOpen className="h-4 w-4 text-teal-600" />;
     default: return <Info className="h-4 w-4 text-purple-600" />;
   }
 }
@@ -53,6 +54,7 @@ export default function NotificationBell() {
     unreadCount, 
     initialized,
     initializeNotifications, 
+    refetchNotifications,
     markAsRead, 
     markAllAsRead, 
     clearNotification, 
@@ -281,7 +283,11 @@ export default function NotificationBell() {
     <>
       <button
         ref={buttonRef}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          setIsOpen(!isOpen);
+          // Refresh notifications from DB when bell is opened
+          if (!isOpen) refetchNotifications();
+        }}
         className="relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted/50 active:bg-muted/80 hover:text-foreground transition-colors touch-manipulation"
         aria-label="الإشعارات"
       >
