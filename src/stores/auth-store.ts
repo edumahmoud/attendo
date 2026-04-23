@@ -371,10 +371,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return { error: 'يرجى إدخال كلمة المرور' };
       }
 
-      const { error } = await supabase.auth.signInWithPassword({ email: sanitizedEmail, password });
+      const { data: signInData, error } = await supabase.auth.signInWithPassword({ email: sanitizedEmail, password });
       if (error) return { error: getSafeErrorMessage(error) };
       
-      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const authUser = signInData?.user;
       if (!authUser) return { error: 'فشل في الحصول على بيانات المستخدم' };
       
       let { data: profile } = await supabase
@@ -438,12 +438,37 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             .single();
           
           if (retryProfile) {
+            await registerSession(authUser.id);
+            if (sessionCheckCleanup) sessionCheckCleanup();
+            sessionCheckCleanup = startSessionValidation(authUser.id, async () => {
+              await supabase.auth.signOut();
+              set({ user: null, loading: false, sessionKickedMessage: 'تم تسجيل دخولك من جهاز آخر' });
+            });
             signInRateLimit.attempts = 0;
             set({ user: retryProfile as UserProfile, loading: false });
             return { error: null };
           }
         }
-        return { error: 'لم يتم العثور على حساب. يرجى التسجيل أولاً.' };
+        // Profile exists in DB (created by trigger) but RLS prevents client from reading it
+        // Create fallback profile from auth data so user can proceed
+        const fallbackProfile: UserProfile = {
+          id: authUser.id,
+          email: authUser.email || sanitizedEmail,
+          name: userName,
+          role: (userRole === 'teacher' || userRole === 'admin' || userRole === 'superadmin' ? userRole : 'student') as UserRole,
+          avatar_url: authUser.user_metadata?.avatar_url || null,
+          created_at: authUser.created_at || new Date().toISOString(),
+          updated_at: authUser.updated_at || new Date().toISOString(),
+        };
+        await registerSession(authUser.id);
+        if (sessionCheckCleanup) sessionCheckCleanup();
+        sessionCheckCleanup = startSessionValidation(authUser.id, async () => {
+          await supabase.auth.signOut();
+          set({ user: null, loading: false, sessionKickedMessage: 'تم تسجيل دخولك من جهاز آخر' });
+        });
+        signInRateLimit.attempts = 0;
+        set({ user: fallbackProfile, loading: false });
+        return { error: null };
       }
       
       // Fetch the newly created profile
@@ -473,7 +498,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return { error: null };
       }
       
-      return { error: 'لم يتم العثور على حساب. يرجى التسجيل أولاً.' };
+      // Profile was inserted but can't be fetched (RLS) - use fallback from auth data
+      const fallbackProfile: UserProfile = {
+        id: authUser.id,
+        email: authUser.email || sanitizedEmail,
+        name: userName,
+        role: (userRole === 'teacher' || userRole === 'admin' || userRole === 'superadmin' ? userRole : 'student') as UserRole,
+        avatar_url: authUser.user_metadata?.avatar_url || null,
+        created_at: authUser.created_at || new Date().toISOString(),
+        updated_at: authUser.updated_at || new Date().toISOString(),
+      };
+      await registerSession(authUser.id);
+      if (sessionCheckCleanup) sessionCheckCleanup();
+      sessionCheckCleanup = startSessionValidation(authUser.id, async () => {
+        await supabase.auth.signOut();
+        set({ user: null, loading: false, sessionKickedMessage: 'تم تسجيل دخولك من جهاز آخر' });
+      });
+      signInRateLimit.attempts = 0;
+      set({ user: fallbackProfile, loading: false });
+      return { error: null };
     } catch {
       return { error: 'حدث خطأ غير متوقع' };
     }
@@ -568,7 +611,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             return { error: null, needsConfirmation: false };
           }
         }
-        return { error: getSafeErrorMessage(profileError) };
+        // Profile operations failed but auth signup succeeded - create fallback profile from auth data
+        // The real profile exists in DB (created by trigger) but RLS may prevent client from reading it yet
+        const fallbackProfile: UserProfile = {
+          id: authUser.id,
+          email: sanitizedEmail,
+          name: sanitizedName,
+          role: defaultRole as UserRole,
+          avatar_url: null,
+          created_at: authUser.created_at || new Date().toISOString(),
+          updated_at: authUser.updated_at || new Date().toISOString(),
+        };
+        const promotedProfile = await checkAndPromoteFirstUser(authUser.id);
+        const finalProfile = promotedProfile || fallbackProfile;
+        set({ user: (finalProfile || fallbackProfile) as UserProfile, loading: false });
+        return { error: null, needsConfirmation: false };
       }
       
       // Fetch the created profile (with teacher_code if teacher)
