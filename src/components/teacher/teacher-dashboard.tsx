@@ -141,14 +141,6 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
     }
   }, [activeSection, selectedSubjectId, setSelectedSubjectId]);
 
-  // Refresh students data when navigating to students section
-  // This ensures pending link requests are always up-to-date
-  useEffect(() => {
-    if (activeSection === 'students') {
-      fetchStudents();
-    }
-  }, [activeSection, fetchStudents]);
-
   // ─── Data state ───
   const [students, setStudents] = useState<UserProfile[]>([]);
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
@@ -239,6 +231,14 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
       setPendingStudents([]);
     }
   }, [profile.id]);
+
+  // Refresh students data when navigating to students section
+  // This ensures pending link requests are always up-to-date
+  useEffect(() => {
+    if (activeSection === 'students') {
+      fetchStudents();
+    }
+  }, [activeSection, fetchStudents]);
 
   const fetchQuizzes = useCallback(async () => {
     const { data, error } = await supabase
