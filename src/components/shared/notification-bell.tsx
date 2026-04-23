@@ -34,6 +34,7 @@ function getNotifIcon(type: string, title?: string) {
     case 'assignment': return <ClipboardList className="h-4 w-4 text-amber-600" />;
     case 'grade': return <Award className="h-4 w-4 text-emerald-600" />;
     case 'enrollment': return <BookOpen className="h-4 w-4 text-teal-600" />;
+    case 'file_request': return <FileText className="h-4 w-4 text-orange-600" />;
     case 'file': return <FileText className="h-4 w-4 text-blue-600" />;
     case 'attendance': return <UserCheck className="h-4 w-4 text-violet-600" />;
     default: return <Info className="h-4 w-4 text-purple-600" />;
@@ -185,10 +186,28 @@ export default function NotificationBell() {
       return;
     }
 
-    // Handle file request notifications - navigate to profile where file requests can be managed
+    // Handle file_request notifications (owner received a new file request) - navigate to own profile
+    if (notif.type === 'file_request' || notif.link?.startsWith('file_request:')) {
+      setIsOpen(false);
+      const { openProfile } = useAppStore.getState();
+      if (user?.id) openProfile(user.id);
+      return;
+    }
+
+    // Handle profile: links - navigate to user profile
+    if (notif.link?.startsWith('profile:')) {
+      const targetUserId = notif.link.replace('profile:', '');
+      if (targetUserId) {
+        setIsOpen(false);
+        const { openProfile } = useAppStore.getState();
+        openProfile(targetUserId);
+      }
+      return;
+    }
+
+    // Handle legacy file request notification (link = 'settings')
     if (notif.type === 'file' && notif.link === 'settings' && notif.title?.includes('طلب ملف')) {
       setIsOpen(false);
-      // Navigate to own profile to see/act on file requests
       const { openProfile } = useAppStore.getState();
       if (user?.id) openProfile(user.id);
       return;

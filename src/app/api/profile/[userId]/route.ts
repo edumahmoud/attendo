@@ -1,5 +1,24 @@
 import { NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase-server';
+import { supabaseServer, getSupabaseServerClient } from '@/lib/supabase-server';
+
+// Auth helper
+async function getAuthUser(request: Request) {
+  let authUser = null;
+  const authHeader = request.headers.get('authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    const { data: { user }, error } = await supabaseServer.auth.getUser(token);
+    if (!error && user) authUser = user;
+  }
+  if (!authUser) {
+    try {
+      const serverClient = await getSupabaseServerClient();
+      const { data: { user }, error } = await serverClient.auth.getUser();
+      if (!error && user) authUser = user;
+    } catch {}
+  }
+  return authUser;
+}
 
 export async function GET(
   request: Request,
@@ -7,6 +26,7 @@ export async function GET(
 ) {
   try {
     const { userId } = await params;
+    const authUser = await getAuthUser(request);
 
     // Fetch user profile - try with username first, fallback without
     let profile = null;
@@ -48,9 +68,32 @@ export async function GET(
       console.error('[profile] Error fetching files:', filesError);
     }
 
+    const files = publicFiles || [];
+
+    // If the requester is viewing someone else's profile, check their file request statuses
+    let fileRequestStatuses: Record<string, { status: string; requestId: string }> = {};
+    if (authUser && authUser.id !== userId && files.length > 0) {
+      const fileIds = files.map((f: { id: string }) => f.id);
+      const { data: myRequests } = await supabaseServer
+        .from('file_requests')
+        .select('id, file_id, status')
+        .eq('requester_id', authUser.id)
+        .in('file_id', fileIds);
+
+      if (myRequests && myRequests.length > 0) {
+        for (const req of myRequests) {
+          fileRequestStatuses[req.file_id] = {
+            status: req.status,
+            requestId: req.id,
+          };
+        }
+      }
+    }
+
     return NextResponse.json({
       profile,
-      publicFiles: publicFiles || [],
+      publicFiles: files,
+      fileRequestStatuses,
     });
   } catch (err) {
     console.error('[profile] Unexpected error:', err);

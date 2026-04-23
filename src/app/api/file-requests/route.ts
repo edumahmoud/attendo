@@ -84,10 +84,10 @@ export async function POST(request: Request) {
       try {
         await supabaseServer.from('notifications').insert({
           user_id: ownerId,
-          type: 'file',
+          type: 'file_request',
           title: 'طلب ملف جديد',
           message: `طلب ${requesterProfile?.name || 'مستخدم'} ملف "${fileData?.file_name || 'ملف'}" الخاص بك.`,
-          link: 'settings',
+          link: `file_request:${authUser.id}`,
         });
       } catch (notifErr) {
         console.error('[file-requests] Error sending notification:', notifErr);
@@ -146,7 +146,7 @@ export async function POST(request: Request) {
           type: 'file',
           title: 'تمت الموافقة على طلب الملف',
           message: 'تمت الموافقة على طلب الملف الخاص بك. يمكنك الآن تحميله.',
-          link: 'settings',
+          link: `profile:${authUser.id}`,
         });
       } catch {}
 
@@ -185,7 +185,7 @@ export async function POST(request: Request) {
           type: 'file',
           title: 'تم رفض طلب الملف',
           message: 'تم رفض طلب الملف الخاص بك.',
-          link: 'settings',
+          link: `profile:${authUser.id}`,
         });
       } catch {}
 

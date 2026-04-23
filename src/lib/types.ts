@@ -231,7 +231,7 @@ export interface AttendanceRecord {
 // Notifications
 // =====================================================
 
-export type NotificationType = 'assignment' | 'grade' | 'enrollment' | 'file' | 'system' | 'attendance' | 'link_request';
+export type NotificationType = 'assignment' | 'grade' | 'enrollment' | 'file' | 'file_request' | 'system' | 'attendance' | 'link_request';
 
 export interface DBNotification {
   id: string;

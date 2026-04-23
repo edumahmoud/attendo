@@ -256,29 +256,17 @@ export default function UserProfilePage({ userId, currentUser, onBack }: UserPro
       const data = await res.json();
       setProfile(data.profile);
 
-      const files: PublicFile[] = (data.publicFiles || []).map((f: UserFile) => ({
-        ...f,
-        requestStatus: null,
-        requestId: undefined,
-      }));
+      // Use server-side file request statuses (bypasses RLS)
+      const fileRequestStatuses: Record<string, { status: string; requestId: string }> = data.fileRequestStatuses || {};
 
-      if (userId !== currentUser.id && files.length > 0) {
-        const { data: myRequests } = await supabase
-          .from('file_requests')
-          .select('id, file_id, status')
-          .eq('requester_id', currentUser.id);
-
-        if (myRequests && myRequests.length > 0) {
-          const requestMap = new Map(myRequests.map((r) => [r.file_id, r]));
-          for (const file of files) {
-            const req = requestMap.get(file.id);
-            if (req) {
-              file.requestStatus = req.status as 'pending' | 'approved' | 'rejected';
-              file.requestId = req.id;
-            }
-          }
-        }
-      }
+      const files: PublicFile[] = (data.publicFiles || []).map((f: UserFile) => {
+        const reqStatus = fileRequestStatuses[f.id];
+        return {
+          ...f,
+          requestStatus: reqStatus ? (reqStatus.status as 'pending' | 'approved' | 'rejected') : null,
+          requestId: reqStatus?.requestId,
+        };
+      });
 
       setPublicFiles(files);
     } catch {

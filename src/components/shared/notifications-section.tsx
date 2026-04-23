@@ -45,6 +45,7 @@ function getNotifIcon(type: string, title?: string) {
     case 'assignment': return <ClipboardList className="h-5 w-5 text-amber-600" />;
     case 'grade': return <Award className="h-5 w-5 text-emerald-600" />;
     case 'enrollment': return <BookOpen className="h-5 w-5 text-teal-600" />;
+    case 'file_request': return <FileText className="h-5 w-5 text-orange-600" />;
     case 'file': return <FileText className="h-5 w-5 text-blue-600" />;
     case 'attendance': return <UserCheck className="h-5 w-5 text-violet-600" />;
     default: return <Info className="h-5 w-5 text-purple-600" />;
@@ -94,8 +95,32 @@ export default function NotificationsSection() {
       return;
     }
 
+    // Handle file_request notifications (owner received a new file request) - navigate to own profile
+    if (notif.type === 'file_request' || notif.link?.startsWith('file_request:')) {
+      const { openProfile } = useAppStore.getState();
+      if (user?.id) openProfile(user.id);
+      return;
+    }
+
+    // Handle profile: links - navigate to user profile
+    if (notif.link?.startsWith('profile:')) {
+      const targetUserId = notif.link.replace('profile:', '');
+      if (targetUserId) {
+        const { openProfile } = useAppStore.getState();
+        openProfile(targetUserId);
+      }
+      return;
+    }
+
+    // Handle legacy file request notification (link = 'settings')
+    if (notif.type === 'file' && notif.link === 'settings' && notif.title?.includes('طلب ملف')) {
+      const { openProfile } = useAppStore.getState();
+      if (user?.id) openProfile(user.id);
+      return;
+    }
+
     // Navigate to source
-    if (notif.link) {
+    if (notif.link && notif.link !== 'settings') {
       navigateToLink(notif.link);
     }
   };
