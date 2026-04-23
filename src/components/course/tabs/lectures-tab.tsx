@@ -264,6 +264,50 @@ function QrRefreshTimer() {
 }
 
 // -------------------------------------------------------
+// Lecture Timer (counts up from started_at in real-time)
+// -------------------------------------------------------
+function LectureTimer({ startedAt }: { startedAt: string }) {
+  const startTimeMs = useRef(new Date(startedAt).getTime());
+  const [elapsed, setElapsed] = useState(() => Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)));
+
+  useEffect(() => {
+    startTimeMs.current = new Date(startedAt).getTime();
+    const msSinceStart = Date.now() - startTimeMs.current;
+    const currentSecond = Math.max(0, Math.floor(msSinceStart / 1000));
+    const msToNextSecond = 1000 - (msSinceStart % 1000);
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const timeoutId = setTimeout(() => {
+      setElapsed(currentSecond + 1);
+      intervalId = setInterval(() => {
+        setElapsed((prev) => prev + 1);
+      }, 1000);
+    }, msToNextSecond);
+
+    return () => {
+      clearTimeout(timeoutId);
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [startedAt]);
+
+  const hours = Math.floor(elapsed / 3600);
+  const minutes = Math.floor((elapsed % 3600) / 60);
+  const seconds = elapsed % 60;
+
+  const pad = (n: number) => n.toString().padStart(2, '0');
+
+  return (
+    <span className="flex items-center gap-1 font-mono font-bold text-emerald-700 tabular-nums" dir="ltr">
+      <span className="relative flex h-2 w-2 ml-1">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+      </span>
+      {hours > 0 ? `${pad(hours)}:` : ''}{pad(minutes)}:{pad(seconds)}
+    </span>
+  );
+}
+
+// -------------------------------------------------------
 // Main Component
 // -------------------------------------------------------
 export default function LecturesTab({ profile, role, subjectId, subject, teacherName }: LecturesTabProps) {
@@ -1150,8 +1194,8 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
                             {extractLectureTime(lecture.description) && (
                               <span className="flex items-center gap-1 text-emerald-700 font-medium"><Clock className="h-3 w-3" />{formatTimeArabic(extractLectureTime(lecture.description))}</span>
                             )}
-                            {hasSession && lecture.attendance_session?.started_at && (
-                              <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{formatTime(lecture.attendance_session.started_at)}</span>
+                            {isActive && lecture.attendance_session?.started_at && (
+                              <LectureTimer startedAt={lecture.attendance_session.started_at} />
                             )}
                           </div>
                           {hasSession && (
@@ -1228,6 +1272,9 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
                             )}
                             {extractLectureTime(lecture.description) && (
                               <span className="flex items-center gap-1 text-emerald-700 font-medium"><Clock className="h-3 w-3" />{formatTimeArabic(extractLectureTime(lecture.description))}</span>
+                            )}
+                            {isActive && lecture.attendance_session?.started_at && (
+                              <LectureTimer startedAt={lecture.attendance_session.started_at} />
                             )}
                           </div>
                           {/* Expand/collapse hint for students */}
