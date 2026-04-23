@@ -29,6 +29,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import type { UserProfile } from '@/lib/types';
+import { getRoleLabel as getSharedRoleLabel } from '@/lib/utils';
 
 // -------------------------------------------------------
 // Types
@@ -73,7 +74,7 @@ export default function SettingsModal({
     setName(profile.name);
   }, [profile.name]);
 
-  const roleLabel = profile.role === 'student' ? 'طالب' : 'معلم';
+  const roleLabel = getSharedRoleLabel(profile.role, profile.gender, profile.title_id) || profile.role;
 
   // ─── Handlers ─────────────────────────────────────────
   const handleSave = async () => {

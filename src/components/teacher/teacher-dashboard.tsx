@@ -66,6 +66,7 @@ import RealtimeStatus from '@/components/shared/realtime-status';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import type { UserProfile, Quiz, QuizQuestion, Score, TeacherSection, Subject } from '@/lib/types';
+import { UserAvatar } from '@/components/ui/user-avatar';
 
 // -------------------------------------------------------
 // Props
@@ -1559,9 +1560,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                         <tr key={student.id} className="hover:bg-muted/30 transition-colors">
                           <td className="p-2 sm:p-3">
                             <div className="flex items-center gap-2">
-                              <div className="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-[10px] sm:text-xs font-bold">
-                                {student.name.charAt(0)}
-                              </div>
+                              <UserAvatar src={student.avatar_url} name={student.name} size="sm" />
                               <span className="text-xs sm:text-sm font-medium text-foreground line-clamp-2">{student.name}</span>
                             </div>
                           </td>
@@ -1718,9 +1717,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                   }}
                 >
                   <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3">
-                    <div className="flex h-9 w-9 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs sm:text-sm font-bold transition-transform group-hover:scale-110">
-                      {student.name.charAt(0)}
-                    </div>
+                    <UserAvatar src={student.avatar_url} name={student.name} size="md" />
                     <div className="min-w-0 flex-1">
                       <h3 className="text-sm sm:text-base font-semibold text-foreground line-clamp-2">{student.name}</h3>
                       <p className="text-[10px] sm:text-xs text-muted-foreground line-clamp-1 flex items-center gap-1">
@@ -1798,9 +1795,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
               {/* Header */}
               <div className="flex items-center justify-between border-b p-5">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold">
-                    {selectedStudent.name.charAt(0)}
-                  </div>
+                  <UserAvatar src={selectedStudent.avatar_url} name={selectedStudent.name} size="md" />
                   <div>
                     <h3 className="text-lg font-bold text-foreground">{selectedStudent.name}</h3>
                     <p className="text-xs text-muted-foreground">{selectedStudent.email}</p>
@@ -1895,9 +1890,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                     {/* Header */}
                     <div className="flex items-center justify-between border-b p-5 sticky top-0 bg-background z-10">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold">
-                          {performanceStudent.name.charAt(0)}
-                        </div>
+                        <UserAvatar src={performanceStudent.avatar_url} name={performanceStudent.name} size="sm" />
                         <div>
                           <h3 className="text-lg font-bold text-foreground">أداء الطالب: {performanceStudent.name}</h3>
                           <p className="text-xs text-muted-foreground">{performanceStudent.email}</p>
@@ -1914,9 +1907,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                     <div className="p-5 space-y-5">
                       {/* Student info header */}
                       <div className="flex items-center gap-3 rounded-xl border p-4 bg-muted/30">
-                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold text-lg">
-                          {performanceStudent.name.charAt(0)}
-                        </div>
+                        <UserAvatar src={performanceStudent.avatar_url} name={performanceStudent.name} size="sm" />
                         <div className="flex-1 min-w-0">
                           <p className="font-bold text-foreground">{performanceStudent.name}</p>
                           <p className="text-xs text-muted-foreground">{performanceStudent.email}</p>
@@ -2849,9 +2840,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                               <tr key={s.id} className="hover:bg-muted/30 transition-colors">
                                 <td className="p-3">
                                   <div className="flex items-center gap-2">
-                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-                                      {student?.name?.charAt(0) || '؟'}
-                                    </div>
+                                    <UserAvatar src={student?.avatar_url} name={student?.name} size="sm" />
                                     <span className="text-sm font-medium text-foreground">{student?.name || 'طالب'}</span>
                                   </div>
                                 </td>

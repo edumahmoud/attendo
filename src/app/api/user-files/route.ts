@@ -120,14 +120,14 @@ export async function GET(request: NextRequest) {
       const sharedWithIds = [...new Set(shares.map((s) => s.shared_with as string).filter(Boolean))];
       const allUserIds = [...new Set([...sharerIds, ...sharedWithIds])];
 
-      let userMap = new Map<string, { name: string; email: string; role: string }>();
+      let userMap = new Map<string, { name: string; email: string; role: string; gender?: string; title_id?: string; avatar_url?: string }>();
       if (allUserIds.length > 0) {
         const { data: userProfiles } = await supabaseServer
           .from('users')
-          .select('id, name, email, role')
+          .select('id, name, email, role, gender, title_id, avatar_url')
           .in('id', allUserIds);
         if (userProfiles) {
-          userMap = new Map((userProfiles as { id: string; name: string; email: string; role: string }[]).map((p) => [p.id, p]));
+          userMap = new Map((userProfiles as { id: string; name: string; email: string; role: string; gender?: string; title_id?: string; avatar_url?: string }[]).map((p) => [p.id, p]));
         }
       }
 
@@ -151,6 +151,10 @@ export async function GET(request: NextRequest) {
         return {
           ...share,
           shared_by_name: sharer?.name || 'مستخدم',
+          shared_by_role: sharer?.role || '',
+          shared_by_gender: sharer?.gender || '',
+          shared_by_title_id: sharer?.title_id || '',
+          shared_by_avatar_url: sharer?.avatar_url || '',
           shared_with_name: sharedWith?.name || '',
           shared_with_email: sharedWith?.email || '',
           shared_with_role: sharedWith?.role || '',

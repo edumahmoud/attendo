@@ -76,6 +76,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth-store';
 import { useAppStore } from '@/stores/app-store';
 import type { UserProfile, UserTitle } from '@/lib/types';
+import { getRoleLabel as getSharedRoleLabel } from '@/lib/utils';
 
 // -------------------------------------------------------
 // Types
@@ -100,16 +101,12 @@ const sectionVariants = {
 // -------------------------------------------------------
 // Role helpers
 // -------------------------------------------------------
-const roleLabels: Record<string, string> = {
-  student: 'طالب',
-  teacher: 'معلم',
-  admin: 'مشرف',
-};
 
 const roleColors: Record<string, string> = {
   student: 'bg-emerald-100 text-emerald-700 border-emerald-200',
   teacher: 'bg-teal-100 text-teal-700 border-teal-200',
   admin: 'bg-amber-100 text-amber-700 border-amber-200',
+  superadmin: 'bg-amber-100 text-amber-700 border-amber-200',
 };
 
 // -------------------------------------------------------
@@ -720,7 +717,7 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
                   <p className="text-sm text-muted-foreground">{profile.email}</p>
                   <div className="mt-1 flex items-center justify-center gap-2 sm:justify-start">
                     <Badge className={roleColors[profile.role] || roleColors.student}>
-                      {roleLabels[profile.role] || profile.role}
+                      {getSharedRoleLabel(profile.role, profile.gender, profile.title_id) || profile.role}
                     </Badge>
                     {profile.is_admin && (
                       <Badge className="bg-amber-100 text-amber-700 border-amber-200">مشرف النظام</Badge>
@@ -812,7 +809,7 @@ export default function SettingsPage({ profile, onBack }: SettingsPageProps) {
                 <Label className="text-sm font-medium text-muted-foreground">الدور</Label>
                 <div className="flex items-center gap-2">
                   <Badge className={roleColors[profile.role] || roleColors.student}>
-                    {roleLabels[profile.role] || profile.role}
+                    {getSharedRoleLabel(profile.role, profile.gender, profile.title_id) || profile.role}
                   </Badge>
                   {profile.is_admin && (
                     <Badge className="bg-amber-100 text-amber-700 border-amber-200">مشرف النظام</Badge>

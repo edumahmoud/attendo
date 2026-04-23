@@ -81,6 +81,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import type { UserProfile, Subject, Quiz, Score, AdminSection } from '@/lib/types';
+import { UserAvatar } from '@/components/ui/user-avatar';
 
 // -------------------------------------------------------
 // Props
@@ -980,9 +981,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                         className={`p-3 space-y-2 ${isDisabled ? 'opacity-60' : ''}`}
                       >
                         <div className="flex items-start gap-2">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-sm font-bold">
-                            {user.name.charAt(0)}
-                          </div>
+                          <UserAvatar src={user.avatar_url} name={user.name} size="md" />
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-foreground line-clamp-2">
                               {titlePrefix && (
@@ -1099,9 +1098,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                           >
                             <td className="p-3">
                               <div className="flex items-center gap-2">
-                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-                                  {user.name.charAt(0)}
-                                </div>
+                                <UserAvatar src={user.avatar_url} name={user.name} size="sm" />
                                 <div className="min-w-0">
                                   <span className="text-sm font-medium text-foreground line-clamp-2 block">
                                     {titlePrefix && (

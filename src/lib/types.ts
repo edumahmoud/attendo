@@ -161,6 +161,10 @@ export interface FileShare {
   shared_with_email?: string;
   shared_with_role?: string;
   shared_by_name?: string;
+  shared_by_role?: string;
+  shared_by_gender?: string;
+  shared_by_title_id?: string;
+  shared_by_avatar_url?: string;
   file_name?: string;
   file_url?: string;
 }

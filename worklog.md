@@ -210,3 +210,31 @@ Stage Summary:
 - Font sizes are smaller on mobile (text-xs/text-lg) and scale up on larger screens
 - Spacing is tighter on mobile (gap-2/gap-3) and expands on larger screens
 - Lint check passes with 0 errors, only 2 pre-existing warnings
+---
+Task ID: 6-a
+Agent: main
+Task: Replace charAt(0) avatars with UserAvatar in admin + teacher dashboards
+
+Work Log:
+- Updated admin-dashboard.tsx: 2 user avatars replaced (kept subject avatars)
+- Updated teacher-dashboard.tsx: 6 student avatars replaced
+
+Stage Summary:
+- All user/student avatars now use UserAvatar with profile picture support
+
+---
+Task ID: 4
+Agent: main
+Task: Update bulk-share API and settings with shared getRoleLabel
+
+Work Log:
+- Created /api/files/bulk-share/route.ts with shared getRoleLabel for gender-aware notification labels
+- Sharer profile query includes gender and title_id fields for proper role label generation
+- Updated settings-page.tsx: replaced local roleLabels map with getSharedRoleLabel from @/lib/utils
+- Updated settings-modal.tsx: replaced inline ternary roleLabel with getSharedRoleLabel
+- Both settings components now pass profile.gender and profile.title_id to getRoleLabel for gender-aware display
+
+Stage Summary:
+- Bulk-share notifications now show gender-aware role labels (e.g., دكتورة/دكتور, أستاذة/أستاذ)
+- Settings page and modal use shared utility instead of local duplicates
+- No lint errors

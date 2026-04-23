@@ -71,6 +71,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { supabase } from '@/lib/supabase';
 import type { UserProfile, UserFile, FileShare, SubjectFile } from '@/lib/types';
+import { getRoleLabel } from '@/lib/utils';
+import { UserAvatar } from '@/components/ui/user-avatar';
 
 // =====================================================
 // Props
@@ -119,6 +121,10 @@ interface UnifiedFileItem {
   isOwn: boolean;
   subjectFileSubjectId?: string; // for subject_files, the subject_id
   shared_by_name?: string;
+  shared_by_role?: string;
+  shared_by_gender?: string;
+  shared_by_title_id?: string;
+  shared_by_avatar_url?: string;
   uploader_name?: string;
 }
 
@@ -612,6 +618,10 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
         source: 'shared',
         isOwn: false,
         shared_by_name: s.shared_by_name,
+        shared_by_role: s.shared_by_role,
+        shared_by_gender: s.shared_by_gender,
+        shared_by_title_id: s.shared_by_title_id,
+        shared_by_avatar_url: s.shared_by_avatar_url,
       });
     });
 
@@ -1310,7 +1320,12 @@ export default function PersonalFilesSection({ profile }: PersonalFilesSectionPr
                     <>
                       <span className="text-muted-foreground/40">•</span>
                       <span className="text-blue-600 font-medium">
-                        شاركه {file.shared_by_name}
+                        شاركك{' '}
+                        <span className="text-blue-500/70">
+                          {getRoleLabel(file.shared_by_role, file.shared_by_gender, file.shared_by_title_id)}
+                        </span>
+                        {' : '}
+                        {file.shared_by_name}
                       </span>
                     </>
                   )}
