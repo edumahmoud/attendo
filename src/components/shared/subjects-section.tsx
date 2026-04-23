@@ -16,6 +16,7 @@ import {
   UserPlus,
   Clock,
   XCircle,
+  LogOut,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -154,6 +155,9 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
   const [joiningSubject, setJoiningSubject] = useState(false);
   const [subjectPreview, setSubjectPreview] = useState<{ id: string; name: string; description?: string; color: string; teacher_name?: string } | null>(null);
   const [searchingSubject, setSearchingSubject] = useState(false);
+
+  // ─── Cancel / Leave loading state ───
+  const [leavingSubjectId, setLeavingSubjectId] = useState<string | null>(null);
 
   // ─── Refs for stable real-time callbacks ───
   const fetchSubjectsRef = useRef<(() => Promise<void>) | undefined>(undefined);
@@ -460,6 +464,32 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
   };
 
   // -------------------------------------------------------
+  // Cancel / Dismiss / Leave subject (student only)
+  // -------------------------------------------------------
+  const handleSubjectAction = async (subjectId: string, action: 'cancel' | 'dismiss' | 'leave') => {
+    setLeavingSubjectId(subjectId);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/leave-subject', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action, subjectId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(data.message);
+        fetchSubjects();
+      } else {
+        toast.error(data.error || 'حدث خطأ');
+      }
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setLeavingSubjectId(null);
+    }
+  };
+
+  // -------------------------------------------------------
   // Helper: format date
   // -------------------------------------------------------
   function formatDate(dateStr: string): string {
@@ -670,18 +700,31 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
                             </button>
                           )}
 
-                          {/* Footer: creation date + teacher name */}
+                          {/* Footer: creation date + teacher name + leave button */}
                           <div className="mt-4 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                             <div className="flex items-center gap-1.5">
                               <Calendar className="h-3 w-3" />
                               <span>{formatDate(subject.created_at)}</span>
                             </div>
-                            {role === 'student' && teacherNames[subject.teacher_id] && (
-                              <div className="flex items-center gap-1.5 truncate">
-                                <User className="h-3 w-3 shrink-0" />
-                                <span className="truncate">{teacherNames[subject.teacher_id]}</span>
-                              </div>
-                            )}
+                            <div className="flex items-center gap-2">
+                              {role === 'student' && teacherNames[subject.teacher_id] && (
+                                <div className="flex items-center gap-1.5 truncate">
+                                  <User className="h-3 w-3 shrink-0" />
+                                  <span className="truncate">{teacherNames[subject.teacher_id]}</span>
+                                </div>
+                              )}
+                              {role === 'student' && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleSubjectAction(subject.id, 'leave'); }}
+                                  disabled={leavingSubjectId === subject.id}
+                                  className="inline-flex items-center gap-1 rounded-full bg-rose-50 border border-rose-200 px-2 py-0.5 text-[11px] text-rose-600 hover:bg-rose-100 transition-colors disabled:opacity-50"
+                                  title="انسحاب من المقرر"
+                                >
+                                  {leavingSubjectId === subject.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <LogOut className="h-3 w-3" />}
+                                  انسحاب
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -736,10 +779,20 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
                               </div>
                             </div>
 
-                            {/* Pending badge */}
-                            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs text-amber-700">
-                              <Clock className="h-3 w-3 shrink-0" />
-                              <span className="font-medium">في انتظار الموافقة</span>
+                            {/* Pending badge + cancel button */}
+                            <div className="mt-3 flex items-center gap-2">
+                              <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs text-amber-700">
+                                <Clock className="h-3 w-3 shrink-0" />
+                                <span className="font-medium">في انتظار الموافقة</span>
+                              </div>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleSubjectAction(subject.id, 'cancel'); }}
+                                disabled={leavingSubjectId === subject.id}
+                                className="inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-200 px-2.5 py-1 text-xs text-red-600 hover:bg-red-100 transition-colors disabled:opacity-50"
+                              >
+                                {leavingSubjectId === subject.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <XCircle className="h-3 w-3" />}
+                                إلغاء الطلب
+                              </button>
                             </div>
 
                             {/* Footer */}
@@ -796,10 +849,20 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
                               </div>
                             </div>
 
-                            {/* Rejected badge */}
-                            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-rose-50 border border-rose-200 px-2.5 py-1 text-xs text-rose-700">
-                              <XCircle className="h-3 w-3 shrink-0" />
-                              <span className="font-medium">مرفوض</span>
+                            {/* Rejected badge + dismiss button */}
+                            <div className="mt-3 flex items-center gap-2">
+                              <div className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 border border-rose-200 px-2.5 py-1 text-xs text-rose-700">
+                                <XCircle className="h-3 w-3 shrink-0" />
+                                <span className="font-medium">مرفوض</span>
+                              </div>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleSubjectAction(subject.id, 'dismiss'); }}
+                                disabled={leavingSubjectId === subject.id}
+                                className="inline-flex items-center gap-1 rounded-full bg-gray-50 border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50"
+                              >
+                                {leavingSubjectId === subject.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <XCircle className="h-3 w-3" />}
+                                إزالة
+                              </button>
                             </div>
 
                             {/* Footer */}

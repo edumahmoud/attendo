@@ -21,6 +21,7 @@ import {
   Trash2,
   X,
   Sparkles,
+  LogOut,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/stores/app-store';
@@ -166,6 +167,10 @@ export default function CoursePage({ profile, role }: CoursePageProps) {
   // ─── Delete subject state ───
   const [deletingSubject, setDeletingSubject] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
+  // ─── Leave course state (student only) ───
+  const [leavingCourse, setLeavingCourse] = useState(false);
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
 
   // Subject color with fallback
   const subjectColor = subject?.color || '#10b981';
@@ -328,6 +333,38 @@ export default function CoursePage({ profile, role }: CoursePageProps) {
   };
 
   // -------------------------------------------------------
+  // Leave course (student only)
+  // -------------------------------------------------------
+  const handleLeaveCourse = async () => {
+    if (!subject) return;
+    setLeavingCourse(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+      const res = await fetch('/api/leave-subject', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ action: 'leave', subjectId: subject.id }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(data.message);
+        handleBack();
+      } else {
+        toast.error(data.error || 'حدث خطأ أثناء الانسحاب من المقرر');
+      }
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setLeavingCourse(false);
+      setLeaveConfirmOpen(false);
+    }
+  };
+
+  // -------------------------------------------------------
   // Loading state
   // -------------------------------------------------------
   if (loading) {
@@ -462,6 +499,18 @@ export default function CoursePage({ profile, role }: CoursePageProps) {
                     )}
                   </button>
                 </div>
+              )}
+
+              {/* Student: Leave course button */}
+              {role === 'student' && (
+                <button
+                  onClick={() => setLeaveConfirmOpen(true)}
+                  className="flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur-sm px-3 py-1.5 text-xs text-white/90 hover:bg-rose-400/30 hover:text-white transition-colors"
+                  title="انسحاب من المقرر"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  انسحاب
+                </button>
               )}
 
               {/* Join code pill badge — teachers only */}
@@ -777,6 +826,70 @@ export default function CoursePage({ profile, role }: CoursePageProps) {
                   <button
                     onClick={() => setDeleteConfirmOpen(false)}
                     disabled={deletingSubject}
+                    className="flex-1 rounded-xl border py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-60"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ============================================ */}
+      {/* LEAVE COURSE CONFIRM DIALOG (student only)   */}
+      {/* ============================================ */}
+      <AnimatePresence>
+        {leaveConfirmOpen && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            variants={modalOverlayVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+          >
+            <motion.div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              onClick={() => !leavingCourse && setLeaveConfirmOpen(false)}
+            />
+            <motion.div
+              variants={modalContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              className="relative w-full max-w-sm rounded-2xl border bg-background shadow-2xl p-6"
+              dir="rtl"
+            >
+              <div className="flex flex-col items-center text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 mb-4">
+                  <LogOut className="h-7 w-7 text-amber-600" />
+                </div>
+                <h3 className="text-lg font-bold text-foreground mb-2">انسحاب من المقرر</h3>
+                <p className="text-sm text-muted-foreground mb-6">
+                  هل أنت متأكد من الانسحاب من مقرر &quot;{subject.name}&quot;؟ لن تتمكن من الوصول إلى محتواه بعد الآن.
+                </p>
+                <div className="flex items-center gap-3 w-full">
+                  <button
+                    onClick={handleLeaveCourse}
+                    disabled={leavingCourse}
+                    className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-amber-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-amber-700 disabled:opacity-60"
+                  >
+                    {leavingCourse ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        جاري الانسحاب...
+                      </>
+                    ) : (
+                      <>
+                        <LogOut className="h-4 w-4" />
+                        انسحاب
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setLeaveConfirmOpen(false)}
+                    disabled={leavingCourse}
                     className="flex-1 rounded-xl border py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-60"
                   >
                     إلغاء

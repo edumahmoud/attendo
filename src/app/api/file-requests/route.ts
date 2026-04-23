@@ -192,6 +192,70 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: 'تم رفض الطلب' });
     }
 
+    // CANCEL: Requester cancels their own pending request
+    if (action === 'cancel') {
+      if (!requestId) {
+        return NextResponse.json({ error: 'معرف الطلب مطلوب' }, { status: 400 });
+      }
+
+      const { data: req } = await supabaseServer
+        .from('file_requests')
+        .select('id, requester_id, status')
+        .eq('id', requestId)
+        .single();
+
+      if (!req || req.requester_id !== authUser.id) {
+        return NextResponse.json({ error: 'غير مصرح بهذا الإجراء' }, { status: 403 });
+      }
+
+      if (req.status !== 'pending') {
+        return NextResponse.json({ error: 'لا يمكن إلغاء طلب غير معلق' }, { status: 400 });
+      }
+
+      const { error } = await supabaseServer
+        .from('file_requests')
+        .delete()
+        .eq('id', requestId);
+
+      if (error) {
+        return NextResponse.json({ error: 'حدث خطأ أثناء إلغاء الطلب' }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, message: 'تم إلغاء الطلب' });
+    }
+
+    // DISMISS: Requester dismisses their own rejected request
+    if (action === 'dismiss') {
+      if (!requestId) {
+        return NextResponse.json({ error: 'معرف الطلب مطلوب' }, { status: 400 });
+      }
+
+      const { data: req } = await supabaseServer
+        .from('file_requests')
+        .select('id, requester_id, status')
+        .eq('id', requestId)
+        .single();
+
+      if (!req || req.requester_id !== authUser.id) {
+        return NextResponse.json({ error: 'غير مصرح بهذا الإجراء' }, { status: 403 });
+      }
+
+      if (req.status !== 'rejected') {
+        return NextResponse.json({ error: 'لا يمكن إزالة إلا الطلبات المرفوضة' }, { status: 400 });
+      }
+
+      const { error } = await supabaseServer
+        .from('file_requests')
+        .delete()
+        .eq('id', requestId);
+
+      if (error) {
+        return NextResponse.json({ error: 'حدث خطأ أثناء إزالة الطلب' }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, message: 'تم إزالة الطلب' });
+    }
+
     // LIST: Owner lists their incoming file requests
     if (action === 'list') {
       const { data: requests, error } = await supabaseServer

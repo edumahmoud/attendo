@@ -657,19 +657,87 @@ export default function UserProfilePage({ userId, currentUser, onBack }: UserPro
                                     تمت الموافقة
                                   </Badge>
                                 ) : file.requestStatus === 'pending' ? (
-                                  <Badge
-                                    className="w-full justify-center gap-1.5 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-0 text-xs py-1.5"
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="w-full gap-1.5 text-xs h-8 border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-900/30"
+                                    disabled={processingRequestId === file.requestId}
+                                    onClick={async () => {
+                                      if (!file.requestId) return;
+                                      setProcessingRequestId(file.requestId);
+                                      try {
+                                        const headers = await getAuthHeaders();
+                                        const res = await fetch('/api/file-requests', {
+                                          method: 'POST',
+                                          headers,
+                                          body: JSON.stringify({ action: 'cancel', requestId: file.requestId }),
+                                        });
+                                        const data = await res.json();
+                                        if (res.ok && data.success) {
+                                          toast.success('تم إلغاء الطلب');
+                                          setPublicFiles((prev) =>
+                                            prev.map((f) =>
+                                              f.id === file.id ? { ...f, requestStatus: null, requestId: undefined } : f
+                                            )
+                                          );
+                                        } else {
+                                          toast.error(data.error || 'حدث خطأ');
+                                        }
+                                      } catch {
+                                        toast.error('حدث خطأ غير متوقع');
+                                      } finally {
+                                        setProcessingRequestId(null);
+                                      }
+                                    }}
                                   >
-                                    <Clock className="h-3.5 w-3.5" />
-                                    قيد الانتظار
-                                  </Badge>
+                                    {processingRequestId === file.requestId ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <XCircle className="h-3.5 w-3.5" />
+                                    )}
+                                    إلغاء الطلب
+                                  </Button>
                                 ) : file.requestStatus === 'rejected' ? (
-                                  <Badge
-                                    className="w-full justify-center gap-1.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-0 text-xs py-1.5"
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="w-full gap-1.5 text-xs h-8 border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30"
+                                    disabled={processingRequestId === file.requestId}
+                                    onClick={async () => {
+                                      if (!file.requestId) return;
+                                      setProcessingRequestId(file.requestId);
+                                      try {
+                                        const headers = await getAuthHeaders();
+                                        const res = await fetch('/api/file-requests', {
+                                          method: 'POST',
+                                          headers,
+                                          body: JSON.stringify({ action: 'dismiss', requestId: file.requestId }),
+                                        });
+                                        const data = await res.json();
+                                        if (res.ok && data.success) {
+                                          toast.success('تم إزالة الطلب');
+                                          setPublicFiles((prev) =>
+                                            prev.map((f) =>
+                                              f.id === file.id ? { ...f, requestStatus: null, requestId: undefined } : f
+                                            )
+                                          );
+                                        } else {
+                                          toast.error(data.error || 'حدث خطأ');
+                                        }
+                                      } catch {
+                                        toast.error('حدث خطأ غير متوقع');
+                                      } finally {
+                                        setProcessingRequestId(null);
+                                      }
+                                    }}
                                   >
-                                    <XCircle className="h-3.5 w-3.5" />
-                                    مرفوض
-                                  </Badge>
+                                    {processingRequestId === file.requestId ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <XCircle className="h-3.5 w-3.5" />
+                                    )}
+                                    إزالة
+                                  </Button>
                                 ) : (
                                   <Dialog
                                     open={requestDialogOpen && requestingFileId === file.id}
