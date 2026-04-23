@@ -136,14 +136,6 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
     }
   }, [activeSection, selectedSubjectId, setSelectedSubjectId]);
 
-  // Refresh teachers data when navigating to teachers section
-  // This ensures pending/rejected link requests are always up-to-date
-  useEffect(() => {
-    if (activeSection === 'teachers') {
-      fetchLinkedTeachers();
-    }
-  }, [activeSection, fetchLinkedTeachers]);
-
   // ─── Auth store ───
   const { updateProfile: authUpdateProfile, signOut: authSignOut } = useAuthStore();
 
@@ -351,6 +343,14 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
       setRejectedLinkTeachers([]);
     }
   }, [profile.id]);
+
+  // Refresh teachers data when navigating to teachers section
+  // This ensures pending/rejected link requests are always up-to-date
+  useEffect(() => {
+    if (activeSection === 'teachers') {
+      fetchLinkedTeachers();
+    }
+  }, [activeSection, fetchLinkedTeachers]);
 
   const fetchFileCount = useCallback(async () => {
     const { count, error } = await supabase
