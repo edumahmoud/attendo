@@ -964,6 +964,11 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
       return;
     }
     setExpandedLectureId(lectureId);
+    await fetchExpandedNotes(lectureId);
+  };
+
+  // Fetch public notes for the expanded lecture (student view)
+  const fetchExpandedNotes = useCallback(async (lectureId: string) => {
     try {
       const { data, error } = await supabase.from('lecture_notes').select('*').eq('lecture_id', lectureId).eq('visibility', 'public').order('created_at', { ascending: false });
       if (error) { setExpandedNotes([]); return; }
@@ -980,7 +985,48 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
         setExpandedNotes([]);
       }
     } catch { setExpandedNotes([]); }
-  };
+  }, []);
+
+  // Real-time subscription for student expanded notes
+  useEffect(() => {
+    if (role !== 'student' || !expandedLectureId) return;
+
+    const channel = supabase
+      .channel(`student-notes-${expandedLectureId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'lecture_notes', filter: `lecture_id=eq.${expandedLectureId}` },
+        async (payload) => {
+          const newNote = payload.new as LectureNote;
+          // Only show public notes
+          if (newNote.visibility !== 'public') return;
+          // Fetch author info for the new note
+          const { data: author } = await supabase.from('users').select('id, name, title_id, gender, role').eq('id', newNote.user_id).single();
+          const authorName = author ? formatNameWithTitle(author.name, author.role, author.title_id, author.gender) : 'معلم';
+          const enriched: LectureNoteWithAuthor = { ...newNote, author_name: authorName };
+          setExpandedNotes((prev) => {
+            // Prevent duplicates
+            if (prev.some((n) => n.id === newNote.id)) return prev;
+            // Insert at the beginning (newest first)
+            return [enriched, ...prev];
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'lecture_notes', filter: `lecture_id=eq.${expandedLectureId}` },
+        (payload) => {
+          const deletedId = (payload.old as { id: string })?.id;
+          if (!deletedId) return;
+          setExpandedNotes((prev) => prev.filter((n) => n.id !== deletedId));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [role, expandedLectureId]);
 
   // -------------------------------------------------------
   // Render
