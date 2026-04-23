@@ -1302,6 +1302,71 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ─── Leave Course Confirm Dialog (student only) ─── */}
+      <AnimatePresence>
+        {leaveConfirmOpen && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            variants={modalOverlayVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+          >
+            <motion.div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              onClick={() => !leavingSubjectId && setLeaveConfirmOpen(null)}
+            />
+            <motion.div
+              variants={modalContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              className="relative w-full max-w-sm rounded-2xl border bg-background shadow-2xl p-6"
+              dir="rtl"
+            >
+              <div className="flex flex-col items-center text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 mb-4">
+                  <LogOut className="h-7 w-7 text-amber-600" />
+                </div>
+                <h3 className="text-lg font-bold text-foreground mb-2">انسحاب من المقرر</h3>
+                <p className="text-sm text-muted-foreground mb-2">
+                  هل أنت متأكد من الانسحاب من مقرر &quot;{leaveConfirmOpen.subjectName}&quot;؟
+                </p>
+                <p className="text-xs text-muted-foreground/70 mb-6">
+                  لن تتمكن من الوصول إلى محتوى المقرر بعد الآن، وسيتم إزالة جميع درجاتك ومشاركاتك.
+                </p>
+                <div className="flex items-center gap-3 w-full">
+                  <button
+                    onClick={handleConfirmLeave}
+                    disabled={leavingSubjectId !== null}
+                    className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-rose-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-60"
+                  >
+                    {leavingSubjectId ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        جاري الانسحاب...
+                      </>
+                    ) : (
+                      <>
+                        <LogOut className="h-4 w-4" />
+                        نعم، انسحاب
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setLeaveConfirmOpen(null)}
+                    disabled={leavingSubjectId !== null}
+                    className="flex-1 rounded-xl border py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-60"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

@@ -862,18 +862,21 @@ export default function CoursePage({ profile, role }: CoursePageProps) {
               dir="rtl"
             >
               <div className="flex flex-col items-center text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 mb-4">
-                  <LogOut className="h-7 w-7 text-amber-600" />
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-rose-100 mb-4">
+                  <LogOut className="h-7 w-7 text-rose-600" />
                 </div>
                 <h3 className="text-lg font-bold text-foreground mb-2">انسحاب من المقرر</h3>
-                <p className="text-sm text-muted-foreground mb-6">
-                  هل أنت متأكد من الانسحاب من مقرر &quot;{subject.name}&quot;؟ لن تتمكن من الوصول إلى محتواه بعد الآن.
+                <p className="text-sm text-muted-foreground mb-2">
+                  هل أنت متأكد من الانسحاب من مقرر &quot;{subject.name}&quot;؟
+                </p>
+                <p className="text-xs text-muted-foreground/70 mb-6">
+                  لن تتمكن من الوصول إلى محتوى المقرر بعد الآن، وسيتم إزالة جميع درجاتك ومشاركاتك.
                 </p>
                 <div className="flex items-center gap-3 w-full">
                   <button
                     onClick={handleLeaveCourse}
                     disabled={leavingCourse}
-                    className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-amber-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-amber-700 disabled:opacity-60"
+                    className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-rose-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-60"
                   >
                     {leavingCourse ? (
                       <>
@@ -883,7 +886,7 @@ export default function CoursePage({ profile, role }: CoursePageProps) {
                     ) : (
                       <>
                         <LogOut className="h-4 w-4" />
-                        انسحاب
+                        نعم، انسحاب
                       </>
                     )}
                   </button>
