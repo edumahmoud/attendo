@@ -370,13 +370,19 @@ export default function LectureModal({
 
   // ─── Real-time subscription for attendance records ───
   useEffect(() => {
-    if (!open || !lecture.attendance_session || !isActive) return;
+    if (!open || !lecture.attendance_session) return;
+    const sessionId = lecture.attendance_session.id;
     const channel = supabase
-      .channel(`modal-att-${lecture.attendance_session.id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'attendance_records', filter: `session_id=eq.${lecture.attendance_session.id}` }, () => fetchAttendanceRecords())
+      .channel(`modal-att-${sessionId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'attendance_records', filter: `session_id=eq.${sessionId}` }, () => fetchAttendanceRecords())
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'attendance_records', filter: `session_id=eq.${sessionId}` }, () => {
+        fetchAttendanceRecords();
+        fetchAbsentStudents();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'attendance_records', filter: `session_id=eq.${sessionId}` }, () => fetchAttendanceRecords())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [open, lecture.attendance_session, isActive, fetchAttendanceRecords]);
+  }, [open, lecture.attendance_session, fetchAttendanceRecords, fetchAbsentStudents]);
 
   // ─── Add note ───
   const handleAddNote = async () => {

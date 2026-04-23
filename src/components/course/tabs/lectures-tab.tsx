@@ -464,25 +464,102 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
   useEffect(() => { fetchLectures(true); }, [fetchLectures]);
 
   // -------------------------------------------------------
-  // Real-time subscription (debounced to avoid heavy re-fetches)
+  // Real-time subscription for attendance records (instant count updates)
   // -------------------------------------------------------
   useEffect(() => {
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const debouncedFetch = () => {
       if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => fetchLectures(), 500);
+      debounceTimer = setTimeout(() => fetchLectures(), 2000);
     };
+
     const channel = supabase
       .channel(`lectures-att-${subjectId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_sessions', filter: `subject_id=eq.${subjectId}` }, debouncedFetch)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lectures', filter: `subject_id=eq.${subjectId}` }, debouncedFetch)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records' }, debouncedFetch)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'attendance_records' },
+        (payload) => {
+          const newRecord = payload.new as { session_id: string; student_id: string };
+          // Instantly update attendance count on the lecture card
+          setLectures((prev) =>
+            prev.map((l) => {
+              if (l.attendance_session?.id === newRecord.session_id) {
+                return { ...l, attendance_count: (l.attendance_count || 0) + 1 };
+              }
+              return l;
+            })
+          );
+          // If the current student checked in, update their status
+          if (role === 'student' && newRecord.student_id === profile.id) {
+            setCheckedInSessions((prev) => {
+              const next = new Set(prev);
+              next.add(newRecord.session_id);
+              return next;
+            });
+            setLectures((prev) =>
+              prev.map((l) => {
+                if (l.attendance_session?.id === newRecord.session_id) {
+                  return { ...l, student_checked_in: true };
+                }
+                return l;
+              })
+            );
+          }
+          // Also update the QR modal attendee count if open
+          if (qrModalOpen && qrLecture?.attendance_session?.id === newRecord.session_id) {
+            setQrAttendeeCount((prev) => prev + 1);
+          }
+          // Debounced full refresh for consistency
+          debouncedFetch();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'attendance_records' },
+        (payload) => {
+          const deletedRecord = payload.old as { session_id: string; student_id: string };
+          if (!deletedRecord?.session_id) { debouncedFetch(); return; }
+          // Instantly update attendance count on the lecture card
+          setLectures((prev) =>
+            prev.map((l) => {
+              if (l.attendance_session?.id === deletedRecord.session_id) {
+                return { ...l, attendance_count: Math.max(0, (l.attendance_count || 0) - 1) };
+              }
+              return l;
+            })
+          );
+          // If the current student was removed, update their status
+          if (role === 'student' && deletedRecord.student_id === profile.id) {
+            setCheckedInSessions((prev) => {
+              const next = new Set(prev);
+              next.delete(deletedRecord.session_id);
+              return next;
+            });
+            setLectures((prev) =>
+              prev.map((l) => {
+                if (l.attendance_session?.id === deletedRecord.session_id) {
+                  return { ...l, student_checked_in: false };
+                }
+                return l;
+              })
+            );
+          }
+          // Also update the QR modal attendee count if open
+          if (qrModalOpen && qrLecture?.attendance_session?.id === deletedRecord.session_id) {
+            setQrAttendeeCount((prev) => Math.max(0, prev - 1));
+          }
+          // Debounced full refresh for consistency
+          debouncedFetch();
+        }
+      )
       .subscribe();
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
-  }, [subjectId, fetchLectures]);
+  }, [subjectId, fetchLectures, role, profile.id, qrModalOpen, qrLecture]);
 
   // -------------------------------------------------------
   // Create lecture
