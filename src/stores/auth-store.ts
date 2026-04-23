@@ -775,14 +775,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { user } = get();
     if (!user) return;
     
-    const { data: profile } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-    
-    if (profile) {
-      set({ user: profile as UserProfile });
+    try {
+      // Try client-side Supabase first (faster, works if RLS allows)
+      const { data: profile } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+      
+      if (profile) {
+        set({ user: profile as UserProfile });
+        return;
+      }
+
+      // Fallback: use server-side API if client-side fetch fails
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+      const res = await fetch(`/api/profile/${user.id}`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.profile) {
+          // Merge with existing user data to preserve all fields
+          set({ user: { ...user, ...data.profile } as UserProfile });
+        }
+      }
+    } catch {
+      // Silently fail — keep existing user data
     }
   },
 }));

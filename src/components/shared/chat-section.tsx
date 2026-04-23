@@ -25,6 +25,8 @@ import {
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import type { UserProfile, Conversation, ChatMessage } from '@/lib/types';
+import UserAvatar from '@/components/shared/user-avatar';
+import { useAppStore } from '@/stores/app-store';
 
 // =====================================================
 // Props
@@ -112,6 +114,7 @@ function TypingIndicator({ names }: { names: string[] }) {
 export default function ChatSection({ profile, role }: ChatSectionProps) {
   // ─── Shared socket ───
   const { socket, isConnected, joinRoom, leaveRoom, joinAllRooms } = useSharedSocket();
+  const { openProfile } = useAppStore();
 
   // ─── Conversations state ───
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -918,9 +921,7 @@ export default function ChatSection({ profile, role }: ChatSectionProps) {
         {!isOwn && (
           <div className="shrink-0 w-7">
             {showAvatar ? (
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-100 text-amber-700 font-bold text-[10px]">
-                {senderName.charAt(0)}
-              </div>
+              <UserAvatar name={senderName} avatarUrl={msg.sender?.avatar_url} size="xs" />
             ) : null}
           </div>
         )}
@@ -928,9 +929,13 @@ export default function ChatSection({ profile, role }: ChatSectionProps) {
         <div className={`max-w-[75%] flex flex-col ${isOwn ? 'items-start' : 'items-end'} relative`}>
           {/* Sender name for group chats */}
           {!isOwn && showAvatar && activeConvInfo?.type === 'group' && (
-            <span className="text-[10px] text-muted-foreground mb-0.5 font-medium px-1">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); openProfile(msg.sender_id); }}
+              className="text-[10px] text-muted-foreground mb-0.5 font-medium px-1 hover:text-emerald-600 transition-colors"
+            >
               {senderName}
-            </span>
+            </button>
           )}
 
           {isEditing ? (
@@ -1216,7 +1221,6 @@ export default function ChatSection({ profile, role }: ChatSectionProps) {
                   const displayName = isGroup
                     ? conv.title || 'محادثة جماعية'
                     : conv.otherParticipant?.name || 'محادثة خاصة';
-                  const displayAvatar = !isGroup && conv.otherParticipant?.avatar_url;
                   const otherUserId = !isGroup ? conv.otherParticipant?.id : null;
                   const isOtherOnline = otherUserId ? onlineUsers.has(otherUserId) : false;
 
@@ -1238,18 +1242,12 @@ export default function ChatSection({ profile, role }: ChatSectionProps) {
                     >
                       {/* Avatar */}
                       <div className="shrink-0 relative">
-                        {displayAvatar ? (
-                          <img
-                            src={displayAvatar}
-                            alt={displayName}
-                            className="h-11 w-11 rounded-full object-cover"
-                          />
-                        ) : (
-                          <div className={`flex h-11 w-11 items-center justify-center rounded-full font-bold text-sm ${
-                            isGroup ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                          }`}>
-                            {isGroup ? <Hash className="h-5 w-5" /> : displayName.charAt(0)}
+                        {conv.type === 'group' ? (
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                            <Hash className="h-5 w-5" />
                           </div>
+                        ) : (
+                          <UserAvatar name={conv.otherParticipant?.name || displayName} avatarUrl={conv.otherParticipant?.avatar_url} size="md" />
                         )}
                         {/* Online indicator for individual chats */}
                         {!isGroup && otherUserId && (
@@ -1313,16 +1311,8 @@ export default function ChatSection({ profile, role }: ChatSectionProps) {
                       <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
                         <Hash className="h-4 w-4" />
                       </div>
-                    ) : activeConvInfo.otherParticipant?.avatar_url ? (
-                      <img
-                        src={activeConvInfo.otherParticipant.avatar_url}
-                        alt={chatHeaderName}
-                        className="h-9 w-9 rounded-full object-cover"
-                      />
                     ) : (
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-100 text-amber-700 font-bold text-sm">
-                        {chatHeaderName.charAt(0)}
-                      </div>
+                      <UserAvatar name={chatHeaderName} avatarUrl={activeConvInfo.otherParticipant?.avatar_url} size="md" />
                     )}
                     {/* Online dot in header */}
                     {activeConvInfo.type === 'individual' && (
@@ -1523,13 +1513,7 @@ export default function ChatSection({ profile, role }: ChatSectionProps) {
                         className="w-full flex items-center gap-3 p-3 hover:bg-muted/50 transition-colors text-right disabled:opacity-50"
                       >
                         <div className="shrink-0 relative">
-                          {user.avatar_url ? (
-                            <img src={user.avatar_url} alt={user.name} className="h-10 w-10 rounded-full object-cover" />
-                          ) : (
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700 font-bold text-sm">
-                              {user.name.charAt(0)}
-                            </div>
-                          )}
+                          <UserAvatar name={user.name} avatarUrl={user.avatar_url} size="md" />
                           <div className={`absolute -bottom-0.5 -start-0.5 h-3 w-3 rounded-full border-2 border-card ${
                             onlineUsers.has(user.id) ? 'bg-emerald-500' : 'bg-gray-300'
                           }`} />

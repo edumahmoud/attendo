@@ -45,6 +45,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import type { UserProfile, UserFile, FileShare, Subject } from '@/lib/types';
+import UserAvatar from '@/components/shared/user-avatar';
 
 // -------------------------------------------------------
 // Props
@@ -1768,9 +1769,7 @@ export default function PersonalFilesSection({ profile, role }: PersonalFilesSec
               <div className="group relative rounded-xl border bg-card p-5 shadow-sm hover:shadow-md transition-all">
                 {/* Shared by info */}
                 <div className="flex items-center gap-2 mb-3 pb-3 border-b">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-                    {file.shared_by_user?.name?.charAt(0) || '?'}
-                  </div>
+                  <UserAvatar name={file.shared_by_user?.name || 'مستخدم'} avatarUrl={file.shared_by_user?.avatar_url} size="xs" />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs text-muted-foreground truncate">
                       شاركك{' '}
@@ -2152,9 +2151,7 @@ export default function PersonalFilesSection({ profile, role }: PersonalFilesSec
                     {detailsFileShares.map((share) => (
                       <div key={share.id} className="flex items-center justify-between rounded-lg bg-muted/30 p-2.5">
                         <div className="flex items-center gap-2 min-w-0">
-                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-                            {share.shared_with_user?.name?.charAt(0) || '?'}
-                          </div>
+                          <UserAvatar name={share.shared_with_user?.name || 'مستخدم'} avatarUrl={share.shared_with_user?.avatar_url} size="xs" />
                           <span className="text-sm font-medium text-foreground truncate">{share.shared_with_user?.name || 'مستخدم'}</span>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
@@ -2290,9 +2287,7 @@ export default function PersonalFilesSection({ profile, role }: PersonalFilesSec
                         onClick={() => addShareUser(user)}
                         className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-muted transition-colors text-right"
                       >
-                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-                          {user.name?.charAt(0) || '?'}
-                        </div>
+                        <UserAvatar name={user.name || 'مستخدم'} avatarUrl={user.avatar_url} size="xs" />
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-foreground truncate">{user.name}</p>
                           <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
@@ -2356,9 +2351,7 @@ export default function PersonalFilesSection({ profile, role }: PersonalFilesSec
                         key={share.id}
                         className="flex items-center gap-2 rounded-lg border bg-muted/30 p-2.5"
                       >
-                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-                          {share.shared_with_user?.name?.charAt(0) || '?'}
-                        </div>
+                        <UserAvatar name={share.shared_with_user?.name || 'مستخدم'} avatarUrl={share.shared_with_user?.avatar_url} size="xs" />
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-foreground truncate">
                             {share.shared_with_user?.name || 'مستخدم'}
@@ -2672,9 +2665,7 @@ export default function PersonalFilesSection({ profile, role }: PersonalFilesSec
                         onClick={() => addBulkShareUser(user)}
                         className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-muted transition-colors text-right"
                       >
-                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-                          {user.name?.charAt(0) || '?'}
-                        </div>
+                        <UserAvatar name={user.name || 'مستخدم'} avatarUrl={user.avatar_url} size="xs" />
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-foreground truncate">{user.name}</p>
                           <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>

@@ -52,6 +52,8 @@ import AppSidebar from '@/components/shared/app-sidebar';
 import AppHeader from '@/components/shared/app-header';
 import SettingsSection from '@/components/shared/settings-section';
 import StatCard from '@/components/shared/stat-card';
+import UserAvatar from '@/components/shared/user-avatar';
+import UserLink from '@/components/shared/user-link';
 import { useAuthStore } from '@/stores/auth-store';
 import { useAppStore } from '@/stores/app-store';
 import { toast } from 'sonner';
@@ -738,12 +740,17 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                       {allUsers.slice(0, 8).map((user) => (
                         <tr key={user.id} className="hover:bg-muted/30 transition-colors">
                           <td className="p-3">
-                            <div className="flex items-center gap-2">
-                              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-700 text-xs font-bold">
-                                {user.name.charAt(0)}
-                              </div>
-                              <span className="text-sm font-medium text-foreground truncate">{user.name}</span>
-                            </div>
+                            <UserLink
+                              userId={user.id}
+                              name={user.name}
+                              avatarUrl={user.avatar_url}
+                              role={user.role}
+                              gender={user.gender}
+                              titleId={user.title_id}
+                              size="xs"
+                              showAvatar={true}
+                              showUsername={false}
+                            />
                           </td>
                           <td className="p-3 hidden sm:table-cell">
                             <span className="text-sm text-muted-foreground truncate max-w-[180px] block">{user.email}</span>
@@ -931,24 +938,18 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                 }}
               >
                 <div className="flex items-center gap-3 mb-3">
-                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-transform group-hover:scale-110 ${
-                    user.role === 'superadmin'
-                      ? 'bg-amber-100 text-amber-700'
-                      : user.role === 'admin'
-                        ? 'bg-purple-100 text-purple-700'
-                        : user.role === 'teacher'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-blue-100 text-blue-700'
-                  }`}>
-                    {user.name.charAt(0)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-sm font-semibold text-foreground truncate">{user.name}</h3>
-                    <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                      <Mail className="h-3 w-3" />
-                      {user.email}
-                    </p>
-                  </div>
+                  <UserLink
+                    userId={user.id}
+                    name={user.name}
+                    avatarUrl={user.avatar_url}
+                    role={user.role}
+                    gender={user.gender}
+                    titleId={user.title_id}
+                    size="sm"
+                    showAvatar={true}
+                    showUsername={false}
+                    className="flex-1 min-w-0"
+                  />
                 </div>
 
                 <div className="flex items-center justify-between mb-3">
@@ -1024,23 +1025,18 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
             >
               {/* Header */}
               <div className="flex items-center justify-between border-b p-5">
-                <div className="flex items-center gap-3">
-                  <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-bold ${
-                    selectedUser.role === 'superadmin'
-                      ? 'bg-amber-100 text-amber-700'
-                      : selectedUser.role === 'admin'
-                        ? 'bg-purple-100 text-purple-700'
-                        : 'bg-emerald-100 text-emerald-700'
-                  }`}>
-                    {selectedUser.name.charAt(0)}
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-foreground">{selectedUser.name}</h3>
-                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold border ${getRoleBadgeClass(selectedUser.role)}`}>
-                      {getRoleLabel(selectedUser.role)}
-                    </span>
-                  </div>
-                </div>
+                <UserLink
+                  userId={selectedUser.id}
+                  name={selectedUser.name}
+                  avatarUrl={selectedUser.avatar_url}
+                  role={selectedUser.role}
+                  gender={selectedUser.gender}
+                  titleId={selectedUser.title_id}
+                  size="lg"
+                  showAvatar={true}
+                  showRole={true}
+                  showUsername={false}
+                />
                 <button
                   onClick={() => setUserDetailOpen(false)}
                   className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
@@ -1228,12 +1224,17 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                   {/* Teacher info */}
                   <div className="flex items-center gap-2 mb-3">
                     {teacher ? (
-                      <>
-                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-                          {teacher.name.charAt(0)}
-                        </div>
-                        <span className="text-xs text-muted-foreground truncate">{teacher.name}</span>
-                      </>
+                      <UserLink
+                        userId={teacher.id}
+                        name={teacher.name}
+                        avatarUrl={teacher.avatar_url}
+                        role="teacher"
+                        gender={teacher.gender}
+                        titleId={teacher.title_id}
+                        size="xs"
+                        showAvatar={true}
+                        showUsername={false}
+                      />
                     ) : (
                       <span className="text-xs text-muted-foreground">معلم غير معروف</span>
                     )}
@@ -1349,9 +1350,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                       <p className="text-sm font-medium text-foreground mb-2">المعلم</p>
                       {subjectTeacher ? (
                         <div className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-sm font-bold">
-                            {subjectTeacher.name.charAt(0)}
-                          </div>
+                          <UserAvatar name={subjectTeacher.name} avatarUrl={subjectTeacher.avatar_url} size="sm" />
                           <div>
                             <p className="text-sm font-medium text-foreground">{subjectTeacher.name}</p>
                             <p className="text-xs text-muted-foreground">{subjectTeacher.email}</p>
@@ -1373,9 +1372,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                         <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
                           {subjectStudents.map((student) => (
                             <div key={student.id} className="flex items-center gap-2 p-2 rounded-lg bg-muted/30">
-                              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700 text-xs font-bold">
-                                {student.name.charAt(0)}
-                              </div>
+                              <UserAvatar name={student.name} avatarUrl={student.avatar_url} size="xs" />
                               <div className="min-w-0 flex-1">
                                 <p className="text-sm font-medium text-foreground truncate">{student.name}</p>
                                 <p className="text-xs text-muted-foreground truncate">{student.email}</p>
@@ -2086,6 +2083,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
       {/* Header */}
       <AppHeader
         userName={profile.name}
+        userId={profile.id}
         userRole="admin"
         userGender={profile.gender}
         avatarUrl={profile.avatar_url}

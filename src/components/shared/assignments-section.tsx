@@ -27,6 +27,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import type { UserProfile, Assignment, Submission, Subject, UserFile } from '@/lib/types';
+import UserAvatar from '@/components/shared/user-avatar';
 
 // -------------------------------------------------------
 // Props
@@ -1269,9 +1270,7 @@ export default function AssignmentsSection({ profile, role }: AssignmentsSection
               {submissions.map((sub) => (
                 <div key={sub.id} className="px-4 py-3 space-y-2 sm:space-y-0 sm:grid sm:grid-cols-12 sm:gap-2 sm:items-center min-w-[600px]">
                   <div className="col-span-3 flex items-center gap-2">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs">
-                      {sub.student_name?.charAt(0) || '?'}
-                    </div>
+                    <UserAvatar name={sub.student_name || 'مستخدم'} avatarUrl={sub.student_avatar} size="sm" />
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-foreground truncate">{sub.student_name}</p>
                       <p className="text-xs text-muted-foreground truncate sm:hidden">

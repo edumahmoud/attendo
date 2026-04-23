@@ -31,6 +31,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import type { UserProfile, LectureWithAttendance, AttendanceRecordWithStudent, LectureNote, LectureNoteWithAuthor } from '@/lib/types';
+import UserAvatar from '@/components/shared/user-avatar';
 
 // -------------------------------------------------------
 // Props
@@ -907,9 +908,7 @@ export default function LectureModal({
                           {attendanceRecords.map((record) => (
                             <div key={record.id} className="flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors">
                               <div className="flex items-center gap-3 min-w-0">
-                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs">
-                                  {record.student_name?.charAt(0) || '?'}
-                                </div>
+                                <UserAvatar name={record.student_name || 'مستخدم'} avatarUrl={record.student_avatar} size="sm" />
                                 <div className="min-w-0">
                                   <p className="text-sm font-medium text-foreground truncate">{record.student_name}</p>
                                   <p className="text-xs text-muted-foreground truncate">{record.student_email}</p>

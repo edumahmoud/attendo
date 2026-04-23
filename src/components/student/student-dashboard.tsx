@@ -46,6 +46,8 @@ import { useAppStore } from '@/stores/app-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { toast } from 'sonner';
 import type { UserProfile, Summary, Quiz, Score, StudentSection, Subject } from '@/lib/types';
+import UserAvatar from '@/components/shared/user-avatar';
+import UserLink from '@/components/shared/user-link';
 
 // -------------------------------------------------------
 // PDF.js worker setup - lazy loaded to avoid server-side DOMMatrix error
@@ -1661,17 +1663,18 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
                       transition={{ duration: 0.25 }}
                       className="flex items-center gap-3 rounded-2xl border border-border/40 bg-card/80 p-3.5 shadow-sm hover:shadow-md transition-all duration-200"
                     >
-                      {teacher.avatar_url ? (
-                        <img src={teacher.avatar_url} alt={teacher.name} className="h-11 w-11 shrink-0 rounded-full object-cover border-2 border-amber-200" />
-                      ) : (
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-100 to-orange-100 text-amber-700 text-sm font-bold shadow-sm shadow-amber-100/50">
-                          {teacher.name.charAt(0)}
-                        </div>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-foreground truncate">{teacher.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">{teacher.email}</p>
-                      </div>
+                      <UserLink
+                        userId={teacher.id}
+                        name={teacher.name}
+                        avatarUrl={teacher.avatar_url}
+                        role="teacher"
+                        gender={teacher.gender}
+                        titleId={teacher.title_id}
+                        size="md"
+                        showAvatar={true}
+                        showUsername={false}
+                        className="flex-1 min-w-0"
+                      />
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           onClick={() => handleAcceptIncomingRequest(teacher.id, notificationId)}
@@ -1816,22 +1819,19 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
             </div>
             <div className="divide-y divide-amber-100">
               {pendingLinkTeachers.map((teacher) => {
-                const initials = teacher.name.split(' ').map((n) => n[0]).join('').slice(0, 2);
                 return (
                   <div key={teacher.id} className="flex items-center justify-between p-4">
-                    <div className="flex items-center gap-3">
-                      {teacher.avatar_url ? (
-                        <img src={teacher.avatar_url} alt={teacher.name} className="h-10 w-10 rounded-full object-cover border-2 border-amber-200" />
-                      ) : (
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700 font-bold text-xs border-2 border-amber-200">
-                          {initials || 'م'}
-                        </div>
-                      )}
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{teacher.name}</p>
-                        <p className="text-xs text-muted-foreground">{teacher.email}</p>
-                      </div>
-                    </div>
+                    <UserLink
+                      userId={teacher.id}
+                      name={teacher.name}
+                      avatarUrl={teacher.avatar_url}
+                      role="teacher"
+                      gender={teacher.gender}
+                      titleId={teacher.title_id}
+                      size="sm"
+                      showAvatar={true}
+                      showUsername={false}
+                    />
                     <button
                       onClick={() => handleCancelLinkRequest(teacher.id)}
                       disabled={cancelingRequestId === teacher.id}
@@ -1867,22 +1867,19 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
             </div>
             <div className="divide-y divide-rose-100">
               {rejectedLinkTeachers.map((teacher) => {
-                const initials = teacher.name.split(' ').map((n) => n[0]).join('').slice(0, 2);
                 return (
                   <div key={teacher.id} className="flex items-center justify-between p-4">
-                    <div className="flex items-center gap-3">
-                      {teacher.avatar_url ? (
-                        <img src={teacher.avatar_url} alt={teacher.name} className="h-10 w-10 rounded-full object-cover border-2 border-rose-200 opacity-70" />
-                      ) : (
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-100 text-rose-500 font-bold text-xs border-2 border-rose-200">
-                          {initials || 'م'}
-                        </div>
-                      )}
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{teacher.name}</p>
-                        <p className="text-xs text-muted-foreground">{teacher.email}</p>
-                      </div>
-                    </div>
+                    <UserLink
+                      userId={teacher.id}
+                      name={teacher.name}
+                      avatarUrl={teacher.avatar_url}
+                      role="teacher"
+                      gender={teacher.gender}
+                      titleId={teacher.title_id}
+                      size="sm"
+                      showAvatar={true}
+                      showUsername={false}
+                    />
                     <button
                       onClick={() => handleDismissRejectedLink(teacher.id)}
                       disabled={cancelingRequestId === teacher.id}
@@ -1907,34 +1904,31 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
       {linkedTeachers.length > 0 && (
         <motion.div variants={containerVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {linkedTeachers.map((teacher) => {
-            const initials = teacher.name
-              .split(' ')
-              .map((n) => n[0])
-              .join('')
-              .slice(0, 2);
             return (
               <motion.div key={teacher.id} variants={itemVariants}>
-                <button
-                  onClick={() => handleTeacherClick(teacher)}
+                <div
                   className="group w-full flex items-center gap-3 rounded-xl border bg-card p-3 shadow-sm hover:shadow-md transition-shadow text-right"
                 >
-                  {teacher.avatar_url ? (
-                    <img
-                      src={teacher.avatar_url}
-                      alt={teacher.name}
-                      className="h-9 w-9 rounded-full object-cover border-2 border-emerald-200 shrink-0"
-                    />
-                  ) : (
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs border-2 border-emerald-200 shrink-0">
-                      {initials || 'م'}
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-sm font-semibold text-foreground truncate">{teacher.name}</h3>
-                    <p className="text-xs text-muted-foreground truncate">{teacher.email}</p>
-                  </div>
-                  <ChevronLeft className="h-4 w-4 text-muted-foreground group-hover:text-emerald-600 transition-colors shrink-0" />
-                </button>
+                  <UserLink
+                    userId={teacher.id}
+                    name={teacher.name}
+                    avatarUrl={teacher.avatar_url}
+                    role="teacher"
+                    gender={teacher.gender}
+                    titleId={teacher.title_id}
+                    size="sm"
+                    showAvatar={true}
+                    showUsername={false}
+                    className="flex-1 min-w-0"
+                  />
+                  <button
+                    onClick={() => handleTeacherClick(teacher)}
+                    className="shrink-0 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                    title="تفاصيل المعلم"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                </div>
               </motion.div>
             );
           })}
@@ -1985,23 +1979,17 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
               {/* Modal body */}
               <div className="p-5 space-y-5">
                 {/* Teacher info */}
-                <div className="flex items-center gap-4">
-                  {selectedTeacher.avatar_url ? (
-                    <img
-                      src={selectedTeacher.avatar_url}
-                      alt={selectedTeacher.name}
-                      className="h-16 w-16 rounded-full object-cover border-2 border-emerald-200"
-                    />
-                  ) : (
-                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold text-lg border-2 border-emerald-200">
-                      {selectedTeacher.name.split(' ').map((n) => n[0]).join('').slice(0, 2) || 'م'}
-                    </div>
-                  )}
-                  <div>
-                    <h3 className="text-lg font-bold text-foreground">{selectedTeacher.name}</h3>
-                    <p className="text-sm text-muted-foreground">{selectedTeacher.email}</p>
-                  </div>
-                </div>
+                <UserLink
+                  userId={selectedTeacher.id}
+                  name={selectedTeacher.name}
+                  avatarUrl={selectedTeacher.avatar_url}
+                  role="teacher"
+                  gender={selectedTeacher.gender}
+                  titleId={selectedTeacher.title_id}
+                  size="lg"
+                  showAvatar={true}
+                  showUsername={false}
+                />
 
                 {/* Teacher's subjects */}
                 <div className="space-y-3">
@@ -2167,19 +2155,15 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
                 {/* Step 2: Teacher preview card */}
                 {teacherPreview && (
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 space-y-3">
-                    <div className="flex items-center gap-3">
-                      {teacherPreview.avatar_url ? (
-                        <img src={teacherPreview.avatar_url} alt={teacherPreview.name} className="h-12 w-12 rounded-full object-cover border-2 border-emerald-300" />
-                      ) : (
-                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-200 text-emerald-700 font-bold text-sm border-2 border-emerald-300">
-                          {teacherPreview.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2) || 'م'}
-                        </div>
-                      )}
-                      <div>
-                        <h4 className="font-semibold text-foreground">{teacherPreview.name}</h4>
-                        <p className="text-xs text-muted-foreground">{teacherPreview.email}</p>
-                      </div>
-                    </div>
+                    <UserLink
+                      userId={teacherPreview.id}
+                      name={teacherPreview.name || 'معلم'}
+                      avatarUrl={teacherPreview.avatar_url}
+                      role="teacher"
+                      size="md"
+                      showAvatar={true}
+                      showUsername={false}
+                    />
                     <div className="flex items-center gap-2 rounded-lg bg-emerald-100/60 px-3 py-2">
                       <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
                       <span className="text-xs text-emerald-700 font-medium">تم العثور على المعلم — اضغط "إرسال طلب" للتأكيد</span>
@@ -2307,6 +2291,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
       {/* Header */}
       <AppHeader
         userName={profile.name}
+        userId={profile.id}
         userRole="student"
         userGender={profile.gender}
         avatarUrl={profile.avatar_url}

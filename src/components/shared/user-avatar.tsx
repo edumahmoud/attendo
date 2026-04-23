@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { User } from 'lucide-react';
 
@@ -64,9 +65,20 @@ export default function UserAvatar({ name, avatarUrl, size = 'md', className = '
         .toUpperCase()
     : '';
 
+  // Add cache-busting to avatar URL — stable per URL change
+  // Uses a simple hash of the URL so it only changes when the URL itself changes
+  const cacheBustedUrl = useMemo(() => {
+    if (!avatarUrl) return undefined;
+    // If URL already has a timestamp-based filename from Supabase Storage (avatar_1234567.jpg),
+    // it's already unique — just add a lightweight hash for extra safety
+    const hash = avatarUrl.split('').reduce((acc, c) => ((acc << 5) - acc + c.charCodeAt(0)) | 0, 0);
+    const sep = avatarUrl.includes('?') ? '&' : '?';
+    return `${avatarUrl}${sep}cb=${Math.abs(hash)}`;
+  }, [avatarUrl]);
+
   return (
     <Avatar className={`${sizeMap[size]} border-2 border-emerald-200 shrink-0 ${className}`}>
-      {avatarUrl && <AvatarImage src={avatarUrl} alt={name} />}
+      {cacheBustedUrl && <AvatarImage src={cacheBustedUrl} alt={name} />}
       <AvatarFallback className="bg-gradient-to-br from-emerald-100 to-teal-100 text-emerald-700 font-bold select-none">
         {initials || <User className={iconSizeMap[size]} />}
       </AvatarFallback>

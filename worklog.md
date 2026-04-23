@@ -383,3 +383,105 @@ Stage Summary:
 - Migration v11 created for: realtime publication + link_request notification type ✅
 - Using 'system' notification type temporarily (works before DB migration) ✅
 - Notification bell shows UserPlus icon for link request notifications (via title detection) ✅
+
+---
+Task ID: 2-b
+Agent: general-purpose
+Task: Replace all hardcoded avatar circles with UserAvatar component
+
+Work Log:
+- Read all 4 target files to identify exact locations of hardcoded avatar circles
+- Verified UserAvatar component exists at /src/components/shared/user-avatar.tsx with size props (xs/sm/md/lg/xl) and avatarUrl support
+- **students-tab.tsx**: Added import, replaced 3 avatar circles:
+  1. Line ~646: Search result avatar → `<UserAvatar size="sm">`
+  2. Line ~754: Enrolled student list avatar → `<UserAvatar size="sm">`
+  3. Line ~1022: Pending request avatar → `<UserAvatar size="lg" className="!rounded-xl">`
+- **student-profile-modal.tsx**: Added import, replaced 1 avatar circle:
+  1. Line ~167: Student profile avatar → `<UserAvatar size="xl">`
+- **teacher-dashboard.tsx**: Added import, replaced 6 avatar circles:
+  1. Line ~942: Dashboard student table → `<UserAvatar size="xs">`
+  2. Line ~1217: Pending student detail → `<UserAvatar size="lg">`
+  3. Line ~1440-1445: Student preview (conditional with img tag) → replaced entire conditional with `<UserAvatar size="md">`
+  4. Line ~1522: Grid view student card → `<UserAvatar size="sm">`
+  5. Line ~1569: Table view student row → `<UserAvatar size="xs">`
+  6. Line ~1631: Selected student detail modal → `<UserAvatar size="md">`
+- **student-dashboard.tsx**: Added import, replaced 1 avatar circle:
+  1. Line ~1664-1669: Teacher avatar (conditional with img tag) → replaced entire conditional with `<UserAvatar size="lg">`
+- Verified all `.charAt(0)` patterns removed from all 4 files (0 grep hits remaining)
+
+Stage Summary:
+- Replaced 11 hardcoded avatar circles across 4 files with UserAvatar component
+- UserAvatar handles both avatar URL display and fallback initials internally
+- Removed conditional avatar_url checks where UserAvatar replaces them (teacher-dashboard preview, student-dashboard teacher)
+- All imports added correctly, no duplicates
+
+---
+Task ID: 2-a
+Agent: general-purpose
+Task: Replace hardcoded avatar circles with UserAvatar in chat files, make sender names clickable with openProfile
+
+Work Log:
+- Read chat-section.tsx (1561 lines), chat-tab.tsx (878 lines), user-avatar.tsx, app-store.ts, and worklog.md
+- Verified UserAvatar component API: name, avatarUrl, size (xs/sm/md/lg/xl), className
+- Verified useAppStore has openProfile: (userId: string) => set({ profileUserId: userId, currentPage: 'profile' })
+- **chat-section.tsx**: Added `UserAvatar` and `useAppStore` imports, added `const { openProfile } = useAppStore()`
+  1. Line ~920-924: Message sender avatar → `<UserAvatar name={senderName} avatarUrl={msg.sender?.avatar_url} size="xs" />`
+  2. Line ~931-933: Sender name in group chats → replaced `<span>` with `<button>` calling `openProfile(msg.sender_id)` with hover effect
+  3. Line ~1240-1259: Conversation list item avatar → replaced img/conditional with `<UserAvatar>` for individual chats, kept Hash icon for group chats
+  4. Removed unused `displayAvatar` variable from conversation list
+  5. Line ~1310-1333: Chat header avatar → replaced img/conditional with `<UserAvatar name={chatHeaderName} avatarUrl={activeConvInfo?.otherParticipant?.avatar_url} size="md" />`
+  6. Line ~1525-1535: New DM search result user avatar → replaced img/conditional with `<UserAvatar name={user.name} avatarUrl={user.avatar_url} size="md" />`
+- **chat-tab.tsx**: Added `UserAvatar` and `useAppStore` imports, added `const { openProfile } = useAppStore()`
+  1. Line ~571-578: Message sender avatar → `<UserAvatar name={senderName} avatarUrl={msg.sender?.avatar_url} size="sm" />`
+  2. Line ~584-585: Sender name → replaced `<span>` with `<button>` calling `openProfile(msg.sender_id)` with hover effect
+- Fixed JSX syntax: missing closing `)}` on conditional rendering blocks after button replacement in both files
+- TypeScript check: no new errors introduced (pre-existing errors in these files are unrelated type casting issues)
+
+Stage Summary:
+- Replaced 6 hardcoded avatar circles in chat-section.tsx with UserAvatar component
+- Replaced 1 hardcoded avatar circle in chat-tab.tsx with UserAvatar component
+- Made sender names clickable in both files via openProfile from useAppStore
+- Sender name buttons have hover:text-emerald-600 transition effect
+- Removed unused displayAvatar variable
+- No new TypeScript errors introduced
+- Student names in students-tab.tsx were already clickable via onClick handler on parent div (line 752-753)
+
+---
+Task ID: 2-c
+Agent: general-purpose
+Task: Replace all hardcoded avatar circles with UserAvatar component in admin and other files
+
+Work Log:
+- Read all 6 target files to identify exact locations of hardcoded avatar circles
+- Verified UserAvatar component exists at /src/components/shared/user-avatar.tsx with size props (xs/sm/md/lg/xl) and avatarUrl support
+- **admin-dashboard.tsx**: Added import, replaced 6 avatar circles:
+  1. Line ~742: User list item avatar (h-7 w-7 purple) → `<UserAvatar name={user.name} avatarUrl={user.avatar_url} size="xs" />`
+  2. Line ~934-943: User detail card avatar (role-colored h-9 w-9 with transition) → `<UserAvatar name={user.name} avatarUrl={user.avatar_url} size="sm" />`
+  3. Line ~1028-1035: Selected user detail avatar (role-colored h-12 w-12) → `<UserAvatar name={selectedUser.name} avatarUrl={selectedUser.avatar_url} size="lg" />`
+  4. Line ~1232: Teacher avatar in subject (h-6 w-6 emerald) → `<UserAvatar name={teacher.name} avatarUrl={teacher.avatar_url} size="xs" />`
+  5. Line ~1352: Subject teacher avatar (h-9 w-9 emerald) → `<UserAvatar name={subjectTeacher.name} avatarUrl={subjectTeacher.avatar_url} size="sm" />`
+  6. Line ~1376: Student avatar (h-7 w-7 blue) → `<UserAvatar name={student.name} avatarUrl={student.avatar_url} size="xs" />`
+- **attendance-section.tsx**: Added import, replaced 2 avatar circles:
+  1. Line ~1087: Student attendance list avatar (h-9 w-9 emerald) → `<UserAvatar name={student.name} avatarUrl={student.avatar_url} size="sm" />`
+  2. Line ~1198: Past session record avatar (h-9 w-9 emerald) → `<UserAvatar name={record.student_name || 'مستخدم'} avatarUrl={record.student_avatar} size="sm" />`
+- **assignments-section.tsx**: Added import, replaced 1 avatar circle:
+  1. Line ~1272: Submission student avatar (h-8 w-8 emerald) → `<UserAvatar name={sub.student_name || 'مستخدم'} avatarUrl={sub.student_avatar} size="sm" />`
+- **assignments-tab.tsx**: Added import, replaced 1 avatar circle:
+  1. Line ~1060: Submission student avatar (h-8 w-8 emerald) → `<UserAvatar name={sub.student_name || 'مستخدم'} avatarUrl={sub.student_avatar} size="sm" />`
+- **personal-files-section.tsx**: Added import, replaced 5 avatar circles:
+  1. Line ~1771: Shared by user avatar (h-7 w-7 emerald) → `<UserAvatar name={file.shared_by_user?.name || 'مستخدم'} avatarUrl={file.shared_by_user?.avatar_url} size="xs" />`
+  2. Line ~2155: Shared with user avatar (h-7 w-7 emerald) → `<UserAvatar name={share.shared_with_user?.name || 'مستخدم'} avatarUrl={share.shared_with_user?.avatar_url} size="xs" />`
+  3. Line ~2293: User search result avatar (h-7 w-7 emerald) → `<UserAvatar name={user.name || 'مستخدم'} avatarUrl={user.avatar_url} size="xs" />`
+  4. Line ~2358: Shared with user avatar another location (h-7 w-7 emerald) → `<UserAvatar name={share.shared_with_user?.name || 'مستخدم'} avatarUrl={share.shared_with_user?.avatar_url} size="xs" />`
+  5. Line ~2674: Bulk share user search result avatar (h-7 w-7 emerald) → `<UserAvatar name={user.name || 'مستخدم'} avatarUrl={user.avatar_url} size="xs" />`
+- **lecture-modal.tsx**: Added import, replaced 1 avatar circle:
+  1. Line ~910: Attendance record student avatar (h-8 w-8 emerald) → `<UserAvatar name={record.student_name || 'مستخدم'} avatarUrl={record.student_avatar} size="sm" />`
+- Verified all `.charAt(0)` patterns removed from all 6 files (0 grep hits remaining)
+- Total: 16 hardcoded avatar circles replaced across 6 files
+
+Stage Summary:
+- Replaced 16 hardcoded avatar circles across 6 files with UserAvatar component
+- UserAvatar handles both avatar URL display and fallback initials internally
+- Fallback names use 'مستخدم' (Arabic for 'User') where names might be undefined
+- avatarUrl fields that may not exist in data (e.g., record.student_avatar) are passed as-is — UserAvatar handles undefined gracefully
+- All imports added correctly, no duplicates

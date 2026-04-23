@@ -19,6 +19,8 @@ import {
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import type { UserProfile, Subject, ChatMessage } from '@/lib/types';
+import UserAvatar from '@/components/shared/user-avatar';
+import { useAppStore } from '@/stores/app-store';
 
 // -------------------------------------------------------
 // Props
@@ -63,6 +65,7 @@ function relativeTime(dateStr: string): string {
 // Main Component
 // -------------------------------------------------------
 export default function ChatTab({ profile, role, subjectId, subject }: ChatTabProps) {
+  const { openProfile } = useAppStore();
   // State
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -569,9 +572,7 @@ export default function ChatTab({ profile, role, subjectId, subject }: ChatTabPr
         {!isOwn && (
           <div className="shrink-0 w-8">
             {showAvatar ? (
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-amber-700 font-bold text-xs">
-                {senderName.charAt(0)}
-              </div>
+              <UserAvatar name={senderName} avatarUrl={msg.sender?.avatar_url} size="sm" />
             ) : (
               <div className="w-8" />
             )}
@@ -582,7 +583,13 @@ export default function ChatTab({ profile, role, subjectId, subject }: ChatTabPr
         <div className={`max-w-[75%] ${isOwn ? 'items-start' : 'items-end'} flex flex-col relative`}>
           {/* Sender name (for others) */}
           {!isOwn && showAvatar && (
-            <span className="text-[11px] text-muted-foreground mb-1 ml-1 font-medium">{senderName}</span>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); openProfile(msg.sender_id); }}
+              className="text-[11px] text-muted-foreground mb-1 ml-1 font-medium hover:text-emerald-600 transition-colors"
+            >
+              {senderName}
+            </button>
           )}
 
           {/* Editing mode */}

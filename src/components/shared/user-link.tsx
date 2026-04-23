@@ -6,6 +6,7 @@ import { useAppStore } from '@/stores/app-store';
 interface UserLinkProps {
   userId: string;
   name: string;
+  username?: string | null;
   avatarUrl?: string | null;
   role?: string;
   gender?: string | null;
@@ -13,12 +14,14 @@ interface UserLinkProps {
   size?: 'xs' | 'sm' | 'md' | 'lg';
   showAvatar?: boolean;
   showRole?: boolean;
+  showUsername?: boolean;
   className?: string;
 }
 
 export default function UserLink({
   userId,
   name,
+  username,
   avatarUrl,
   role,
   gender,
@@ -26,6 +29,7 @@ export default function UserLink({
   size = 'sm',
   showAvatar = true,
   showRole = false,
+  showUsername = false,
   className = '',
 }: UserLinkProps) {
   const { openProfile } = useAppStore();
@@ -54,6 +58,11 @@ export default function UserLink({
           {titleLabel && <span className="text-emerald-600 ml-1 text-xs font-normal">{titleLabel}</span>}
           {name}
         </span>
+        {showUsername && username && (
+          <span className="text-[10px] text-muted-foreground font-normal truncate max-w-[150px]" dir="ltr">
+            @{username}
+          </span>
+        )}
         {showRole && roleLabel && (
           <span className="text-[10px] text-muted-foreground font-medium">
             {roleLabel}

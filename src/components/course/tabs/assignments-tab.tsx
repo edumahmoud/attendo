@@ -25,6 +25,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import type { UserProfile, Subject, Assignment, Submission, UserFile } from '@/lib/types';
+import UserAvatar from '@/components/shared/user-avatar';
 
 // -------------------------------------------------------
 // Props
@@ -1057,9 +1058,7 @@ export default function AssignmentsTab({ profile, role, subjectId }: Assignments
               <div key={sub.id} className="rounded-xl border bg-card p-4 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs">
-                      {sub.student_name?.charAt(0) || '?'}
-                    </div>
+                    <UserAvatar name={sub.student_name || 'مستخدم'} avatarUrl={sub.student_avatar} size="sm" />
                     <div>
                       <p className="text-sm font-medium text-foreground">{sub.student_name}</p>
                       <p className="text-xs text-muted-foreground">{formatDateTime(sub.submitted_at)}</p>

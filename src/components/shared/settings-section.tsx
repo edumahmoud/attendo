@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
   User,
@@ -325,6 +325,14 @@ export default function SettingsSection({
     setHasChanges(nameChanged || usernameChanged || genderChanged || titleChanged);
   }, [name, username, gender, titleId, profile.name, profile.username, profile.gender, profile.title_id]);
 
+  // ─── Cache-busted avatar URL ───
+  const avatarSrc = useMemo(() => {
+    if (!profile.avatar_url) return '';
+    const hash = profile.avatar_url.split('').reduce((acc, c) => ((acc << 5) - acc + c.charCodeAt(0)) | 0, 0);
+    const sep = profile.avatar_url.includes('?') ? '&' : '?';
+    return `${profile.avatar_url}${sep}cb=${Math.abs(hash)}`;
+  }, [profile.avatar_url]);
+
   // Gender-aware role labels (teachers show their academic title)
   const getRoleLabel = (role: string, g: string | null | undefined, tid: string | null | undefined) => {
     const isFemale = g === 'female';
@@ -596,7 +604,7 @@ export default function SettingsSection({
                     className="h-20 w-20 border-2 border-emerald-200 shadow-sm cursor-pointer"
                     onClick={() => profile.avatar_url && setAvatarPreviewOpen(true)}
                   >
-                    <AvatarImage src={profile.avatar_url || ''} alt={profile.name} className="object-cover" />
+                    <AvatarImage src={avatarSrc} alt={profile.name} className="object-cover" />
                     <AvatarFallback className="bg-emerald-100 text-emerald-700">
                       <User className="h-8 w-8" />
                     </AvatarFallback>

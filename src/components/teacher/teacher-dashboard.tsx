@@ -54,6 +54,8 @@ import { useAppStore } from '@/stores/app-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { toast } from 'sonner';
 import type { UserProfile, Quiz, Score, TeacherSection, Subject } from '@/lib/types';
+import UserAvatar from '@/components/shared/user-avatar';
+import UserLink from '@/components/shared/user-link';
 
 // -------------------------------------------------------
 // Props
@@ -938,12 +940,16 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                       return (
                         <tr key={student.id} className="hover:bg-muted/30 transition-colors">
                           <td className="p-3">
-                            <div className="flex items-center gap-2">
-                              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-                                {student.name.charAt(0)}
-                              </div>
-                              <span className="text-sm font-medium text-foreground truncate">{student.name}</span>
-                            </div>
+                            <UserLink
+                              userId={student.id}
+                              name={student.name}
+                              avatarUrl={student.avatar_url}
+                              role="student"
+                              gender={student.gender}
+                              size="xs"
+                              showAvatar={true}
+                              showUsername={false}
+                            />
                           </td>
                           <td className="p-3">
                             {pct !== null ? (
@@ -1214,13 +1220,17 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                       transition={{ duration: 0.25 }}
                       className="flex items-center gap-3 rounded-2xl border border-border/40 bg-card/80 p-3.5 shadow-sm hover:shadow-md transition-all duration-200"
                     >
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-100 to-orange-100 text-amber-700 text-sm font-bold shadow-sm shadow-amber-100/50">
-                        {student.name.charAt(0)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-foreground truncate">{student.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">{student.email}</p>
-                      </div>
+                      <UserLink
+                        userId={student.id}
+                        name={student.name}
+                        avatarUrl={student.avatar_url}
+                        role="student"
+                        gender={student.gender}
+                        size="md"
+                        showAvatar={true}
+                        showUsername={false}
+                        className="flex-1 min-w-0"
+                      />
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           onClick={() => handleApproveStudent(student.id)}
@@ -1436,19 +1446,16 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
               ) : (
                 /* Step 2: Preview and confirm */
                 <div className="space-y-4">
-                  <div className="flex items-center gap-3 rounded-xl border bg-card p-3">
-                    {studentPreview.avatar_url ? (
-                      <img src={studentPreview.avatar_url} alt={studentPreview.name} className="h-10 w-10 rounded-full object-cover border-2 border-emerald-200" />
-                    ) : (
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold text-sm border-2 border-emerald-200">
-                        {studentPreview.name.charAt(0)}
-                      </div>
-                    )}
-                    <div className="text-right min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-foreground truncate">{studentPreview.name}</p>
-                      <p className="text-xs text-muted-foreground truncate">{studentPreview.email}</p>
-                    </div>
-                  </div>
+                  <UserLink
+                    userId={studentPreview.id}
+                    name={studentPreview.name}
+                    avatarUrl={studentPreview.avatar_url}
+                    role="student"
+                    gender={studentPreview.gender}
+                    size="md"
+                    showAvatar={true}
+                    showUsername={false}
+                  />
                   <p className="text-xs text-muted-foreground text-center">
                     سيتم إرسال إشعار للطالب ويمكنه قبول أو رفض طلب الارتباط
                   </p>
@@ -1519,16 +1526,17 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                   }}
                 >
                   <div className="flex items-center gap-3 mb-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold transition-transform group-hover:scale-110">
-                      {student.name.charAt(0)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="text-sm font-semibold text-foreground truncate">{student.name}</h3>
-                      <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                        <Mail className="h-3 w-3" />
-                        {student.email}
-                      </p>
-                    </div>
+                    <UserLink
+                      userId={student.id}
+                      name={student.name}
+                      avatarUrl={student.avatar_url}
+                      role="student"
+                      gender={student.gender}
+                      size="sm"
+                      showAvatar={true}
+                      showUsername={false}
+                      className="flex-1 min-w-0"
+                    />
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">آخر نتيجة</span>
@@ -1565,12 +1573,16 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                     return (
                       <tr key={student.id} className="hover:bg-muted/30 transition-colors">
                         <td className="p-3">
-                          <div className="flex items-center gap-2">
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-                              {student.name.charAt(0)}
-                            </div>
-                            <span className="text-sm font-medium text-foreground truncate">{student.name}</span>
-                          </div>
+                          <UserLink
+                            userId={student.id}
+                            name={student.name}
+                            avatarUrl={student.avatar_url}
+                            role="student"
+                            gender={student.gender}
+                            size="xs"
+                            showAvatar={true}
+                            showUsername={false}
+                          />
                         </td>
                         <td className="p-3 hidden sm:table-cell">
                           <span className="text-sm text-muted-foreground truncate max-w-[200px] block">{student.email}</span>
@@ -1627,15 +1639,16 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
             >
               {/* Header */}
               <div className="flex items-center justify-between border-b p-5">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold">
-                    {selectedStudent.name.charAt(0)}
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-foreground">{selectedStudent.name}</h3>
-                    <p className="text-xs text-muted-foreground">{selectedStudent.email}</p>
-                  </div>
-                </div>
+                <UserLink
+                  userId={selectedStudent.id}
+                  name={selectedStudent.name}
+                  avatarUrl={selectedStudent.avatar_url}
+                  role="student"
+                  gender={selectedStudent.gender}
+                  size="md"
+                  showAvatar={true}
+                  showUsername={false}
+                />
                 <button
                   onClick={() => setStudentDetailOpen(false)}
                   className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
@@ -1951,6 +1964,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
       {/* Header */}
       <AppHeader
         userName={profile.name}
+        userId={profile.id}
         userRole="teacher"
         userGender={profile.gender}
         titleId={profile.title_id}

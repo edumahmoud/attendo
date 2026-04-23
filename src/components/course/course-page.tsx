@@ -149,10 +149,11 @@ const modalContentVariants = {
 // Main Component
 // -------------------------------------------------------
 export default function CoursePage({ profile, role }: CoursePageProps) {
-  const { selectedSubjectId, courseTab, setSelectedSubjectId, setCourseTab } = useAppStore();
+  const { selectedSubjectId, courseTab, setSelectedSubjectId, setCourseTab, openProfile } = useAppStore();
   const [subject, setSubject] = useState<Subject | null>(null);
   const [loading, setLoading] = useState(true);
   const [teacherName, setTeacherName] = useState<string>('');
+  const [teacherId, setTeacherId] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
 
   // ─── Edit subject modal state ───
@@ -202,12 +203,13 @@ export default function CoursePage({ profile, role }: CoursePageProps) {
 
         // Fetch teacher name in parallel for students
         if (role === 'student' && data) {
-          const teacherId = (data as Subject).teacher_id;
-          if (teacherId) {
+          const tid = (data as Subject).teacher_id;
+          if (tid) {
+            setTeacherId(tid);
             supabase
               .from('users')
               .select('name')
-              .eq('id', teacherId)
+              .eq('id', tid)
               .single()
               .then(({ data: teacher }) => {
                 if (teacher) {
@@ -486,12 +488,16 @@ export default function CoursePage({ profile, role }: CoursePageProps) {
                 </button>
               )}
 
-              {/* Teacher name (students only) */}
-              {role === 'student' && teacherName && (
-                <div className="flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur-sm px-3 py-1.5 text-xs text-white/90">
+              {/* Teacher name (students only) — clickable to open profile */}
+              {role === 'student' && teacherName && teacherId && (
+                <button
+                  type="button"
+                  onClick={() => openProfile(teacherId)}
+                  className="flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur-sm px-3 py-1.5 text-xs text-white/90 hover:bg-white/25 hover:text-white transition-colors"
+                >
                   <User className="h-3.5 w-3.5 opacity-70" />
                   <span>{teacherName}</span>
-                </div>
+                </button>
               )}
             </div>
           </div>

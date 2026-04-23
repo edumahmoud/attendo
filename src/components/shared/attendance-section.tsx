@@ -29,6 +29,7 @@ import type {
   AttendanceSession,
   AttendanceRecord,
 } from '@/lib/types';
+import UserAvatar from '@/components/shared/user-avatar';
 
 // -------------------------------------------------------
 // Props
@@ -1084,9 +1085,7 @@ export default function AttendanceSection({ profile, role }: AttendanceSectionPr
                       key={student.id}
                       className="flex items-center gap-3 p-3 hover:bg-muted/30 transition-colors"
                     >
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-sm font-bold">
-                        {student.name.charAt(0)}
-                      </div>
+                      <UserAvatar name={student.name} avatarUrl={student.avatar_url} size="sm" />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-foreground truncate">{student.name}</p>
                         <p className="text-xs text-muted-foreground truncate">{student.email}</p>
@@ -1195,9 +1194,7 @@ export default function AttendanceSection({ profile, role }: AttendanceSectionPr
             <div className="divide-y">
               {pastSessionRecords.map((record) => (
                 <div key={record.id} className="flex items-center gap-3 p-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-sm font-bold">
-                    {record.student_name?.charAt(0) || '?'}
-                  </div>
+                  <UserAvatar name={record.student_name || 'مستخدم'} avatarUrl={record.student_avatar} size="sm" />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground truncate">{record.student_name}</p>
                     <p className="text-xs text-muted-foreground truncate">{record.student_email}</p>

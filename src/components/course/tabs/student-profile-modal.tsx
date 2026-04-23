@@ -11,6 +11,8 @@ import {
   Loader2,
   Mail,
 } from 'lucide-react';
+import UserAvatar from '@/components/shared/user-avatar';
+import UserLink from '@/components/shared/user-link';
 import { supabase } from '@/lib/supabase';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -163,18 +165,16 @@ export default function StudentProfileModal({ studentId, subjectId, open, onClos
           <ScrollArea className="max-h-[70vh]">
             <div className="space-y-5 pr-1">
               {/* Student info */}
-              <div className="flex items-center gap-3">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold text-xl">
-                  {performance.student.name.charAt(0)}
-                </div>
-                <div>
-                  <h4 className="text-lg font-bold text-foreground">{performance.student.name}</h4>
-                  <p className="text-sm text-muted-foreground flex items-center gap-1">
-                    <Mail className="h-3 w-3" />
-                    {performance.student.email}
-                  </p>
-                </div>
-              </div>
+              <UserLink
+                userId={performance.student.id}
+                name={performance.student.name}
+                avatarUrl={performance.student.avatar_url}
+                role="student"
+                gender={performance.student.gender}
+                size="xl"
+                showAvatar={true}
+                showUsername={false}
+              />
 
               {/* Overall performance card */}
               <div className="rounded-xl border bg-emerald-50/50 p-4 space-y-3">

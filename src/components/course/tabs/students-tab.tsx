@@ -23,6 +23,8 @@ import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import type { UserProfile, Subject } from '@/lib/types';
 import StudentProfileModal from '@/components/course/tabs/student-profile-modal';
+import UserAvatar from '@/components/shared/user-avatar';
+import UserLink from '@/components/shared/user-link';
 
 // -------------------------------------------------------
 // Props
@@ -642,15 +644,16 @@ export default function StudentsTab({ profile, subjectId }: StudentsTabProps) {
                     <div className="divide-y">
                       {addSearchResults.map((student) => (
                         <div key={student.id} className="flex items-center justify-between p-3 hover:bg-muted/50 transition-colors">
-                          <div className="flex items-center gap-2">
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs">
-                              {student.name.charAt(0)}
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium text-foreground">{student.name}</p>
-                              <p className="text-xs text-muted-foreground">{student.email}</p>
-                            </div>
-                          </div>
+                          <UserLink
+                            userId={student.id}
+                            name={student.name}
+                            avatarUrl={student.avatar_url}
+                            role="student"
+                            gender={student.gender}
+                            size="sm"
+                            showAvatar={true}
+                            showUsername={false}
+                          />
                           <button
                             onClick={() => handleAdd(student.id)}
                             disabled={addingId === student.id}
@@ -750,13 +753,17 @@ export default function StudentsTab({ profile, subjectId }: StudentsTabProps) {
                     {selectedStudentIds.has(student.id) && <Check className="h-3 w-3" />}
                   </button>
                 </div>
-                <div className="col-span-5 flex items-center gap-3 cursor-pointer" onClick={() => handleOpenProfile(student.id)}>
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold text-sm">
-                    {student.name.charAt(0)}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-foreground truncate">{student.name}</p>
-                  </div>
+                <div className="col-span-5">
+                  <UserLink
+                    userId={student.id}
+                    name={student.name}
+                    avatarUrl={student.avatar_url}
+                    role="student"
+                    gender={student.gender}
+                    size="sm"
+                    showAvatar={true}
+                    showUsername={false}
+                  />
                 </div>
                 <div className="col-span-4 text-sm text-muted-foreground truncate flex items-center gap-1">
                   <Mail className="h-3 w-3 shrink-0" />
@@ -1019,22 +1026,17 @@ export default function StudentsTab({ profile, subjectId }: StudentsTabProps) {
                         className="group rounded-2xl border border-border/60 bg-card/80 p-4 shadow-sm hover:shadow-md hover:border-emerald-200/50 transition-all duration-250"
                       >
                         <div className="flex items-center gap-3.5 mb-3.5">
-                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 text-amber-700 font-bold text-sm shadow-sm shadow-amber-100/50 group-hover:from-amber-200 group-hover:to-orange-200 transition-colors duration-250">
-                            {student.name?.charAt(0) || '?'}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-bold text-foreground truncate">{student.name}</p>
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
-                              <Mail className="h-3 w-3 shrink-0 opacity-60" />
-                              <span className="truncate">{student.email}</span>
-                            </div>
-                            {student.enrollment_date && (
-                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground/70 mt-0.5">
-                                <Clock className="h-3 w-3 shrink-0 opacity-50" />
-                                <span>{formatDate(student.enrollment_date)}</span>
-                              </div>
-                            )}
-                          </div>
+                          <UserLink
+                            userId={student.id}
+                            name={student.name || 'مستخدم'}
+                            avatarUrl={student.avatar_url}
+                            role="student"
+                            gender={student.gender}
+                            size="md"
+                            showAvatar={true}
+                            showUsername={false}
+                            className="flex-1 min-w-0"
+                          />
                         </div>
                         <div className="flex items-center gap-2.5">
                           <button

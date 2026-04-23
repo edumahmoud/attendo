@@ -7,17 +7,17 @@ import {
   Settings,
   LogOut,
   ChevronDown,
-  User,
 } from 'lucide-react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAppStore } from '@/stores/app-store';
 import NotificationBell from '@/components/shared/notification-bell';
+import UserAvatar from '@/components/shared/user-avatar';
 
 // -------------------------------------------------------
 // Props
 // -------------------------------------------------------
 interface AppHeaderProps {
   userName: string;
+  userId: string;
   userRole: 'student' | 'teacher' | 'admin';
   userGender?: string | null;
   titleId?: string | null;
@@ -44,6 +44,7 @@ const ACADEMIC_TITLES = [
 // -------------------------------------------------------
 export default function AppHeader({
   userName,
+  userId,
   userRole,
   userGender,
   titleId,
@@ -56,6 +57,7 @@ export default function AppHeader({
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const { openProfile } = useAppStore();
 
   // Gender-aware role label (teachers show their academic title)
   const isFemale = userGender === 'female';
@@ -142,21 +144,22 @@ export default function AppHeader({
               onClick={() => setDropdownOpen(!dropdownOpen)}
               className="flex items-center gap-2 sm:gap-2.5 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 hover:bg-muted/50 transition-colors min-w-0"
             >
-              {/* Avatar on left of name (RTL: appears visually on the right) */}
-              <div className="flex flex-col items-end min-w-0">
-                <span className="text-xs sm:text-sm font-semibold text-foreground truncate max-w-[80px] sm:max-w-[140px]">
-                  {userName}
-                </span>
-                <span className="text-[10px] sm:text-xs text-emerald-600 font-medium">
-                  {roleLabel}
-                </span>
-              </div>
-              <Avatar className="h-8 w-8 sm:h-10 sm:w-10 border-2 border-emerald-200 shrink-0">
-                <AvatarImage src={avatarUrl || ''} alt={userName} />
-                <AvatarFallback className="bg-emerald-100 text-emerald-700">
-                  <User className="h-4 w-4 sm:h-5 sm:w-5" />
-                </AvatarFallback>
-              </Avatar>
+              {/* Avatar + Name — clicking opens profile */}
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); openProfile(userId); }}
+                className="flex items-center gap-2 sm:gap-2.5 rounded-lg px-1 py-0.5 -mx-1 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors group/profile min-w-0"
+              >
+                <div className="flex flex-col items-end min-w-0">
+                  <span className="text-xs sm:text-sm font-semibold text-foreground truncate max-w-[80px] sm:max-w-[140px] group-hover/profile:text-emerald-600 transition-colors">
+                    {userName}
+                  </span>
+                  <span className="text-[10px] sm:text-xs text-emerald-600 font-medium">
+                    {roleLabel}
+                  </span>
+                </div>
+                <UserAvatar name={userName} avatarUrl={avatarUrl} size="sm" />
+              </button>
               <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
