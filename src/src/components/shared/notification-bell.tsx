@@ -1,0 +1,265 @@
+'use client';
+
+import { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Bell, Check, Trash2, ClipboardList, Award, BookOpen, FileText, Info, CheckCheck, UserCheck, BellOff, UserPlus } from 'lucide-react';
+import { useNotificationStore } from '@/stores/notification-store';
+import { useAuthStore } from '@/stores/auth-store';
+import { useAppStore } from '@/stores/app-store';
+
+function timeAgo(dateStr: string): string {
+  const now = new Date();
+  const date = new Date(dateStr);
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'الآن';
+  if (diffMins < 60) return `منذ ${diffMins} دقيقة`;
+  if (diffHours < 24) return `منذ ${diffHours} ساعة`;
+  if (diffDays < 7) return `منذ ${diffDays} يوم`;
+  return date.toLocaleDateString('ar-SA');
+}
+
+function getNotifIcon(type: string, title?: string) {
+  // Detect link_request notifications by title (works even before DB migration)
+  if (type === 'link_request' || title?.includes('طلب ارتباط') || title?.includes('ارتباط')) {
+    return <UserPlus className="h-4 w-4 text-amber-600" />;
+  }
+  switch (type) {
+    case 'assignment': return <ClipboardList className="h-4 w-4 text-amber-600" />;
+    case 'grade': return <Award className="h-4 w-4 text-emerald-600" />;
+    case 'enrollment': return <BookOpen className="h-4 w-4 text-teal-600" />;
+    case 'file': return <FileText className="h-4 w-4 text-blue-600" />;
+    case 'attendance': return <UserCheck className="h-4 w-4 text-violet-600" />;
+    default: return <Info className="h-4 w-4 text-purple-600" />;
+  }
+}
+
+export default function NotificationBell() {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+  const { 
+    notifications, 
+    unreadCount, 
+    initialized,
+    initializeNotifications, 
+    markAsRead, 
+    markAllAsRead, 
+    clearNotification, 
+    clearAll 
+  } = useNotificationStore();
+  const { user } = useAuthStore();
+  const { setStudentSection, setTeacherSection, setCurrentPage } = useAppStore();
+
+  // Initialize notifications from DB when component mounts
+  useEffect(() => {
+    if (user?.id && !initialized) {
+      initializeNotifications(user.id);
+    }
+  }, [user?.id, initialized, initializeNotifications]);
+
+  // Calculate dropdown position when opened
+  useEffect(() => {
+    if (isOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const gap = 8; // mt-2
+      const maxW = Math.min(320, window.innerWidth - 32); // cap to viewport width with 16px margin each side
+
+      // In RTL: align right edge of dropdown with right edge of button
+      const right = Math.max(0, window.innerWidth - rect.right);
+      const top = rect.bottom + gap;
+
+      setDropdownStyle({
+        position: 'fixed',
+        top: `${top}px`,
+        right: `${right}px`,
+        width: `${maxW}px`,
+        zIndex: 9999,
+      });
+    }
+  }, [isOpen]);
+
+  // Close on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (isOpen && dropdownRef.current && !dropdownRef.current.contains(e.target as Node) && buttonRef.current && !buttonRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [isOpen]);
+
+  /** Handle clicking a notification — mark as read and navigate if link is provided */
+  const handleNotificationClick = (notif: { id: string; read: boolean; link?: string | null }) => {
+    if (!notif.read) {
+      markAsRead(notif.id);
+    }
+
+    if (notif.link) {
+      setIsOpen(false);
+      navigateToLink(notif.link);
+    }
+  };
+
+  /** Parse notification link and navigate using app store */
+  const navigateToLink = (link: string) => {
+    // Link format examples: "assignments", "subjects", "quizzes", "attendance"
+    // Or with detail: "assignments?id=xxx"
+    const [section, query] = link.split('?');
+    const role = user?.role;
+
+    if (role === 'student') {
+      const validSections = ['dashboard', 'subjects', 'summaries', 'quizzes', 'files', 'assignments', 'attendance', 'teachers', 'settings'];
+      if (validSections.includes(section)) {
+        setStudentSection(section as 'dashboard' | 'subjects' | 'summaries' | 'quizzes' | 'files' | 'assignments' | 'attendance' | 'teachers' | 'settings');
+        setCurrentPage('student-dashboard');
+      }
+    } else if (role === 'teacher') {
+      const validSections = ['dashboard', 'subjects', 'students', 'files', 'assignments', 'attendance', 'analytics', 'settings'];
+      if (validSections.includes(section)) {
+        setTeacherSection(section as 'dashboard' | 'subjects' | 'students' | 'files' | 'assignments' | 'attendance' | 'analytics' | 'settings');
+        setCurrentPage('teacher-dashboard');
+      }
+    }
+  };
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        onClick={() => setIsOpen(!isOpen)}
+        className="relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+        aria-label="الإشعارات"
+      >
+        <Bell className="h-5 w-5" />
+        <AnimatePresence>
+          {unreadCount > 0 && (
+            <motion.span
+              key="badge"
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0 }}
+              className="absolute -top-0.5 -right-0.5 flex items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white min-w-[18px] h-[18px]"
+            >
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            ref={dropdownRef}
+            initial={{ opacity: 0, y: -10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+            transition={{ duration: 0.15 }}
+            style={dropdownStyle}
+            className="rounded-xl border bg-background shadow-lg overflow-hidden"
+            dir="rtl"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b p-3">
+              <h3 className="text-sm font-bold text-foreground">الإشعارات</h3>
+              <div className="flex items-center gap-1">
+                {unreadCount > 0 && (
+                  <button
+                    onClick={markAllAsRead}
+                    className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-emerald-600 hover:bg-emerald-50 transition-colors"
+                  >
+                    <CheckCheck className="h-3.5 w-3.5" />
+                    تعيين الكل كمقروء
+                  </button>
+                )}
+                {notifications.length > 0 && (
+                  <button
+                    onClick={clearAll}
+                    className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-rose-600 hover:bg-rose-50 transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    مسح الكل
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Notifications list */}
+            <div className="max-h-80 overflow-y-auto custom-scrollbar">
+              {notifications.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted/50 mb-3">
+                    <BellOff className="h-7 w-7 opacity-40" />
+                  </div>
+                  <p className="text-sm font-medium">لا توجد إشعارات</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">ستظهر الإشعارات الجديدة هنا</p>
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {notifications.map((notif) => (
+                    <motion.div
+                      key={notif.id}
+                      layout
+                      onClick={() => handleNotificationClick(notif)}
+                      className={`group flex items-start gap-3 p-3 cursor-pointer transition-colors hover:bg-muted/30 ${
+                        !notif.read ? 'bg-emerald-50/30' : ''
+                      } ${notif.link ? 'hover:bg-muted/50' : ''}`}
+                    >
+                      <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                        !notif.read ? 'bg-emerald-100' : 'bg-muted/50'
+                      }`}>
+                        {getNotifIcon(notif.type, notif.title)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-sm ${!notif.read ? 'font-semibold text-foreground' : 'font-medium text-foreground/80'}`}>
+                          {notif.title}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                          {notif.message}
+                        </p>
+                        <p className="text-xs text-muted-foreground/60 mt-1">
+                          {timeAgo(notif.createdAt)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {!notif.read && (
+                          <div className="h-2 w-2 rounded-full bg-emerald-500" />
+                        )}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            clearNotification(notif.id);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-rose-500 transition-all"
+                          aria-label="حذف الإشعار"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            {notifications.length > 0 && (
+              <div className="border-t px-3 py-2 text-center">
+                <p className="text-xs text-muted-foreground/60">
+                  {unreadCount > 0
+                    ? `${unreadCount} إشعار غير مقروء`
+                    : 'تم قراءة جميع الإشعارات'}
+                </p>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}

@@ -1,0 +1,4 @@
+$ bun --hot index.ts
+[Chat] AttenDo Chat Service running on port 3003
+[Chat] Connected: c_uRE7PeYnhP_DKzAAAB
+[Chat] Auth: Mahmoud R. Korany (035b6465-9b5b-4e56-8d84-94eb4d8c7a24), total sockets: 1

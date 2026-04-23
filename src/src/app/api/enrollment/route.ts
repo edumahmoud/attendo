@@ -1,0 +1,208 @@
+import { NextResponse } from 'next/server';
+import { supabaseServer, getSupabaseServerClient } from '@/lib/supabase-server';
+
+/**
+ * POST /api/enrollment
+ * Manage subject enrollment requests (approve, reject, approveAll, rejectAll, add, remove).
+ * Uses service role to bypass RLS issues.
+ *
+ * Body: {
+ *   action: 'approve' | 'reject' | 'approveAll' | 'rejectAll' | 'add' | 'remove',
+ *   subjectId: string,
+ *   studentId?: string,       // required for approve, reject, add, remove
+ * }
+ */
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { action, subjectId, studentId } = body;
+
+    if (!action || !['approve', 'reject', 'approveAll', 'rejectAll', 'add', 'remove'].includes(action)) {
+      return NextResponse.json({ error: 'إجراء غير صالح' }, { status: 400 });
+    }
+
+    if (!subjectId) {
+      return NextResponse.json({ error: 'معرف المقرر مطلوب' }, { status: 400 });
+    }
+
+    // 1. Verify the user is authenticated and is a teacher
+    const serverClient = await getSupabaseServerClient();
+    const { data: { user: authUser }, error: authError } = await serverClient.auth.getUser();
+
+    if (authError || !authUser) {
+      return NextResponse.json({ error: 'يجب تسجيل الدخول أولاً' }, { status: 401 });
+    }
+
+    // Get teacher profile
+    const { data: profile, error: profileError } = await supabaseServer
+      .from('users')
+      .select('id, role')
+      .eq('id', authUser.id)
+      .single();
+
+    if (profileError || !profile) {
+      return NextResponse.json({ error: 'لم يتم العثور على الملف الشخصي' }, { status: 404 });
+    }
+
+    if (profile.role !== 'teacher') {
+      return NextResponse.json({ error: 'هذه الميزة متاحة للمعلمين فقط' }, { status: 403 });
+    }
+
+    // Verify the teacher owns this subject
+    const { data: subject, error: subjectError } = await supabaseServer
+      .from('subjects')
+      .select('id, teacher_id')
+      .eq('id', subjectId)
+      .single();
+
+    if (subjectError || !subject) {
+      return NextResponse.json({ error: 'المقرر غير موجود' }, { status: 404 });
+    }
+
+    if (subject.teacher_id !== profile.id) {
+      return NextResponse.json({ error: 'ليس لديك صلاحية على هذا المقرر' }, { status: 403 });
+    }
+
+    // 2. Perform the requested action
+    if (action === 'approve') {
+      if (!studentId) {
+        return NextResponse.json({ error: 'معرف الطالب مطلوب' }, { status: 400 });
+      }
+
+      const { error } = await supabaseServer
+        .from('subject_students')
+        .update({ status: 'approved' })
+        .eq('subject_id', subjectId)
+        .eq('student_id', studentId)
+        .eq('status', 'pending');
+
+      if (error) {
+        console.error('[enrollment] Error approving:', error);
+        return NextResponse.json({ error: 'حدث خطأ أثناء قبول الطلب' }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, message: 'تم قبول الطالب بنجاح' });
+
+    } else if (action === 'reject') {
+      if (!studentId) {
+        return NextResponse.json({ error: 'معرف الطالب مطلوب' }, { status: 400 });
+      }
+
+      const { error } = await supabaseServer
+        .from('subject_students')
+        .update({ status: 'rejected' })
+        .eq('subject_id', subjectId)
+        .eq('student_id', studentId)
+        .eq('status', 'pending');
+
+      if (error) {
+        console.error('[enrollment] Error rejecting:', error);
+        return NextResponse.json({ error: 'حدث خطأ أثناء رفض الطلب' }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, message: 'تم رفض الطلب' });
+
+    } else if (action === 'approveAll') {
+      // Get count first
+      const { data: pendingList } = await supabaseServer
+        .from('subject_students')
+        .select('student_id')
+        .eq('subject_id', subjectId)
+        .eq('status', 'pending');
+
+      const count = pendingList?.length || 0;
+
+      if (count === 0) {
+        return NextResponse.json({ success: true, message: 'لا توجد طلبات معلقة', count: 0 });
+      }
+
+      const { error } = await supabaseServer
+        .from('subject_students')
+        .update({ status: 'approved' })
+        .eq('subject_id', subjectId)
+        .eq('status', 'pending');
+
+      if (error) {
+        console.error('[enrollment] Error approving all:', error);
+        return NextResponse.json({ error: 'حدث خطأ أثناء قبول جميع الطلبات' }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `تم قبول ${count} طلب بنجاح`,
+        count,
+      });
+
+    } else if (action === 'rejectAll') {
+      // Get count first
+      const { data: pendingList } = await supabaseServer
+        .from('subject_students')
+        .select('student_id')
+        .eq('subject_id', subjectId)
+        .eq('status', 'pending');
+
+      const count = pendingList?.length || 0;
+
+      const { error } = await supabaseServer
+        .from('subject_students')
+        .update({ status: 'rejected' })
+        .eq('subject_id', subjectId)
+        .eq('status', 'pending');
+
+      if (error) {
+        console.error('[enrollment] Error rejecting all:', error);
+        return NextResponse.json({ error: 'حدث خطأ أثناء رفض جميع الطلبات' }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `تم رفض ${count} طلب`,
+        count,
+      });
+
+    } else if (action === 'add') {
+      if (!studentId) {
+        return NextResponse.json({ error: 'معرف الطالب مطلوب' }, { status: 400 });
+      }
+
+      // Use upsert to handle existing records
+      const { error } = await supabaseServer
+        .from('subject_students')
+        .upsert({
+          subject_id: subjectId,
+          student_id: studentId,
+          status: 'approved',
+        }, { onConflict: 'subject_id,student_id' });
+
+      if (error) {
+        console.error('[enrollment] Error adding student:', error);
+        return NextResponse.json({ error: 'حدث خطأ أثناء إضافة الطالب' }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, message: 'تم إضافة الطالب بنجاح' });
+
+    } else if (action === 'remove') {
+      if (!studentId) {
+        return NextResponse.json({ error: 'معرف الطالب مطلوب' }, { status: 400 });
+      }
+
+      const { error } = await supabaseServer
+        .from('subject_students')
+        .delete()
+        .eq('subject_id', subjectId)
+        .eq('student_id', studentId);
+
+      if (error) {
+        console.error('[enrollment] Error removing student:', error);
+        return NextResponse.json({ error: 'حدث خطأ أثناء إزالة الطالب' }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, message: 'تم إزالة الطالب من المقرر' });
+    }
+
+    return NextResponse.json({ error: 'إجراء غير معروف' }, { status: 400 });
+  } catch (err) {
+    console.error('[enrollment] Unexpected error:', err);
+    return NextResponse.json({ error: 'حدث خطأ غير متوقع' }, { status: 500 });
+  }
+}
