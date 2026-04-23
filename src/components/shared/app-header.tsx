@@ -145,10 +145,12 @@ export default function AppHeader({
               className="flex items-center gap-2 sm:gap-2.5 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 hover:bg-muted/50 transition-colors min-w-0"
             >
               {/* Avatar + Name — clicking opens profile */}
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={(e) => { e.stopPropagation(); openProfile(userId); }}
-                className="flex items-center gap-2 sm:gap-2.5 rounded-lg px-1 py-0.5 -mx-1 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors group/profile min-w-0"
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openProfile(userId); } }}
+                className="flex items-center gap-2 sm:gap-2.5 rounded-lg px-1 py-0.5 -mx-1 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors group/profile min-w-0 cursor-pointer"
               >
                 <div className="flex flex-col items-end min-w-0">
                   <span className="text-xs sm:text-sm font-semibold text-foreground truncate max-w-[80px] sm:max-w-[140px] group-hover/profile:text-emerald-600 transition-colors">
@@ -159,7 +161,7 @@ export default function AppHeader({
                   </span>
                 </div>
                 <UserAvatar name={userName} avatarUrl={avatarUrl} size="sm" />
-              </button>
+              </div>
               <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 

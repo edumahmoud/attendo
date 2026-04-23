@@ -84,7 +84,7 @@ export async function POST(request: Request) {
       try {
         await supabaseServer.from('notifications').insert({
           user_id: ownerId,
-          type: 'file_request',
+          type: 'file',
           title: 'طلب ملف جديد',
           message: `طلب ${requesterProfile?.name || 'مستخدم'} ملف "${fileData?.file_name || 'ملف'}" الخاص بك.`,
           link: `file_request:${authUser.id}`,

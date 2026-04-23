@@ -187,6 +187,7 @@ export default function NotificationBell() {
     }
 
     // Handle file_request notifications (owner received a new file request) - navigate to own profile
+    // Type can be 'file' or 'file_request' (depends on DB constraint), link format: 'file_request:REQUESTER_ID'
     if (notif.type === 'file_request' || notif.link?.startsWith('file_request:')) {
       setIsOpen(false);
       const { openProfile } = useAppStore.getState();
