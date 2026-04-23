@@ -69,6 +69,10 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     if (!userId) return;
 
     try {
+      // Check if we have a valid session before querying
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData?.session) return;
+
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
@@ -77,7 +81,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         .limit(100);
 
       if (error) {
-        console.error('Failed to refetch notifications:', error);
+        console.error('Failed to refetch notifications:', JSON.stringify({ message: error.message, code: error.code, details: error.details }, null, 2));
         return;
       }
 
@@ -86,7 +90,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
       set({ notifications, unreadCount });
     } catch (err) {
-      console.error('Failed to refetch notifications:', err);
+      // Silently ignore refetch errors - they're non-critical and the polling will retry
     }
   },
 
@@ -123,7 +127,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         .limit(100);
 
       if (error) {
-        console.error('Failed to fetch notifications:', error);
+        console.error('Failed to fetch notifications:', JSON.stringify({ message: error.message, code: error.code, details: error.details }, null, 2));
         // Still set initialized so we don't keep retrying on every render
         set({ initialized: true, initializing: false, currentUserId: userId });
         return;

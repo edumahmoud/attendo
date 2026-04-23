@@ -235,3 +235,30 @@ Stage Summary:
 - Manual attendance registration now works via server-side API endpoint (bypasses RLS)
 - Manual attendance UI is now a proper dialog with search, scrollable list
 - Migration SQL created for adding 'manual' to CHECK constraint (works without it too via fallback)
+
+---
+Task ID: fix-notification-and-gps-v3
+Agent: Main Agent
+Task: 1) Fix "Failed to refetch notifications: {}" console error, 2) Fix GPS distance bug (~47km off, still broken after 2 previous attempts)
+
+Work Log:
+- **Notification store fix**: The `{}` error was because Supabase Postgrest errors don't serialize well with console.error. Added session check before querying (returns early if no session), improved error logging with JSON.stringify, and made catch block silent (polling will retry)
+- **GPS root cause analysis**: The `getAccuratePosition` function introduced in previous fix was the problem. It used `watchPosition` with a 3-second minimum wait time and aggressive accuracy threshold (30m) that:
+  - Caused the browser to return IP-based locations instead of real GPS on some devices
+  - Blocked valid GPS check-ins when the browser reported accuracy slightly above the threshold
+  - The minimum wait time rejected quick GPS fixes, waiting for IP-based fallback instead
+  - The function also returned `bestPosition` after timeout even when accuracy was poor, causing inconsistent behavior
+- **GPS fix approach**: Reverted to simple `getCurrentPosition` with `enableHighAccuracy: true` (the approach that worked before our changes). Created two new functions:
+  - `getCurrentGpsPosition(timeoutMs)`: Simple wrapper around `getCurrentPosition` with enableHighAccuracy, maximumAge:0, generous timeout
+  - `getBestGpsPosition()`: Calls getCurrentGpsPosition(30s), retries once for null island (0,0), retries once if accuracy > 500m
+- **Teacher starting attendance**: Now uses `getBestGpsPosition()` - saves location regardless of accuracy (both teacher/student need same method), shows warning toast if accuracy > 100m instead of blocking
+- **Student check-in**: Now uses `getBestGpsPosition()` - removed accuracy threshold blocking, added detection for GPS/IP mismatch (distance > 1km gives specific helpful error), poor accuracy gets contextual error message
+- **Removed**: GPS_ACCURACY_THRESHOLD, GPS_MIN_WAIT_MS, getAccuratePosition function, accuracy-based blocking of check-ins
+
+Stage Summary:
+- Notification store no longer logs empty `{}` errors, checks session before querying
+- GPS acquisition simplified: `getCurrentPosition` with `enableHighAccuracy: true` and 30s timeout
+- No more accuracy filtering that blocks check-ins - if browser returns a position, we use it
+- Both teacher and student use the same GPS acquisition method, so they'll get consistent location types
+- Distance > 1km detected as GPS/IP mismatch with helpful error message
+- MAX_DISTANCE_METERS stays at 20m as requested

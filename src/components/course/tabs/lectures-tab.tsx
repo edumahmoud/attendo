@@ -118,104 +118,71 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 const MAX_DISTANCE_METERS = 20;
-const GPS_ACCURACY_THRESHOLD = 30; // Real GPS gives 3-15m, WiFi gives ~20-40m, IP gives 65-5000m
-const GPS_MIN_WAIT_MS = 3000; // Wait at least 3 seconds before accepting (IP location returns instantly, GPS takes seconds)
 
-// Get high-accuracy GPS position using watchPosition
-// Key improvements over getCurrentPosition:
-// 1. Minimum wait time to reject instant IP-based locations
-// 2. Keeps watching for better accuracy as GPS hardware warms up
-// 3. Only accepts positions with accuracy ≤ GPS_ACCURACY_THRESHOLD
-function getAccuratePosition(timeoutMs: number = 15000): Promise<GeolocationPosition | null> {
+// Simple, reliable GPS position acquisition.
+// Uses getCurrentPosition with enableHighAccuracy: true.
+// This is the standard approach that works on mobile devices with GPS hardware.
+// Key: maximumAge: 0 ensures no cached positions, enableHighAccuracy forces GPS usage.
+function getCurrentGpsPosition(timeoutMs: number = 30000): Promise<GeolocationPosition | null> {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
       resolve(null);
       return;
     }
 
-    const startTime = Date.now();
-    let resolved = false;
-    let bestPosition: GeolocationPosition | null = null;
-    let watchId: number | null = null;
-    let positionCount = 0;
-
-    const cleanup = () => {
-      if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
-        watchId = null;
-      }
-      if (!resolved) {
-        resolved = true;
-        if (bestPosition) {
-          console.log('[GPS] Final position:', {
-            lat: bestPosition.coords.latitude,
-            lon: bestPosition.coords.longitude,
-            accuracy: Math.round(bestPosition.coords.accuracy),
-            positionsReceived: positionCount,
-            waitMs: Date.now() - startTime,
-            type: bestPosition.coords.accuracy <= GPS_ACCURACY_THRESHOLD ? 'GPS/WiFi' : 'IP-based (REJECTED)',
-          });
-        }
-        resolve(bestPosition);
-      }
-    };
-
-    // Overall timeout
-    const tid = setTimeout(cleanup, timeoutMs);
-
-    // Minimum wait timer - don't accept any position before this
-    const minWaitId = setTimeout(() => {
-      // After minimum wait, check if we already have a good position
-      if (bestPosition && bestPosition.coords.accuracy <= GPS_ACCURACY_THRESHOLD && !resolved) {
-        clearTimeout(tid);
-        cleanup();
-      }
-    }, GPS_MIN_WAIT_MS);
-
-    watchId = navigator.geolocation.watchPosition(
+    navigator.geolocation.getCurrentPosition(
       (pos) => {
-        positionCount++;
-        
-        // Log every position for debugging
-        console.log(`[GPS] Position #${positionCount}:`, {
+        console.log('[GPS] Got position:', {
           lat: pos.coords.latitude.toFixed(6),
           lon: pos.coords.longitude.toFixed(6),
           accuracy: Math.round(pos.coords.accuracy),
-          elapsed: `${Date.now() - startTime}ms`,
+          altitude: pos.coords.altitude,
+          speed: pos.coords.speed,
         });
-
-        // Keep the best (most accurate) position so far
-        if (!bestPosition || pos.coords.accuracy < bestPosition.coords.accuracy) {
-          bestPosition = pos;
-        }
-
-        // Only accept if:
-        // 1. Accuracy is within threshold (real GPS or WiFi, not IP-based)
-        // 2. Minimum wait time has passed (prevents instant IP-based results)
-        const elapsed = Date.now() - startTime;
-        if (pos.coords.accuracy <= GPS_ACCURACY_THRESHOLD && elapsed >= GPS_MIN_WAIT_MS && !resolved) {
-          clearTimeout(minWaitId);
-          clearTimeout(tid);
-          resolved = true;
-          if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-          console.log('[GPS] Accepted position:', {
-            lat: pos.coords.latitude.toFixed(6),
-            lon: pos.coords.longitude.toFixed(6),
-            accuracy: Math.round(pos.coords.accuracy),
-            positionsReceived: positionCount,
-          });
-          resolve(pos);
-        }
+        resolve(pos);
       },
-      () => {
-        // Error - but don't give up yet, the timeout might still give us a position
-        if (bestPosition && !resolved) {
-          // Don't resolve on error - let the timeout handle it
-        }
+      (err) => {
+        console.warn('[GPS] Error:', err.code, err.message);
+        resolve(null);
       },
-      { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 }
+      {
+        enableHighAccuracy: true,
+        timeout: timeoutMs,
+        maximumAge: 0,
+      }
     );
   });
+}
+
+// Get the best possible GPS position with one retry.
+// First attempt: 30s timeout with enableHighAccuracy (uses real GPS on mobile).
+// If accuracy is poor (> 100m, likely IP-based), retry once with a fresh request.
+async function getBestGpsPosition(): Promise<GeolocationPosition | null> {
+  // First attempt - give GPS 30 seconds to get a fix
+  let pos = await getCurrentGpsPosition(30000);
+
+  if (!pos) return null;
+
+  // Reject null island (0,0)
+  if (pos.coords.latitude === 0 && pos.coords.longitude === 0) {
+    console.warn('[GPS] Got null island (0,0) - retrying...');
+    pos = await getCurrentGpsPosition(20000);
+    if (!pos || (pos.coords.latitude === 0 && pos.coords.longitude === 0)) {
+      return null;
+    }
+  }
+
+  // If accuracy is very poor (> 500m), it's definitely IP-based.
+  // Retry once to see if GPS kicks in.
+  if (pos.coords.accuracy > 500) {
+    console.warn(`[GPS] Poor accuracy (${Math.round(pos.coords.accuracy)}m) - retrying for GPS...`);
+    const retry = await getCurrentGpsPosition(20000);
+    if (retry && retry.coords.accuracy < pos.coords.accuracy) {
+      pos = retry;
+    }
+  }
+
+  return pos;
 }
 
 // -------------------------------------------------------
@@ -632,22 +599,20 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
     if (startingAttendance) return;
     setStartingAttendance(lectureId);
     try {
-      // Get teacher GPS location with improved accuracy
+      // Get teacher GPS location
       let location: { lat: number; lon: number; accuracy: number } | null = null;
       if (navigator.geolocation) {
         try {
-          const pos = await getAccuratePosition(15000);
-          if (pos) {
-            // getAccuratePosition already filters out IP-based locations (accuracy > 30m)
-            // But double-check here just in case
-            if (pos.coords.accuracy <= GPS_ACCURACY_THRESHOLD && !(pos.coords.latitude === 0 && pos.coords.longitude === 0)) {
-              location = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy };
-            } else if (pos.coords.accuracy > GPS_ACCURACY_THRESHOLD) {
-              // This means getAccuratePosition returned a position but it's still IP-based
-              toast.error(`دقة الموقع ضعيفة (${Math.round(pos.coords.accuracy)} متر). GPS غير مفعل - يتم استخدام الموقع التقريبي من الإنترنت. يرجى تفعيل GPS من إعدادات الجهاز.`, { duration: 8000 });
+          const pos = await getBestGpsPosition();
+          if (pos && !(pos.coords.latitude === 0 && pos.coords.longitude === 0)) {
+            location = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy };
+            // Warn if accuracy is poor but still save the location
+            // Both teacher and student need to use similar location methods
+            if (pos.coords.accuracy > 100) {
+              toast(`تنبيه: دقة الموقع ضعيفة (${Math.round(pos.coords.accuracy)} متر). يُفضل تفعيل GPS للحصول على دقة أفضل.`, { duration: 6000 });
             }
-          } else {
-            toast.error('تعذر تحديد موقعك. يرجى تفعيل GPS والمحاولة مرة أخرى.', { duration: 6000 });
+          } else if (!pos) {
+            toast.error('تعذر تحديد موقعك. يرجى تفعيل خدمات الموقع والمحاولة مرة أخرى.', { duration: 6000 });
           }
         } catch { /* continue without location */ }
       }
@@ -864,9 +829,9 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
 
       if (navigator.geolocation) {
         try {
-          const pos = await getAccuratePosition(15000);
+          const pos = await getBestGpsPosition();
           if (pos) {
-            // Validate coordinates - reject null island (0,0) and obviously wrong coords
+            // Validate coordinates - reject null island (0,0)
             if (pos.coords.latitude === 0 && pos.coords.longitude === 0) {
               if (method === 'gps') {
                 toast.error('لم يتم تحديد موقعك بدقة. يرجى تفعيل GPS والمحاولة مرة أخرى.');
@@ -904,21 +869,27 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
           
           // Log GPS data for debugging
           console.log('[GPS Check]', {
-            teacher: { lat: teacherLat, lon: teacherLon },
-            student: { lat: studentLat, lon: studentLon, accuracy: studentAccuracy },
+            teacher: { lat: teacherLat.toFixed(6), lon: teacherLon.toFixed(6) },
+            student: { lat: studentLat.toFixed(6), lon: studentLon.toFixed(6), accuracy: studentAccuracy ? Math.round(studentAccuracy) : 'N/A' },
             distance: Math.round(distance),
           });
           
-          // Reject if GPS accuracy is too poor - IP-based location typically reports 50-5000m accuracy
-          // Real GPS gives 3-15m accuracy. getAccuratePosition already filters this, but double-check
-          if (studentAccuracy && studentAccuracy > GPS_ACCURACY_THRESHOLD) {
-            toast.error(`دقة الموقع ضعيفة جداً (${Math.round(studentAccuracy)} متر). GPS غير مفعل - يتم استخدام الموقع التقريبي من الإنترنت. يرجى تفعيل GPS من إعدادات الجهاز والمحاولة مرة أخرى.`, { duration: 8000 });
+          // If distance is very large (> 1km), it's almost certainly a GPS/IP location mismatch
+          // One device used real GPS and the other used IP-based location
+          if (distance > 1000) {
+            console.error('[GPS] Huge distance detected - likely GPS/IP mismatch. Teacher:', teacherLat, teacherLon, 'Student:', studentLat, studentLon);
+            toast.error(`المسافة كبيرة جداً (${Math.round(distance)} متر). قد يكون أحد الأجهزة يستخدم الموقع التقريبي من الإنترنت بدلاً من GPS. يرجى التأكد من تفعيل GPS على كلا الجهازين والمحاولة مرة أخرى.`, { duration: 10000 });
             return;
           }
           
           if (distance > MAX_DISTANCE_METERS) {
-            console.warn('[GPS] Distance too far. Teacher:', teacherLat, teacherLon, 'Student:', studentLat, studentLon, 'Distance:', Math.round(distance));
-            toast.error(`أنت بعيد عن المعلم بمسافة ${Math.round(distance)} متر. يجب أن تكون ضمن ${MAX_DISTANCE_METERS} متر.`, { duration: 6000 });
+            console.warn('[GPS] Distance too far:', Math.round(distance), 'meters');
+            // If accuracy is poor, give a more helpful message
+            if (studentAccuracy && studentAccuracy > 100) {
+              toast.error(`أنت بعيد عن المعلم بمسافة ${Math.round(distance)} متر. دقة الموقع ضعيفة (${Math.round(studentAccuracy)} متر) - يرجى تفعيل GPS من إعدادات الجهاز للحصول على موقع أدق.`, { duration: 8000 });
+            } else {
+              toast.error(`أنت بعيد عن المعلم بمسافة ${Math.round(distance)} متر. يجب أن تكون ضمن ${MAX_DISTANCE_METERS} متر.`, { duration: 6000 });
+            }
             return;
           }
         }
