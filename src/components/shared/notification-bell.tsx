@@ -8,7 +8,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useAppStore } from '@/stores/app-store';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import UserAvatar from '@/components/shared/user-avatar';
+import UserAvatar, { formatNameWithTitle } from '@/components/shared/user-avatar';
 
 function timeAgo(dateStr: string): string {
   const now = new Date();
@@ -413,7 +413,7 @@ export default function NotificationBell() {
                     <UserAvatar name={linkRequestModal.teacher?.name || 'معلم'} avatarUrl={linkRequestModal.teacher?.avatar_url} size="lg" />
                     <h3 className="text-lg font-bold text-foreground mt-3 mb-1">طلب ارتباط</h3>
                     <p className="text-sm text-muted-foreground mb-6">
-                      أرسل {linkRequestModal.teacher?.gender === 'female' ? 'المعلمة' : 'المعلم'} <span className="font-semibold text-foreground">{linkRequestModal.teacher?.name || 'معلم'}</span> طلب ارتباط بك
+                      أرسل {linkRequestModal.teacher?.gender === 'female' ? 'المعلمة' : 'المعلم'} <span className="font-semibold text-foreground">{formatNameWithTitle(linkRequestModal.teacher?.name || 'معلم', 'teacher', linkRequestModal.teacher?.title_id, linkRequestModal.teacher?.gender)}</span> طلب ارتباط بك
                     </p>
                     <div className="flex items-center gap-3 w-full">
                       <button

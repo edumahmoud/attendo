@@ -33,6 +33,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
+import { formatNameWithTitle } from '@/components/shared/user-avatar';
 import type { UserProfile, Subject, Lecture, AttendanceSession, LectureWithAttendance, LectureNote, LectureNoteWithAuthor } from '@/lib/types';
 import LectureModal from '@/components/course/tabs/lecture-modal';
 
@@ -819,9 +820,12 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
       const notesList = (data as LectureNote[]) || [];
       if (notesList.length > 0) {
         const authorIds = [...new Set(notesList.map((n) => n.user_id))];
-        const { data: authors } = await supabase.from('users').select('id, name').in('id', authorIds);
-        const authorMap = new Map((authors || []).map((a: { id: string; name: string }) => [a.id, a.name]));
-        setExpandedNotes(notesList.map((n) => ({ ...n, author_name: authorMap.get(n.user_id) || 'معلم' })) as LectureNoteWithAuthor[]);
+        const { data: authors } = await supabase.from('users').select('id, name, title_id, gender, role').in('id', authorIds);
+        const authorMap = new Map((authors || []).map((a: { id: string; name: string; title_id?: string | null; gender?: string | null; role?: string | null }) => [a.id, a]));
+        setExpandedNotes(notesList.map((n) => {
+          const author = authorMap.get(n.user_id);
+          return { ...n, author_name: author ? formatNameWithTitle(author.name, author.role, author.title_id, author.gender) : 'معلم' };
+        }) as LectureNoteWithAuthor[]);
       } else {
         setExpandedNotes([]);
       }

@@ -237,13 +237,15 @@ export async function POST(request: Request) {
 
 /**
  * DELETE /api/subject-teachers
- * Remove a co-teacher from a subject (only owner can remove).
- * Body: { subjectId, teacherId }
+ * Remove a co-teacher from a subject.
+ * - Owner can remove any co-teacher
+ * - Co-teacher can remove themselves (selfLeave: true)
+ * Body: { subjectId, teacherId, selfLeave? }
  */
 export async function DELETE(request: Request) {
   try {
     const body = await request.json();
-    const { subjectId, teacherId } = body;
+    const { subjectId, teacherId, selfLeave } = body;
 
     if (!subjectId || !teacherId) {
       return NextResponse.json({ error: 'معرف المقرر والمعلم مطلوبان' }, { status: 400 });
@@ -277,7 +279,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'لم يتم العثور على الملف الشخصي' }, { status: 404 });
     }
 
-    // 3. Verify the requester is the owner of the subject
+    // 3. Verify the subject exists
     const { data: subject, error: subjectError } = await supabaseServer
       .from('subjects')
       .select('id, teacher_id, name')
@@ -288,8 +290,12 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'المقرر غير موجود' }, { status: 404 });
     }
 
-    if (subject.teacher_id !== profile.id) {
-      return NextResponse.json({ error: 'فقط مالك المقرر يمكنه إزالة المعلمين المشاركين' }, { status: 403 });
+    const isOwner = subject.teacher_id === profile.id;
+    const isSelfLeaving = selfLeave === true && teacherId === profile.id;
+
+    // Only owner or self-leaving co-teacher can remove
+    if (!isOwner && !isSelfLeaving) {
+      return NextResponse.json({ error: 'فقط مالك المقرر أو المعلم المشارك نفسه يمكنه الإزالة' }, { status: 403 });
     }
 
     // 4. Check the entry exists and is not the owner
@@ -308,7 +314,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'لا يمكنك إزالة مالك المقرر' }, { status: 400 });
     }
 
-    // 5. Get the teacher's name for notification
+    // 5. Get the teacher's name for notification/response
     const { data: targetTeacher } = await supabaseServer
       .from('users')
       .select('name')
@@ -326,18 +332,32 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'حدث خطأ أثناء إزالة المعلم المشارك' }, { status: 500 });
     }
 
-    // 7. Send notification to the removed teacher
-    await notifyUser(
-      teacherId,
-      'enrollment',
-      'تمت إزالتك من مقرر',
-      `تمت إزالتك كمعلم مشارك من مقرر "${subject.name}" بواسطة ${profile.name}`,
-      `subject:${subjectId}`
-    );
+    // 7. Send notification
+    if (isSelfLeaving) {
+      // Notify the owner that a co-teacher left
+      await notifyUser(
+        subject.teacher_id,
+        'system',
+        'غادر معلم مشارك المقرر',
+        `غادر ${profile.name} مقرر "${subject.name}" كمعلم مشارك`,
+        `subject:${subjectId}`
+      );
+    } else {
+      // Notify the removed teacher
+      await notifyUser(
+        teacherId,
+        'enrollment',
+        'تمت إزالتك من مقرر',
+        `تمت إزالتك كمعلم مشارك من مقرر "${subject.name}" بواسطة ${profile.name}`,
+        `subject:${subjectId}`
+      );
+    }
 
     return NextResponse.json({
       success: true,
-      message: `تمت إزالة ${targetTeacher?.name || 'المعلم'} من المعلمين المشاركين`,
+      message: isSelfLeaving
+        ? `تمت مغادرة مقرر "${subject.name}" بنجاح`
+        : `تمت إزالة ${targetTeacher?.name || 'المعلم'} من المعلمين المشاركين`,
     });
   } catch (err) {
     console.error('[subject-teachers] Unexpected error:', err);

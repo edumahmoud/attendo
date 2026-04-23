@@ -26,7 +26,8 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/stores/app-store';
 import { toast } from 'sonner';
-import type { UserProfile, Subject, CourseTab } from '@/lib/types';
+import { formatNameWithTitle } from '@/components/shared/user-avatar';
+import type { UserProfile, Subject, SubjectTeacher, CourseTab } from '@/lib/types';
 
 // -------------------------------------------------------
 // Lazy-load tab components for performance
@@ -155,7 +156,11 @@ export default function CoursePage({ profile, role }: CoursePageProps) {
   const [loading, setLoading] = useState(true);
   const [teacherName, setTeacherName] = useState<string>('');
   const [teacherId, setTeacherId] = useState<string | null>(null);
+  const [coTeachers, setCoTeachers] = useState<SubjectTeacher[]>([]);
   const [copiedCode, setCopiedCode] = useState(false);
+
+  // Is the current user the subject owner (not a co-teacher)?
+  const isOwner = role === 'teacher' && subject?.teacher_id === profile.id;
 
   // ─── Edit subject modal state ───
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -206,23 +211,46 @@ export default function CoursePage({ profile, role }: CoursePageProps) {
       } else {
         setSubject(data as Subject);
 
-        // Fetch teacher name in parallel for students
+        // Fetch teacher name and co-teachers for students
         if (role === 'student' && data) {
           const tid = (data as Subject).teacher_id;
           if (tid) {
             setTeacherId(tid);
             supabase
               .from('users')
-              .select('name')
+              .select('name, title_id, gender, role')
               .eq('id', tid)
               .single()
               .then(({ data: teacher }) => {
                 if (teacher) {
-                  setTeacherName((teacher as { name: string }).name);
+                  const t = teacher as { name: string; title_id?: string | null; gender?: string | null; role?: string | null };
+                  setTeacherName(formatNameWithTitle(t.name, t.role, t.title_id, t.gender));
                 }
               })
               .catch(() => {});
           }
+
+          // Fetch co-teachers for students
+          fetch(`/api/subject-teachers?subjectId=${data.id}`)
+            .then(res => res.json())
+            .then(result => {
+              if (result.success && result.coTeachers) {
+                setCoTeachers(result.coTeachers.filter((ct: SubjectTeacher) => ct.role === 'co_teacher'));
+              }
+            })
+            .catch(() => {});
+        }
+
+        // Fetch co-teachers for teacher view (to determine isCoTeacher)
+        if (role === 'teacher' && data) {
+          fetch(`/api/subject-teachers?subjectId=${data.id}`)
+            .then(res => res.json())
+            .then(result => {
+              if (result.success && result.coTeachers) {
+                setCoTeachers(result.coTeachers.filter((ct: SubjectTeacher) => ct.role === 'co_teacher'));
+              }
+            })
+            .catch(() => {});
         }
       }
     } catch (err) {
@@ -474,8 +502,8 @@ export default function CoursePage({ profile, role }: CoursePageProps) {
 
             {/* Right side: action buttons + join code + teacher name */}
             <div className="flex flex-col items-end gap-2">
-              {/* Teacher action buttons row */}
-              {role === 'teacher' && (
+              {/* Teacher action buttons row — only for subject owner */}
+              {role === 'teacher' && isOwner && (
                 <div className="flex items-center gap-1.5">
                   {/* Edit button */}
                   <button
@@ -537,16 +565,36 @@ export default function CoursePage({ profile, role }: CoursePageProps) {
                 </button>
               )}
 
-              {/* Teacher name (students only) — clickable to open profile */}
+              {/* Teachers list (students only) — clickable to open profile */}
               {role === 'student' && teacherName && teacherId && (
-                <button
-                  type="button"
-                  onClick={() => openProfile(teacherId)}
-                  className="flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur-sm px-3 py-1.5 text-xs text-white/90 hover:bg-white/25 hover:text-white transition-colors"
-                >
-                  <User className="h-3.5 w-3.5 opacity-70" />
-                  <span>{teacherName}</span>
-                </button>
+                <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                  <User className="h-3.5 w-3.5 opacity-70 text-white/70 shrink-0" />
+                  <button
+                    type="button"
+                    onClick={() => openProfile(teacherId)}
+                    className="rounded-full bg-white/15 backdrop-blur-sm px-2.5 py-1 text-xs text-white/90 hover:bg-white/25 hover:text-white transition-colors"
+                  >
+                    {teacherName}
+                  </button>
+                  {coTeachers.map((ct) => {
+                    const ctName = formatNameWithTitle(
+                      ct.teacher_name || 'معلم',
+                      'teacher',
+                      ct.teacher_title_id,
+                      ct.teacher_gender
+                    );
+                    return (
+                      <button
+                        key={ct.id}
+                        type="button"
+                        onClick={() => openProfile(ct.teacher_id)}
+                        className="rounded-full bg-white/15 backdrop-blur-sm px-2.5 py-1 text-xs text-white/90 hover:bg-white/25 hover:text-white transition-colors"
+                      >
+                        {ctName}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>

@@ -419,6 +419,9 @@ export interface ChatMessage {
     name: string;
     email: string;
     avatar_url?: string | null;
+    title_id?: string | null;
+    gender?: string | null;
+    role?: string | null;
   } | null;
 }
 

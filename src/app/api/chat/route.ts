@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
             let otherParticipant = null;
             if (conv.type === 'individual') {
               const otherPartRes = await fetch(
-                `${SUPABASE_URL}/rest/v1/conversation_participants?select=user_id,users(id,name,email,avatar_url)&conversation_id=eq.${conv.id}&user_id=neq.${userId}`,
+                `${SUPABASE_URL}/rest/v1/conversation_participants?select=user_id,users(id,name,email,avatar_url,title_id,gender,role)&conversation_id=eq.${conv.id}&user_id=neq.${userId}`,
                 { headers: getAdminHeaders() }
               ).then(r => r.json());
               otherParticipant = otherPartRes?.[0]?.users || null;
@@ -120,7 +120,7 @@ export async function GET(request: NextRequest) {
 
         if (!conversationId) return NextResponse.json({ error: 'conversationId required' }, { status: 400 });
 
-        let url = `${SUPABASE_URL}/rest/v1/messages?select=id,sender_id,content,created_at,is_deleted,is_edited,sender:users(id,name,email,avatar_url)&conversation_id=eq.${conversationId}&order=created_at.desc&limit=${limit}`;
+        let url = `${SUPABASE_URL}/rest/v1/messages?select=id,sender_id,content,created_at,is_deleted,is_edited,sender:users(id,name,email,avatar_url,title_id,gender,role)&conversation_id=eq.${conversationId}&order=created_at.desc&limit=${limit}`;
         if (before) {
           url += `&created_at=lt.${before}`;
         }
@@ -146,7 +146,7 @@ export async function GET(request: NextRequest) {
         if (!conversationId) return NextResponse.json({ error: 'conversationId required' }, { status: 400 });
 
         const participants = await fetch(
-          `${SUPABASE_URL}/rest/v1/conversation_participants?select=user_id,joined_at,last_read_at,users(id,name,email,avatar_url,role)&conversation_id=eq.${conversationId}`,
+          `${SUPABASE_URL}/rest/v1/conversation_participants?select=user_id,joined_at,last_read_at,users(id,name,email,avatar_url,title_id,gender,role)&conversation_id=eq.${conversationId}`,
           { headers: getAdminHeaders() }
         ).then(r => r.json());
 
@@ -162,13 +162,13 @@ export async function GET(request: NextRequest) {
 
         // Search users enrolled in the same subject
         const users = await fetch(
-          `${SUPABASE_URL}/rest/v1/subject_students?select=student_id,users(id,name,email,avatar_url)&subject_id=eq.${subjectId}&or=(status.eq.approved,status.is.null)`,
+          `${SUPABASE_URL}/rest/v1/subject_students?select=student_id,users(id,name,email,avatar_url,title_id,gender,role)&subject_id=eq.${subjectId}&or=(status.eq.approved,status.is.null)`,
           { headers: getAdminHeaders() }
         ).then(r => r.json());
 
         // Also include the teacher
         const subject = await fetch(
-          `${SUPABASE_URL}/rest/v1/subjects?select=teacher_id,users(id,name,email,avatar_url)&id=eq.${subjectId}`,
+          `${SUPABASE_URL}/rest/v1/subjects?select=teacher_id,users(id,name,email,avatar_url,title_id,gender,role)&id=eq.${subjectId}`,
           { headers: getAdminHeaders() }
         ).then(r => r.json());
 
@@ -230,7 +230,7 @@ export async function POST(request: NextRequest) {
 
         // Get sender info for the response
         const sender = await fetch(
-          `${SUPABASE_URL}/rest/v1/users?select=id,name,email,avatar_url&id=eq.${senderId}`,
+          `${SUPABASE_URL}/rest/v1/users?select=id,name,email,avatar_url,title_id,gender,role&id=eq.${senderId}`,
           { headers: getAdminHeaders() }
         ).then(r => r.json());
 

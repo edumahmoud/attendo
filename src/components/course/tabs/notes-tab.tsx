@@ -21,6 +21,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
+import { formatNameWithTitle } from '@/components/shared/user-avatar';
 import type { UserProfile, Subject, Lecture, LectureNote, LectureNoteWithAuthor } from '@/lib/types';
 
 // -------------------------------------------------------
@@ -216,14 +217,17 @@ export default function NotesTab({ profile, role, subjectId, teacherName }: Note
         const authorIds = [...new Set(notesList.map((n) => n.user_id))];
         const { data: authors } = await supabase
           .from('users')
-          .select('id, name')
+          .select('id, name, title_id, gender, role')
           .in('id', authorIds);
-        const authorMap = new Map((authors || []).map((a: { id: string; name: string }) => [a.id, a.name]));
+        const authorMap = new Map((authors || []).map((a: { id: string; name: string; title_id?: string | null; gender?: string | null; role?: string | null }) => [a.id, a]));
 
-        setAllNotes(notesList.map((n) => ({
-          ...n,
-          author_name: authorMap.get(n.user_id) || 'مستخدم',
-        })));
+        setAllNotes(notesList.map((n) => {
+          const author = authorMap.get(n.user_id);
+          return {
+            ...n,
+            author_name: author ? formatNameWithTitle(author.name, author.role, author.title_id, author.gender) : 'مستخدم',
+          };
+        }));
       } else {
         setAllNotes([]);
       }
@@ -542,7 +546,7 @@ export default function NotesTab({ profile, role, subjectId, teacherName }: Note
           <div className="flex items-center justify-between mt-3 pt-2 border-t border-muted/50">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <User className="h-3 w-3" />
-              <span>{note.author_name || (role === 'teacher' ? 'أنت' : teacherName)}</span>
+              <span>{note.author_name || (role === 'teacher' ? 'أنت' : formatNameWithTitle(teacherName))}</span>
             </div>
             <div className="flex items-center gap-1 text-xs text-muted-foreground" title={formatFullDate(note.created_at)}>
               <Clock className="h-3 w-3" />

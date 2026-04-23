@@ -25,7 +25,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import type { UserProfile, Conversation, ChatMessage } from '@/lib/types';
-import UserAvatar from '@/components/shared/user-avatar';
+import UserAvatar, { formatNameWithTitle } from '@/components/shared/user-avatar';
 import { useAppStore } from '@/stores/app-store';
 
 // =====================================================
@@ -902,7 +902,12 @@ export default function ChatSection({ profile, role }: ChatSectionProps) {
   // =====================================================
   const renderMessage = (msg: ChatMessage, index: number) => {
     const isOwn = msg.sender_id === profile.id;
-    const senderName = msg.sender?.name || 'مستخدم';
+    const senderName = formatNameWithTitle(
+      msg.sender?.name || 'مستخدم',
+      msg.sender?.role,
+      msg.sender?.title_id,
+      msg.sender?.gender
+    );
     const showAvatar = !isOwn && (index === 0 || messages[index - 1]?.sender_id !== msg.sender_id);
     const isDeleted = (msg as Record<string, unknown>).is_deleted as boolean;
     const isEdited = (msg as Record<string, unknown>).is_edited as boolean;
@@ -1066,7 +1071,12 @@ export default function ChatSection({ profile, role }: ChatSectionProps) {
   const chatHeaderName = activeConvInfo
     ? activeConvInfo.type === 'group'
       ? activeConvInfo.title || 'محادثة جماعية'
-      : activeConvInfo.otherParticipant?.name || 'محادثة خاصة'
+      : formatNameWithTitle(
+          activeConvInfo.otherParticipant?.name || 'محادثة خاصة',
+          activeConvInfo.otherParticipant?.role,
+          activeConvInfo.otherParticipant?.title_id,
+          activeConvInfo.otherParticipant?.gender
+        )
     : '';
 
   const chatHeaderOnline = activeConvInfo?.type === 'individual' && activeConvInfo.otherParticipant?.id
@@ -1220,7 +1230,12 @@ export default function ChatSection({ profile, role }: ChatSectionProps) {
                   const unread = getUnreadCount(conv);
                   const displayName = isGroup
                     ? conv.title || 'محادثة جماعية'
-                    : conv.otherParticipant?.name || 'محادثة خاصة';
+                    : formatNameWithTitle(
+                        conv.otherParticipant?.name || 'محادثة خاصة',
+                        conv.otherParticipant?.role,
+                        conv.otherParticipant?.title_id,
+                        conv.otherParticipant?.gender
+                      );
                   const otherUserId = !isGroup ? conv.otherParticipant?.id : null;
                   const isOtherOnline = otherUserId ? onlineUsers.has(otherUserId) : false;
 
@@ -1519,7 +1534,7 @@ export default function ChatSection({ profile, role }: ChatSectionProps) {
                           }`} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-foreground truncate">{user.name}</p>
+                          <p className="text-sm font-semibold text-foreground truncate">{formatNameWithTitle(user.name, user.role, user.title_id, user.gender)}</p>
                           <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                         </div>
                         {creatingChat && (

@@ -2161,6 +2161,8 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
                       name={teacherPreview.name || 'معلم'}
                       avatarUrl={teacherPreview.avatar_url}
                       role="teacher"
+                      gender={teacherPreview.gender}
+                      titleId={teacherPreview.title_id}
                       size="md"
                       showAvatar={true}
                       showUsername={false}

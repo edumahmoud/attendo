@@ -21,6 +21,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useAppStore } from '@/stores/app-store';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
+import { formatNameWithTitle } from '@/components/shared/user-avatar';
 
 function timeAgo(dateStr: string): string {
   const now = new Date();
@@ -352,7 +353,7 @@ export default function NotificationsSection() {
                     <h3 className="text-lg font-bold text-foreground mb-1">طلب ارتباط</h3>
                     <p className="text-sm text-muted-foreground mb-6">
                       أرسل {linkRequestModal.teacher?.gender === 'female' ? 'المعلمة' : 'المعلم'}{' '}
-                      <span className="font-semibold text-foreground">{linkRequestModal.teacher?.name || 'معلم'}</span>{' '}
+                      <span className="font-semibold text-foreground">{formatNameWithTitle(linkRequestModal.teacher?.name || 'معلم', 'teacher', linkRequestModal.teacher?.title_id, linkRequestModal.teacher?.gender)}</span>{' '}
                       طلب ارتباط بك
                     </p>
                     <div className="flex items-center gap-3 w-full">

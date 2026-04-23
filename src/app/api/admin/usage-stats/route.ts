@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
     const periodStartISO = periodStart.toISOString();
     const prevPeriodStartISO = prevPeriodStart.toISOString();
 
-    // 1. Active lectures count
+    // 1. Active lectures count (attendance sessions with status 'active')
     const { count: activeLectures, error: activeLecturesError } = await supabaseServer
       .from('attendance_sessions')
       .select('*', { count: 'exact', head: true })
@@ -52,30 +52,65 @@ export async function GET(request: NextRequest) {
       console.error('Error fetching active lectures:', activeLecturesError);
     }
 
-    // 2. Active users in current period (users with last_activity in user_sessions within the period)
-    const { data: activeUserSessions, error: activeUsersError } = await supabaseServer
-      .from('user_sessions')
-      .select('user_id')
-      .gte('last_activity', periodStartISO)
-      .eq('is_active', true);
+    // 2. Active users - try user_sessions first, fall back to users with updated_at
+    let activeUsersCount = 0;
+    let prevActiveUsersCount = 0;
 
-    const activeUserIds = new Set((activeUserSessions || []).map((s: { user_id: string }) => s.user_id));
-    const activeUsersCount = activeUserIds.size;
+    try {
+      const { data: activeUserSessions, error: activeUsersError } = await supabaseServer
+        .from('user_sessions')
+        .select('user_id')
+        .gte('last_activity', periodStartISO)
+        .eq('is_active', true);
 
-    if (activeUsersError) {
-      console.error('Error fetching active users:', activeUsersError);
+      if (!activeUsersError && activeUserSessions && activeUserSessions.length > 0) {
+        const activeUserIds = new Set(activeUserSessions.map((s: { user_id: string }) => s.user_id));
+        activeUsersCount = activeUserIds.size;
+
+        const { data: prevActiveUserSessions } = await supabaseServer
+          .from('user_sessions')
+          .select('user_id')
+          .gte('last_activity', prevPeriodStartISO)
+          .lt('last_activity', periodStartISO)
+          .eq('is_active', true);
+
+        const prevActiveUserIds = new Set((prevActiveUserSessions || []).map((s: { user_id: string }) => s.user_id));
+        prevActiveUsersCount = prevActiveUserIds.size;
+      } else {
+        // Fallback: count users who updated their profile in the period
+        // This gives a reasonable approximation of "active" users
+        const { count: activeUsersFallback } = await supabaseServer
+          .from('users')
+          .select('*', { count: 'exact', head: true })
+          .gte('updated_at', periodStartISO);
+
+        activeUsersCount = activeUsersFallback || 0;
+
+        const { count: prevActiveUsersFallback } = await supabaseServer
+          .from('users')
+          .select('*', { count: 'exact', head: true })
+          .gte('updated_at', prevPeriodStartISO)
+          .lt('updated_at', periodStartISO);
+
+        prevActiveUsersCount = prevActiveUsersFallback || 0;
+      }
+    } catch {
+      // Fallback: use users updated_at
+      const { count: activeUsersFallback } = await supabaseServer
+        .from('users')
+        .select('*', { count: 'exact', head: true })
+        .gte('updated_at', periodStartISO);
+
+      activeUsersCount = activeUsersFallback || 0;
+
+      const { count: prevActiveUsersFallback } = await supabaseServer
+        .from('users')
+        .select('*', { count: 'exact', head: true })
+        .gte('updated_at', prevPeriodStartISO)
+        .lt('updated_at', periodStartISO);
+
+      prevActiveUsersCount = prevActiveUsersFallback || 0;
     }
-
-    // Previous period active users
-    const { data: prevActiveUserSessions } = await supabaseServer
-      .from('user_sessions')
-      .select('user_id')
-      .gte('last_activity', prevPeriodStartISO)
-      .lt('last_activity', periodStartISO)
-      .eq('is_active', true);
-
-    const prevActiveUserIds = new Set((prevActiveUserSessions || []).map((s: { user_id: string }) => s.user_id));
-    const prevActiveUsersCount = prevActiveUserIds.size;
 
     // 3. New registrations in current period
     const { count: newRegistrations, error: regError } = await supabaseServer
@@ -128,7 +163,31 @@ export async function GET(request: NextRequest) {
       .gte('completed_at', prevPeriodStartISO)
       .lt('completed_at', periodStartISO);
 
-    // 6. Chart data - daily breakdown for the past 30 days
+    // 6. Lectures created in current period
+    const { count: lecturesCreated } = await supabaseServer
+      .from('lectures')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', periodStartISO);
+
+    const { count: prevLecturesCreated } = await supabaseServer
+      .from('lectures')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', prevPeriodStartISO)
+      .lt('created_at', periodStartISO);
+
+    // 7. Assignments created in current period
+    const { count: assignmentsCreated } = await supabaseServer
+      .from('assignments')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', periodStartISO);
+
+    const { count: prevAssignmentsCreated } = await supabaseServer
+      .from('assignments')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', prevPeriodStartISO)
+      .lt('created_at', periodStartISO);
+
+    // 8. Chart data - daily breakdown for the past 30 days
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
@@ -176,7 +235,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 7. Registration trends chart - monthly for the past 12 months
+    // 9. Registration trends chart - monthly for the past 12 months
     const twelveMonthsAgo = new Date();
     twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
     const twelveMonthsAgoISO = twelveMonthsAgo.toISOString();
@@ -221,17 +280,23 @@ export async function GET(request: NextRequest) {
         newRegistrations: newRegistrations || 0,
         attendanceSessions: attendanceSessions || 0,
         quizzesTaken: quizzesTaken || 0,
+        lecturesCreated: lecturesCreated || 0,
+        assignmentsCreated: assignmentsCreated || 0,
         changes: {
           activeUsers: calcChange(activeUsersCount, prevActiveUsersCount),
           newRegistrations: calcChange(newRegistrations || 0, prevNewRegistrations || 0),
           attendanceSessions: calcChange(attendanceSessions || 0, prevAttendanceSessions || 0),
           quizzesTaken: calcChange(quizzesTaken || 0, prevQuizzesTaken || 0),
+          lecturesCreated: calcChange(lecturesCreated || 0, prevLecturesCreated || 0),
+          assignmentsCreated: calcChange(assignmentsCreated || 0, prevAssignmentsCreated || 0),
         },
         prevData: {
           activeUsers: prevActiveUsersCount,
           newRegistrations: prevNewRegistrations || 0,
           attendanceSessions: prevAttendanceSessions || 0,
           quizzesTaken: prevQuizzesTaken || 0,
+          lecturesCreated: prevLecturesCreated || 0,
+          assignmentsCreated: prevAssignmentsCreated || 0,
         },
         chartData,
         registrationTrends,

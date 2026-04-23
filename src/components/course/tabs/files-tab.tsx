@@ -32,6 +32,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { formatNameWithTitle } from '@/components/shared/user-avatar';
 import type { UserProfile, Subject, SubjectFile } from '@/lib/types';
 
 // -------------------------------------------------------
@@ -198,23 +199,26 @@ export default function FilesTab({ profile, role, subjectId }: FilesTabProps) {
       } else if (data && data.length > 0) {
         // Fetch uploader profiles
         const uploaderIds = [...new Set(data.map((f: SubjectFile) => f.uploaded_by))];
-        const uploaderMap = new Map<string, string>();
+        const uploaderMap = new Map<string, { name: string; title_id?: string | null; gender?: string | null; role?: string | null }>();
 
         const { data: uploaders } = await supabase
           .from('users')
-          .select('id, name')
+          .select('id, name, title_id, gender, role')
           .in('id', uploaderIds);
 
         if (uploaders) {
-          for (const u of uploaders) {
-            uploaderMap.set(u.id, u.name);
+          for (const u of uploaders as { id: string; name: string; title_id?: string | null; gender?: string | null; role?: string | null }[]) {
+            uploaderMap.set(u.id, u);
           }
         }
 
-        const filesWithUploaders: SubjectFileWithUploader[] = (data as SubjectFile[]).map((f) => ({
-          ...f,
-          uploader_name: uploaderMap.get(f.uploaded_by) || 'مستخدم',
-        }));
+        const filesWithUploaders: SubjectFileWithUploader[] = (data as SubjectFile[]).map((f) => {
+          const uploader = uploaderMap.get(f.uploaded_by);
+          return {
+            ...f,
+            uploader_name: uploader ? formatNameWithTitle(uploader.name, uploader.role, uploader.title_id, uploader.gender) : 'مستخدم',
+          };
+        });
 
         // Filter: students see only public (visible) files
         // Teachers see all files

@@ -45,7 +45,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import type { UserProfile, UserFile, FileShare, Subject } from '@/lib/types';
-import UserAvatar, { getRoleLabel, getTitleLabel } from '@/components/shared/user-avatar';
+import UserAvatar, { getRoleLabel, getTitleLabel, formatNameWithTitle } from '@/components/shared/user-avatar';
 import { useAppStore } from '@/stores/app-store';
 
 // -------------------------------------------------------
@@ -1776,15 +1776,11 @@ export default function PersonalFilesSection({ profile, role }: PersonalFilesSec
                   <div className="min-w-0 flex-1">
                     <p className="text-xs text-muted-foreground truncate">
                       شارك معك{' '}
-                      <span className="text-emerald-600">
-                        {getTitleLabel(file.shared_by_user?.title_id, file.shared_by_user?.gender) || getRoleLabel(file.shared_by_user?.role || 'student', file.shared_by_user?.gender, file.shared_by_user?.title_id)}
-                      </span>
-                      {' : '}
                       <button
                         onClick={() => file.shared_by_user?.id && openProfile(file.shared_by_user.id)}
                         className="font-medium text-foreground hover:text-emerald-600 transition-colors cursor-pointer"
                       >
-                        {file.shared_by_user?.name || 'مستخدم'}
+                        {formatNameWithTitle(file.shared_by_user?.name || 'مستخدم', file.shared_by_user?.role, file.shared_by_user?.title_id, file.shared_by_user?.gender)}
                       </button>
                       {' هذا الملف'}
                     </p>
@@ -2163,7 +2159,7 @@ export default function PersonalFilesSection({ profile, role }: PersonalFilesSec
                       <div key={share.id} className="flex items-center justify-between rounded-lg bg-muted/30 p-2.5">
                         <div className="flex items-center gap-2 min-w-0">
                           <UserAvatar name={share.shared_with_user?.name || 'مستخدم'} avatarUrl={share.shared_with_user?.avatar_url} size="xs" />
-                          <span className="text-sm font-medium text-foreground truncate">{share.shared_with_user?.name || 'مستخدم'}</span>
+                          <span className="text-sm font-medium text-foreground truncate">{formatNameWithTitle(share.shared_with_user?.name || 'مستخدم', share.shared_with_user?.role, share.shared_with_user?.title_id, share.shared_with_user?.gender)}</span>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
@@ -2300,7 +2296,7 @@ export default function PersonalFilesSection({ profile, role }: PersonalFilesSec
                       >
                         <UserAvatar name={user.name || 'مستخدم'} avatarUrl={user.avatar_url} size="xs" />
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-foreground truncate">{user.name}</p>
+                          <p className="text-sm font-medium text-foreground truncate">{formatNameWithTitle(user.name, user.role, user.title_id, user.gender)}</p>
                           <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
                         </div>
                         <Badge variant="outline" className="text-[10px] shrink-0">
@@ -2323,7 +2319,7 @@ export default function PersonalFilesSection({ profile, role }: PersonalFilesSec
                         variant="secondary"
                         className="flex items-center gap-1.5 py-1 px-2.5"
                       >
-                        <span className="text-xs font-medium">{user.name}</span>
+                        <span className="text-xs font-medium">{formatNameWithTitle(user.name, user.role, user.title_id, user.gender)}</span>
                         <button
                           onClick={() => removeShareUser(user.id)}
                           className="flex h-4 w-4 items-center justify-center rounded-full hover:bg-muted"
@@ -2365,7 +2361,7 @@ export default function PersonalFilesSection({ profile, role }: PersonalFilesSec
                         <UserAvatar name={share.shared_with_user?.name || 'مستخدم'} avatarUrl={share.shared_with_user?.avatar_url} size="xs" />
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-foreground truncate">
-                            {share.shared_with_user?.name || 'مستخدم'}
+                            {formatNameWithTitle(share.shared_with_user?.name || 'مستخدم', share.shared_with_user?.role, share.shared_with_user?.title_id, share.shared_with_user?.gender)}
                           </p>
                           <p className="text-[10px] text-muted-foreground">
                             {getPermissionLabel(share.permission)}
@@ -2678,7 +2674,7 @@ export default function PersonalFilesSection({ profile, role }: PersonalFilesSec
                       >
                         <UserAvatar name={user.name || 'مستخدم'} avatarUrl={user.avatar_url} size="xs" />
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-foreground truncate">{user.name}</p>
+                          <p className="text-sm font-medium text-foreground truncate">{formatNameWithTitle(user.name, user.role, user.title_id, user.gender)}</p>
                           <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
                         </div>
                         <Badge variant="outline" className="text-[10px] shrink-0">
@@ -2701,7 +2697,7 @@ export default function PersonalFilesSection({ profile, role }: PersonalFilesSec
                         variant="secondary"
                         className="flex items-center gap-1.5 py-1 px-2.5"
                       >
-                        <span className="text-xs font-medium">{user.name}</span>
+                        <span className="text-xs font-medium">{formatNameWithTitle(user.name, user.role, user.title_id, user.gender)}</span>
                         <button
                           onClick={() => removeBulkShareUser(user.id)}
                           className="flex h-4 w-4 items-center justify-center rounded-full hover:bg-muted"

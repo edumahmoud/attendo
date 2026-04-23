@@ -660,3 +660,181 @@ Stage Summary:
 - User role badge now shows next to names everywhere by default (colored inline badge)
 - Multiple teachers per course: subject_teachers junction table, API routes, course overview UI, teacher dashboard
 - Admin reports: active lectures count, usage stats by day/month/year, charts with Recharts, detailed stats table
+
+---
+Task ID: 2-a
+Agent: general-purpose
+Task: Display user titles next to their names using formatNameWithTitle
+
+Work Log:
+- Read worklog.md and all 4 target files (notes-tab.tsx, files-tab.tsx, lectures-tab.tsx, course-page.tsx)
+- Verified formatNameWithTitle utility exists in user-avatar.tsx with signature: formatNameWithTitle(name, role?, titleId?, gender?)
+- **notes-tab.tsx**: Added `formatNameWithTitle` import, updated author fetch query from `select('id, name')` to `select('id, name, title_id, gender, role')`, changed authorMap to store full author objects instead of just names, applied formatNameWithTitle when building author_name. Also applied formatNameWithTitle to teacherName fallback in footer display.
+- **files-tab.tsx**: Added `formatNameWithTitle` import, updated uploader fetch query from `select('id, name')` to `select('id, name, title_id, gender, role')`, changed uploaderMap to store full uploader objects instead of just names, applied formatNameWithTitle when building uploader_name.
+- **lectures-tab.tsx**: Added `formatNameWithTitle` import, updated author fetch query in handleExpandLecture from `select('id, name')` to `select('id, name, title_id, gender, role')`, changed authorMap to store full author objects, applied formatNameWithTitle when building author_name for expanded notes. Display at lines 1119 and 1145 uses already-formatted author_name.
+- **course-page.tsx**: Added `formatNameWithTitle` import, updated teacher fetch query from `select('name')` to `select('name, title_id, gender, role')`, applied formatNameWithTitle when setting teacherName state. This formats the teacher name with title (e.g. "دكتور أحمد") before it gets passed to child components.
+- All lint checks pass (0 errors)
+- Dev server compiles and runs correctly
+
+Stage Summary:
+- Teacher names now display with academic title prefix across all course tabs
+- Example: "دكتور أحمد", "أستاذة سارة" instead of just "أحمد" or "سارة"
+- Students are not affected (formatNameWithTitle only applies titles to teachers)
+- Changes applied in 4 files: notes-tab, files-tab, lectures-tab, course-page
+- Supabase queries updated to include title_id, gender, role from users table
+- Title formatting applied at data-fetch level (Map building), not at render level, for consistency
+
+---
+Task ID: 2-b
+Agent: general-purpose
+Task: Update shared components to display user titles next to names using formatNameWithTitle
+
+Work Log:
+- Read worklog.md, user-avatar.tsx (formatNameWithTitle utility), and all 6 target files
+- Verified formatNameWithTitle signature: (name, role?, titleId?, gender?) → only adds title prefix for role='teacher'
+- **attendance-section.tsx**: Added formatNameWithTitle import, updated 2 Supabase user queries to include title_id/gender/role, formatted student_name at enrichment time and enrolled student display name
+  1. Line 288: `select('id, name, email')` → `select('id, name, email, title_id, gender, role')` in fetchAttendanceRecords
+  2. Line 736: Same change in handleViewPastSession
+  3. Both enrichment loops now use formatNameWithTitle for student_name
+  4. Line 1090: Enrolled student name uses formatNameWithTitle(student.name, student.role, student.title_id, student.gender)
+- **assignments-section.tsx**: Added formatNameWithTitle import, updated user query in fetchSubmissions
+  1. Line 300: `select('name, email')` → `select('name, email, title_id, gender, role')`
+  2. Enrichment now uses formatNameWithTitle for student_name
+  3. Lines 1275, 1341: Already display enriched student_name (formatted at enrichment time)
+- **subjects-section.tsx**: Added formatNameWithTitle import, updated teacher name fetch
+  1. Line 179: `select('id, name')` → `select('id, name, title_id, gender, role')` in fetchTeacherNames
+  2. Teacher names now stored as formatted names in teacherNames map using formatNameWithTitle
+  3. Lines 786, 880, 950: All teacher name displays use the pre-formatted teacherNames map values
+- **chat-section.tsx**: Added formatNameWithTitle import, formatted 4 name display locations
+  1. Line 905: senderName uses formatNameWithTitle(msg.sender?.name, msg.sender?.role, msg.sender?.title_id, msg.sender?.gender)
+  2. Line 1071-1080: chatHeaderName uses formatNameWithTitle for otherParticipant
+  3. Line 1231-1238: Conversation list displayName uses formatNameWithTitle for otherParticipant
+  4. Line 1537: Search result user name uses formatNameWithTitle(user.name, user.role, user.title_id, user.gender)
+- **notification-bell.tsx**: Added formatNameWithTitle import, formatted teacher name in link request modal
+  1. Line 416: Teacher name uses formatNameWithTitle(linkRequestModal.teacher?.name || 'معلم', 'teacher', linkRequestModal.teacher?.title_id, linkRequestModal.teacher?.gender)
+- **notifications-section.tsx**: Added formatNameWithTitle import, formatted teacher name in link request modal
+  1. Line 356: Same as notification-bell - uses formatNameWithTitle with 'teacher' role and teacher's title_id/gender
+- All lint checks pass (0 errors)
+
+Stage Summary:
+- Updated 6 shared components to display academic titles next to teacher names
+- formatNameWithTitle only adds title prefix for role='teacher' (students show plain names)
+- Subjects section: teacher names now show as "دكتور أحمد", "أستاذة سارة" etc.
+- Chat section: all sender names, participant names, and search result names formatted with titles
+- Notification modals: teacher names in link request modals now include academic titles
+- Attendance & assignments: student names formatted with formatNameWithTitle for consistency (returns plain name for students)
+- All Supabase user queries updated to include title_id, gender, role fields
+
+---
+Task ID: 2-c
+Agent: general-purpose
+Task: Update dashboard components and personal files to display user titles next to names using formatNameWithTitle
+
+Work Log:
+- Read worklog.md and all 4 target files to understand current state
+- Verified formatNameWithTitle utility exists in user-avatar.tsx (handles null/undefined, only prefixes teachers)
+- **teacher-dashboard.tsx**:
+  - Updated import: added `formatNameWithTitle` to UserAvatar import
+  - Fixed hardcoded "د." prefix at line ~864: Changed `أهلاً بك، د. {profile.name}` to `أهلاً بك، {formatNameWithTitle(profile.name, profile.role, profile.title_id, profile.gender)}`
+  - Now uses dynamic title based on teacher's title_id and gender instead of hardcoded "د."
+- **student-dashboard.tsx**:
+  - All teacher name displays already use `UserLink` component which handles title formatting internally
+  - Fixed missing `gender` and `titleId` props on teacherPreview UserLink at line ~2159: Added `gender={teacherPreview.gender}` and `titleId={teacherPreview.title_id}`
+  - No separate `formatNameWithTitle` import needed since UserLink handles it
+- **admin-dashboard.tsx**:
+  - Updated import: added `formatNameWithTitle` to UserAvatar import
+  - Changed student name display at line ~1441: `{student.name}` → `{formatNameWithTitle(student.name, student.role, student.title_id, student.gender)}`
+- **personal-files-section.tsx**:
+  - Import already included `formatNameWithTitle` (from prior work)
+  - Lines 1783 and 2162 already used `formatNameWithTitle` (from prior work)
+  - Fixed 6 remaining plain name displays:
+    1. Line ~2299: Share search result user name → `formatNameWithTitle(user.name, user.role, user.title_id, user.gender)`
+    2. Line ~2322: Selected share user badge name → `formatNameWithTitle(user.name, user.role, user.title_id, user.gender)`
+    3. Line ~2364: Shared-with user name in file shares → `formatNameWithTitle(share.shared_with_user?.name || 'مستخدم', ...)`
+    4. Line ~2677: Bulk share search result user name → `formatNameWithTitle(user.name, user.role, user.title_id, user.gender)`
+    5. Line ~2700: Bulk share selected user badge name → `formatNameWithTitle(user.name, user.role, user.title_id, user.gender)`
+  - Verified all Supabase queries use `select('*')` which includes title_id, gender, role fields
+  - Verified UserProfile type already has title_id, gender, and role fields
+- Also simplified the shared-by file display: removed separate title/role label and used formatNameWithTitle directly in the clickable name (cleaner display without duplication)
+- All lint checks pass (0 errors)
+
+Stage Summary:
+- Teacher welcome message now uses dynamic title instead of hardcoded "د."
+- Student dashboard teacher preview now shows title via UserLink
+- Admin dashboard student names in subject detail use formatNameWithTitle
+- Personal files section: all 8 name displays now use formatNameWithTitle (2 were already done, 6 added)
+- No query changes needed - all use select('*') which includes required fields
+
+---
+Task ID: 8
+Agent: full-stack-developer
+Task: Fix co-teacher UX gaps — show co-teachers to students, hide edit/delete from co-teachers, add leave course, update FULL_SETUP.sql
+
+Work Log:
+- Read worklog.md, course-page.tsx, overview-tab.tsx, subject-teachers API, FULL_SETUP.sql, types.ts, user-avatar.tsx, app-store.ts
+- **Task 1: Show co-teachers to students in course page header**
+  - Added `SubjectTeacher` import and `coTeachers` state to course-page.tsx
+  - Fetches co-teachers via `/api/subject-teachers` for both student and teacher roles
+  - Student banner now shows all teachers: primary teacher + co-teachers as separate clickable pills
+  - Each teacher name uses `formatNameWithTitle()` for proper title display
+  - Each teacher name is clickable via `openProfile(teacherId)`
+- **Task 2: Hide edit/delete subject buttons from co-teachers**
+  - Added `isOwner` computed state: `role === 'teacher' && subject?.teacher_id === profile.id`
+  - Edit and delete buttons now only show when `isOwner` is true (not for co-teachers)
+- **Task 3: Add "Leave Course" option for co-teachers**
+  - Added `LogOut` icon import to overview-tab.tsx
+  - Added `leavingCourse` and `leaveConfirmOpen` state
+  - Co-teacher badge now includes a "مغادرة المقرر" (Leave Course) button with rose styling
+  - Confirmation dialog with loading state before leaving
+  - Calls DELETE `/api/subject-teachers` with `{ subjectId, teacherId: profile.id, selfLeave: true }`
+  - After leaving, navigates back to dashboard via `setSelectedSubjectId(null)`
+- **Updated DELETE API for self-leave support**
+  - Modified `/api/subject-teachers` DELETE route to support `selfLeave: true` parameter
+  - Co-teachers can now remove themselves (not just owner can remove)
+  - When self-leaving: notifies the subject owner about the departure
+  - When owner removes: notifies the removed teacher (existing behavior)
+- **Task 4: Update FULL_SETUP.sql**
+  - Added `subject_teachers` table with proper schema (subject_id, teacher_id, role, added_by)
+  - Added UNIQUE constraint on (subject_id, teacher_id) and CHECK on role
+  - Added indexes on subject_id, teacher_id, and role
+  - Updated `get_teacher_subject_ids()` to UNION with subject_teachers
+  - Updated `is_subject_teacher()` to also check subject_teachers
+  - Updated `is_lecture_teacher()` to also check subject_teachers
+  - Updated subjects SELECT RLS policy to allow co-teachers to view their subjects
+  - Added 5 RLS policies for subject_teachers: view for teachers/students, insert for owner, delete for owner and self
+  - Added `auto_insert_subject_owner()` trigger that auto-inserts owner row on subject creation
+  - Added subject_teachers to DROP list, RLS enable, and realtime publication
+- All lint checks pass (0 errors)
+- Dev server compiling successfully
+
+Stage Summary:
+- **Co-teachers visible to students**: Students now see ALL teachers (owner + co-teachers) in the course header as clickable pills with titles
+- **Edit/delete hidden from co-teachers**: Only the subject owner sees edit/delete buttons; co-teachers cannot modify or delete the course
+- **Leave course for co-teachers**: Co-teachers have a "مغادرة المقرر" button in the overview tab with confirmation dialog
+- **Self-leave API support**: DELETE /api/subject-teachers now accepts `selfLeave: true` for co-teachers to remove themselves
+- **FULL_SETUP.sql complete**: subject_teachers table, updated functions, RLS policies, and auto-insert trigger all included
+
+---
+Task ID: 10
+Agent: Main Orchestrator
+Task: Display user title next to name everywhere, fix multi-teacher UX, enhance admin reports
+
+Work Log:
+- Created `formatNameWithTitle()` utility in user-avatar.tsx that prefixes teacher names with their academic title (e.g., "دكتور أحمد")
+- Updated ChatMessage type to include title_id, gender, role in sender object
+- Updated chat API to return title_id, gender, role in all user queries (messages, conversations, participants, search)
+- Updated chat-tab.tsx to use formatNameWithTitle for sender names
+- Delegated to subagent 2-a: Updated notes-tab, files-tab, lectures-tab, course-page to include title_id/gender in fetches and display titles
+- Delegated to subagent 2-b: Updated attendance-section, assignments-section, subjects-section, chat-section, notification-bell, notifications-section to show titles
+- Delegated to subagent 2-c: Updated teacher-dashboard (replaced hardcoded "د."), student-dashboard, admin-dashboard, personal-files-section
+- Fixed multi-teacher UX gaps: course-page shows co-teachers to students, hide edit/delete from co-teachers, added leave course option, updated FULL_SETUP.sql
+- Enhanced admin usage-stats API: fallback for active users (uses updated_at if user_sessions unavailable), added lecturesCreated and assignmentsCreated metrics
+- Enhanced admin reports section: added Quizzes Taken, Lectures Created, and Assignments Created stat cards with change indicators
+- All lint checks pass, dev server running correctly
+
+Stage Summary:
+- **User titles displayed everywhere**: Teacher names now show academic titles (دكتور, أستاذ, etc.) next to names across all components
+- **Chat API enhanced**: Returns title_id, gender, role for message senders and participants
+- **Multi-teacher UX improved**: Students see all teachers, co-teachers can leave courses, edit/delete restricted to owners
+- **Admin reports enhanced**: 8 stat cards (was 4), added quizzes/lectures/assignments metrics, improved active users tracking
+- **FULL_SETUP.sql updated**: Includes subject_teachers table and co-teacher RLS policies

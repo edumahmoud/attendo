@@ -55,7 +55,7 @@ import { useAppStore } from '@/stores/app-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { toast } from 'sonner';
 import type { UserProfile, Quiz, Score, Subject, TeacherSection } from '@/lib/types';
-import UserAvatar from '@/components/shared/user-avatar';
+import UserAvatar, { formatNameWithTitle } from '@/components/shared/user-avatar';
 import UserLink from '@/components/shared/user-link';
 
 // -------------------------------------------------------
@@ -861,7 +861,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
       className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
     >
       <div>
-        <h2 className="text-2xl font-bold text-foreground">أهلاً بك، د. {profile.name}</h2>
+        <h2 className="text-2xl font-bold text-foreground">أهلاً بك، {formatNameWithTitle(profile.name, profile.role, profile.title_id, profile.gender)}</h2>
         <p className="text-muted-foreground mt-1">لوحة تحكم المعلم</p>
       </div>
       {profile.teacher_code && (

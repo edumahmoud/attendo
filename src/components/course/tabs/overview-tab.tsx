@@ -15,6 +15,7 @@ import {
   X,
   Shield,
   Trash2,
+  LogOut,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import StatCard from '@/components/shared/stat-card';
@@ -71,7 +72,7 @@ function formatDate(dateStr: string): string {
 // Main Component
 // -------------------------------------------------------
 export default function OverviewTab({ profile, role, subjectId, subject }: OverviewTabProps) {
-  const { openProfile } = useAppStore();
+  const { openProfile, setSelectedSubjectId, setCourseTab } = useAppStore();
   const [stats, setStats] = useState({
     totalLectures: 0,
     totalStudents: 0,
@@ -94,6 +95,10 @@ export default function OverviewTab({ profile, role, subjectId, subject }: Overv
   const isOwner = role === 'teacher' && subject.teacher_id === profile.id;
   // Is the current user a co-teacher?
   const isCoTeacher = role === 'teacher' && !isOwner && coTeachers.some(ct => ct.teacher_id === profile.id && ct.role === 'co_teacher');
+
+  // ─── Leave course state (co-teacher) ───
+  const [leavingCourse, setLeavingCourse] = useState(false);
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
 
   // -------------------------------------------------------
   // Auth headers helper
@@ -221,6 +226,35 @@ export default function OverviewTab({ profile, role, subjectId, subject }: Overv
       toast.error('حدث خطأ غير متوقع');
     } finally {
       setRemovingCoTeacherId(null);
+    }
+  };
+
+  // -------------------------------------------------------
+  // Leave course (co-teacher)
+  // -------------------------------------------------------
+  const handleLeaveCourse = async () => {
+    setLeavingCourse(true);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/subject-teachers', {
+        method: 'DELETE',
+        headers,
+        body: JSON.stringify({ subjectId, teacherId: profile.id, selfLeave: true }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(data.message || 'تمت إزالتك من المقرر بنجاح');
+        // Navigate back to dashboard
+        setSelectedSubjectId(null);
+        setCourseTab('overview');
+      } else {
+        toast.error(data.error || 'حدث خطأ أثناء مغادرة المقرر');
+      }
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setLeavingCourse(false);
+      setLeaveConfirmOpen(false);
     }
   };
 
@@ -384,9 +418,18 @@ export default function OverviewTab({ profile, role, subjectId, subject }: Overv
             <div className="p-4">
               {/* Co-teacher badge for current user */}
               {isCoTeacher && (
-                <div className="mb-4 flex items-center gap-2 rounded-lg bg-teal-50 border border-teal-200 px-4 py-2.5 text-sm text-teal-700">
-                  <Shield className="h-4 w-4 shrink-0" />
-                  <span>أنت معلم مشارك في هذا المقرر</span>
+                <div className="mb-4 flex items-center justify-between gap-2 rounded-lg bg-teal-50 border border-teal-200 px-4 py-2.5">
+                  <div className="flex items-center gap-2 text-sm text-teal-700">
+                    <Shield className="h-4 w-4 shrink-0" />
+                    <span>أنت معلم مشارك في هذا المقرر</span>
+                  </div>
+                  <button
+                    onClick={() => setLeaveConfirmOpen(true)}
+                    className="flex items-center gap-1.5 rounded-lg bg-rose-50 border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 transition-colors"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    مغادرة المقرر
+                  </button>
                 </div>
               )}
 
@@ -474,6 +517,69 @@ export default function OverviewTab({ profile, role, subjectId, subject }: Overv
               )}
             </div>
           </div>
+        </motion.div>
+      )}
+
+      {/* ============================================ */}
+      {/* LEAVE COURSE CONFIRM DIALOG (co-teacher)     */}
+      {/* ============================================ */}
+      {leaveConfirmOpen && (
+        <motion.div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => !leavingCourse && setLeaveConfirmOpen(false)}
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            className="relative w-full max-w-sm rounded-2xl border bg-background shadow-2xl p-6"
+            dir="rtl"
+          >
+            <div className="flex flex-col items-center text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-rose-100 mb-4">
+                <LogOut className="h-7 w-7 text-rose-600" />
+              </div>
+              <h3 className="text-lg font-bold text-foreground mb-2">مغادرة المقرر</h3>
+              <p className="text-sm text-muted-foreground mb-2">
+                هل أنت متأكد من مغادرة مقرر &quot;{subject.name}&quot;؟
+              </p>
+              <p className="text-xs text-muted-foreground/70 mb-6">
+                لن تتمكن من الوصول إلى محتوى المقرر بعد الآن كمعلم مشارك.
+              </p>
+              <div className="flex items-center gap-3 w-full">
+                <button
+                  onClick={handleLeaveCourse}
+                  disabled={leavingCourse}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-rose-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-60"
+                >
+                  {leavingCourse ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      جاري المغادرة...
+                    </>
+                  ) : (
+                    <>
+                      <LogOut className="h-4 w-4" />
+                      نعم، مغادرة
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setLeaveConfirmOpen(false)}
+                  disabled={leavingCourse}
+                  className="flex-1 rounded-xl border py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-60"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </motion.div>
         </motion.div>
       )}
 

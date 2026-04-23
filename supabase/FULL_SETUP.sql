@@ -27,6 +27,7 @@ DROP TABLE IF EXISTS public.assignments CASCADE;
 DROP TABLE IF EXISTS public.note_views CASCADE;
 DROP TABLE IF EXISTS public.lecture_notes CASCADE;
 DROP TABLE IF EXISTS public.lectures CASCADE;
+DROP TABLE IF EXISTS public.subject_teachers CASCADE;
 DROP TABLE IF EXISTS public.subject_students CASCADE;
 DROP TABLE IF EXISTS public.subjects CASCADE;
 DROP TABLE IF EXISTS public.scores CASCADE;
@@ -111,6 +112,24 @@ CREATE TABLE public.subjects (
 );
 
 CREATE INDEX idx_subjects_teacher_id ON public.subjects(teacher_id);
+
+-- =====================================================
+-- PART 4b: SUBJECT_TEACHERS (depends on: subjects, users)
+-- =====================================================
+
+CREATE TABLE public.subject_teachers (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  subject_id UUID NOT NULL REFERENCES public.subjects(id) ON DELETE CASCADE,
+  teacher_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'co_teacher' CHECK (role IN ('owner', 'co_teacher')),
+  added_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+  UNIQUE(subject_id, teacher_id)
+);
+
+CREATE INDEX idx_subject_teachers_subject_id ON public.subject_teachers(subject_id);
+CREATE INDEX idx_subject_teachers_teacher_id ON public.subject_teachers(teacher_id);
+CREATE INDEX idx_subject_teachers_role ON public.subject_teachers(role);
 
 -- =====================================================
 -- PART 5: SUBJECT_STUDENTS (depends on: subjects, users)
@@ -435,6 +454,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.teacher_student_links ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.summaries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.subjects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subject_teachers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.subject_students ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lectures ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.quizzes ENABLE ROW LEVEL SECURITY;
@@ -495,7 +515,10 @@ CREATE POLICY "Users can delete own summaries" ON public.summaries
 
 -- ===== SUBJECTS =====
 CREATE POLICY "Teachers can view own subjects" ON public.subjects
-  FOR SELECT USING (teacher_id = auth.uid());
+  FOR SELECT USING (
+    teacher_id = auth.uid()
+    OR id IN (SELECT subject_id FROM public.subject_teachers WHERE teacher_id = auth.uid())
+  );
 CREATE POLICY "Students can view enrolled subjects" ON public.subjects
   FOR SELECT USING (
     id IN (SELECT public.get_student_subject_ids(auth.uid()))
@@ -506,6 +529,28 @@ CREATE POLICY "Teachers can update own subjects" ON public.subjects
   FOR UPDATE USING (teacher_id = auth.uid());
 CREATE POLICY "Teachers can delete own subjects" ON public.subjects
   FOR DELETE USING (teacher_id = auth.uid());
+
+-- ===== SUBJECT_TEACHERS =====
+CREATE POLICY "Teachers can view subject_teachers in their subjects" ON public.subject_teachers
+  FOR SELECT USING (
+    subject_id IN (SELECT public.get_teacher_subject_ids(auth.uid()))
+  );
+CREATE POLICY "Students can view subject_teachers in enrolled subjects" ON public.subject_teachers
+  FOR SELECT USING (
+    subject_id IN (SELECT public.get_student_subject_ids(auth.uid()))
+  );
+CREATE POLICY "Subject owner can add co-teachers" ON public.subject_teachers
+  FOR INSERT WITH CHECK (
+    subject_id IN (SELECT id FROM public.subjects WHERE teacher_id = auth.uid())
+  );
+CREATE POLICY "Subject owner can remove co-teachers" ON public.subject_teachers
+  FOR DELETE USING (
+    subject_id IN (SELECT id FROM public.subjects WHERE teacher_id = auth.uid())
+  );
+CREATE POLICY "Co-teachers can remove themselves" ON public.subject_teachers
+  FOR DELETE USING (
+    teacher_id = auth.uid() AND role = 'co_teacher'
+  );
 
 -- ===== SUBJECT_STUDENTS =====
 CREATE POLICY "Teachers can view enrollments in their subjects" ON public.subject_students
@@ -780,7 +825,11 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.banned_users TO anon, authenticat
 
 CREATE OR REPLACE FUNCTION public.is_subject_teacher(subject_id UUID, teacher_id UUID)
 RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
-  SELECT EXISTS (SELECT 1 FROM public.subjects WHERE id = subject_id AND subjects.teacher_id = teacher_id);
+  SELECT EXISTS (
+    SELECT 1 FROM public.subjects WHERE id = subject_id AND subjects.teacher_id = teacher_id
+    UNION ALL
+    SELECT 1 FROM public.subject_teachers WHERE subject_teachers.subject_id = subject_id AND subject_teachers.teacher_id = teacher_id
+  );
 $$;
 
 CREATE OR REPLACE FUNCTION public.is_subject_student(subject_id UUID, student_id UUID)
@@ -790,7 +839,9 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.get_teacher_subject_ids(teacher_id UUID)
 RETURNS SETOF UUID LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
-  SELECT id FROM public.subjects WHERE subjects.teacher_id = teacher_id;
+  SELECT id FROM public.subjects WHERE subjects.teacher_id = teacher_id
+  UNION
+  SELECT subject_id FROM public.subject_teachers WHERE subject_teachers.teacher_id = teacher_id;
 $$;
 
 CREATE OR REPLACE FUNCTION public.get_student_subject_ids(student_id UUID)
@@ -800,7 +851,15 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.is_lecture_teacher(lecture_id UUID, teacher_id UUID)
 RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
-  SELECT EXISTS (SELECT 1 FROM public.lectures l JOIN public.subjects s ON l.subject_id = s.id WHERE l.id = lecture_id AND s.teacher_id = teacher_id);
+  SELECT EXISTS (
+    SELECT 1 FROM public.lectures l
+    JOIN public.subjects s ON l.subject_id = s.id
+    WHERE l.id = lecture_id AND s.teacher_id = teacher_id
+    UNION ALL
+    SELECT 1 FROM public.lectures l
+    JOIN public.subject_teachers st ON l.subject_id = st.subject_id
+    WHERE l.id = lecture_id AND st.teacher_id = teacher_id
+  );
 $$;
 
 CREATE OR REPLACE FUNCTION public.is_lecture_student(lecture_id UUID, student_id UUID)
@@ -882,6 +941,21 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
+-- Auto-insert owner into subject_teachers when a subject is created
+CREATE OR REPLACE FUNCTION public.auto_insert_subject_owner()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.subject_teachers (subject_id, teacher_id, role)
+  VALUES (NEW.id, NEW.teacher_id, 'owner')
+  ON CONFLICT (subject_id, teacher_id) DO NOTHING;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER trg_auto_insert_subject_owner
+  AFTER INSERT ON public.subjects
+  FOR EACH ROW EXECUTE FUNCTION public.auto_insert_subject_owner();
+
 -- =====================================================
 -- PART 26: VIEWS
 -- =====================================================
@@ -918,6 +992,7 @@ DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.user_files; EXC
 DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.attendance_sessions; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.attendance_records; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.subject_teachers; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- =====================================================
 -- PART 28: SUPABASE STORAGE BUCKET & POLICIES

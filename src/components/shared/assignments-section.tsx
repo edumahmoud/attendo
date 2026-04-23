@@ -27,7 +27,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import type { UserProfile, Assignment, Submission, Subject, UserFile } from '@/lib/types';
-import UserAvatar from '@/components/shared/user-avatar';
+import UserAvatar, { formatNameWithTitle } from '@/components/shared/user-avatar';
 
 // -------------------------------------------------------
 // Props
@@ -297,13 +297,19 @@ export default function AssignmentsSection({ profile, role }: AssignmentsSection
         for (const sub of subs) {
           const { data: student } = await supabase
             .from('users')
-            .select('name, email')
+            .select('name, email, title_id, gender, role')
             .eq('id', sub.student_id)
             .single();
+          const studentData = student as { name?: string; email?: string; title_id?: string | null; gender?: string | null; role?: string | null } | null;
           enriched.push({
             ...sub,
-            student_name: (student as { name?: string })?.name || 'طالب',
-            student_email: (student as { email?: string })?.email || '',
+            student_name: formatNameWithTitle(
+              studentData?.name || 'طالب',
+              studentData?.role,
+              studentData?.title_id,
+              studentData?.gender
+            ),
+            student_email: studentData?.email || '',
           });
         }
         setSubmissions(enriched);

@@ -24,6 +24,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAppStore } from '@/stores/app-store';
 import type { UserProfile, Subject } from '@/lib/types';
+import { formatNameWithTitle } from '@/components/shared/user-avatar';
 
 // -------------------------------------------------------
 // Auth helpers
@@ -175,7 +176,7 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
       if (teacherIds.length > 0) {
         const { data: teachers, error: tError } = await supabase
           .from('users')
-          .select('id, name')
+          .select('id, name, title_id, gender, role')
           .in('id', teacherIds);
         if (tError) {
           console.error('Error fetching teacher names:', tError.message);
@@ -183,8 +184,8 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
         }
         if (teachers) {
           const nameMap: Record<string, string> = {};
-          (teachers as { id: string; name: string }[]).forEach((t) => {
-            nameMap[t.id] = t.name;
+          (teachers as { id: string; name: string; title_id?: string | null; gender?: string | null; role?: string | null }[]).forEach((t) => {
+            nameMap[t.id] = formatNameWithTitle(t.name, t.role, t.title_id, t.gender);
           });
           setTeacherNames(nameMap);
         }

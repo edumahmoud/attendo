@@ -19,7 +19,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import type { UserProfile, Subject, ChatMessage } from '@/lib/types';
-import UserAvatar from '@/components/shared/user-avatar';
+import UserAvatar, { formatNameWithTitle } from '@/components/shared/user-avatar';
 import { useAppStore } from '@/stores/app-store';
 
 // -------------------------------------------------------
@@ -553,7 +553,7 @@ export default function ChatTab({ profile, role, subjectId, subject }: ChatTabPr
   // -------------------------------------------------------
   const renderMessage = (msg: ChatMessage, index: number) => {
     const isOwn = msg.sender_id === profile.id;
-    const senderName = msg.sender?.name || 'مستخدم';
+    const senderName = formatNameWithTitle(msg.sender?.name || 'مستخدم', msg.sender?.role, msg.sender?.title_id, msg.sender?.gender);
     const showAvatar = !isOwn && (index === 0 || messages[index - 1]?.sender_id !== msg.sender_id);
     const isDeleted = (msg as Record<string, unknown>).is_deleted as boolean;
     const isEdited = (msg as Record<string, unknown>).is_edited as boolean;

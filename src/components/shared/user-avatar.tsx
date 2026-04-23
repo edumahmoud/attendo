@@ -31,6 +31,19 @@ export function getRoleLabel(role: string, gender?: string | null, titleId?: str
   return title || (isFemale ? 'معلمة' : 'معلم');
 }
 
+/**
+ * Format a user's name with their academic title prefix.
+ * E.g. "دكتور أحمد", "أستاذة سارة", "محمد" (no title for students)
+ */
+export function formatNameWithTitle(name: string, role?: string | null, titleId?: string | null, gender?: string | null): string {
+  if (!name) return name;
+  // Only teachers have academic titles
+  if (role !== 'teacher') return name;
+  const title = getTitleLabel(titleId, gender);
+  if (!title) return name;
+  return `${title} ${name}`;
+}
+
 interface UserAvatarProps {
   name: string;
   avatarUrl?: string | null;

@@ -29,7 +29,7 @@ import type {
   AttendanceSession,
   AttendanceRecord,
 } from '@/lib/types';
-import UserAvatar from '@/components/shared/user-avatar';
+import UserAvatar, { formatNameWithTitle } from '@/components/shared/user-avatar';
 
 // -------------------------------------------------------
 // Props
@@ -285,18 +285,26 @@ export default function AttendanceSection({ profile, role }: AttendanceSectionPr
           const studentIds = records.map((r) => r.student_id);
           const { data: students } = await supabase
             .from('users')
-            .select('id, name, email')
+            .select('id, name, email, title_id, gender, role')
             .in('id', studentIds);
 
           const studentMap = new Map(
-            (students || []).map((s: { id: string; name: string; email: string }) => [s.id, s])
+            (students || []).map((s: { id: string; name: string; email: string; title_id?: string | null; gender?: string | null; role?: string | null }) => [s.id, s])
           );
 
-          const enriched: AttendanceRecordWithStudent[] = records.map((r) => ({
-            ...r,
-            student_name: studentMap.get(r.student_id)?.name || 'طالب',
-            student_email: studentMap.get(r.student_id)?.email || '',
-          }));
+          const enriched: AttendanceRecordWithStudent[] = records.map((r) => {
+            const studentData = studentMap.get(r.student_id);
+            return {
+              ...r,
+              student_name: formatNameWithTitle(
+                studentData?.name || 'طالب',
+                studentData?.role,
+                studentData?.title_id,
+                studentData?.gender
+              ),
+              student_email: studentData?.email || '',
+            };
+          });
           setAttendanceRecords(enriched);
         } else {
           setAttendanceRecords([]);
@@ -725,18 +733,26 @@ export default function AttendanceSection({ profile, role }: AttendanceSectionPr
           const studentIds = records.map((r) => r.student_id);
           const { data: students } = await supabase
             .from('users')
-            .select('id, name, email')
+            .select('id, name, email, title_id, gender, role')
             .in('id', studentIds);
 
           const studentMap = new Map(
-            (students || []).map((s: { id: string; name: string; email: string }) => [s.id, s])
+            (students || []).map((s: { id: string; name: string; email: string; title_id?: string | null; gender?: string | null; role?: string | null }) => [s.id, s])
           );
 
-          const enriched: AttendanceRecordWithStudent[] = records.map((r) => ({
-            ...r,
-            student_name: studentMap.get(r.student_id)?.name || 'طالب',
-            student_email: studentMap.get(r.student_id)?.email || '',
-          }));
+          const enriched: AttendanceRecordWithStudent[] = records.map((r) => {
+            const studentData = studentMap.get(r.student_id);
+            return {
+              ...r,
+              student_name: formatNameWithTitle(
+                studentData?.name || 'طالب',
+                studentData?.role,
+                studentData?.title_id,
+                studentData?.gender
+              ),
+              student_email: studentData?.email || '',
+            };
+          });
           setPastSessionRecords(enriched);
         } else {
           setPastSessionRecords([]);
@@ -1087,7 +1103,7 @@ export default function AttendanceSection({ profile, role }: AttendanceSectionPr
                     >
                       <UserAvatar name={student.name} avatarUrl={student.avatar_url} size="sm" />
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-foreground truncate">{student.name}</p>
+                        <p className="text-sm font-medium text-foreground truncate">{formatNameWithTitle(student.name, student.role, student.title_id, student.gender)}</p>
                         <p className="text-xs text-muted-foreground truncate">{student.email}</p>
                       </div>
                       <div className="shrink-0">

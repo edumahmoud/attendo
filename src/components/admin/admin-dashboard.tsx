@@ -58,7 +58,7 @@ import AppSidebar from '@/components/shared/app-sidebar';
 import AppHeader from '@/components/shared/app-header';
 import SettingsSection from '@/components/shared/settings-section';
 import StatCard from '@/components/shared/stat-card';
-import UserAvatar from '@/components/shared/user-avatar';
+import UserAvatar, { formatNameWithTitle } from '@/components/shared/user-avatar';
 import UserLink from '@/components/shared/user-link';
 import { useAuthStore } from '@/stores/auth-store';
 import { useAppStore } from '@/stores/app-store';
@@ -238,17 +238,23 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
     newRegistrations: number;
     attendanceSessions: number;
     quizzesTaken: number;
+    lecturesCreated: number;
+    assignmentsCreated: number;
     changes: {
       activeUsers: number;
       newRegistrations: number;
       attendanceSessions: number;
       quizzesTaken: number;
+      lecturesCreated: number;
+      assignmentsCreated: number;
     };
     prevData: {
       activeUsers: number;
       newRegistrations: number;
       attendanceSessions: number;
       quizzesTaken: number;
+      lecturesCreated: number;
+      assignmentsCreated: number;
     };
     chartData: { date: string; users: number; sessions: number; quizzes: number }[];
     registrationTrends: { month: string; count: number; label: string }[];
@@ -1438,7 +1444,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                             <div key={student.id} className="flex items-center gap-2 p-2 rounded-lg bg-muted/30">
                               <UserAvatar name={student.name} avatarUrl={student.avatar_url} size="xs" />
                               <div className="min-w-0 flex-1">
-                                <p className="text-sm font-medium text-foreground truncate">{student.name}</p>
+                                <p className="text-sm font-medium text-foreground truncate">{formatNameWithTitle(student.name, student.role, student.title_id, student.gender)}</p>
                                 <p className="text-xs text-muted-foreground truncate">{student.email}</p>
                               </div>
                             </div>
@@ -1810,7 +1816,7 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
       </motion.div>
 
       {/* ─── Stats Cards Row ─── */}
-      <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Active Lectures */}
         <motion.div {...cardHover}>
           <div className="rounded-xl border bg-card p-4 shadow-sm relative overflow-hidden">
@@ -1905,6 +1911,84 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
                     <span className={`inline-flex items-center gap-0.5 text-xs font-bold ${usageStats.changes.attendanceSessions >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                       {usageStats.changes.attendanceSessions >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
                       {Math.abs(usageStats.changes.attendanceSessions)}%
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Quizzes Taken */}
+        <motion.div {...cardHover}>
+          <div className="rounded-xl border bg-card p-4 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-l from-rose-400 to-rose-600" />
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-100">
+                <Award className="h-5 w-5 text-rose-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-muted-foreground">الاختبارات المؤدّاة ({getPeriodLabel(usagePeriod)})</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-2xl font-bold text-foreground">
+                    {loadingUsageStats ? <Loader2 className="h-5 w-5 animate-spin text-rose-600 inline" /> : (usageStats?.quizzesTaken ?? 0)}
+                  </p>
+                  {usageStats && usageStats.changes && (
+                    <span className={`inline-flex items-center gap-0.5 text-xs font-bold ${usageStats.changes.quizzesTaken >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {usageStats.changes.quizzesTaken >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                      {Math.abs(usageStats.changes.quizzesTaken)}%
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Lectures Created */}
+        <motion.div {...cardHover}>
+          <div className="rounded-xl border bg-card p-4 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-l from-sky-400 to-sky-600" />
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-100">
+                <ClipboardList className="h-5 w-5 text-sky-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-muted-foreground">محاضرات جديدة ({getPeriodLabel(usagePeriod)})</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-2xl font-bold text-foreground">
+                    {loadingUsageStats ? <Loader2 className="h-5 w-5 animate-spin text-sky-600 inline" /> : (usageStats?.lecturesCreated ?? 0)}
+                  </p>
+                  {usageStats && usageStats.changes && (
+                    <span className={`inline-flex items-center gap-0.5 text-xs font-bold ${usageStats.changes.lecturesCreated >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {usageStats.changes.lecturesCreated >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                      {Math.abs(usageStats.changes.lecturesCreated)}%
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Assignments Created */}
+        <motion.div {...cardHover}>
+          <div className="rounded-xl border bg-card p-4 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-l from-orange-400 to-orange-600" />
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-100">
+                <ClipboardList className="h-5 w-5 text-orange-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-muted-foreground">تكليفات جديدة ({getPeriodLabel(usagePeriod)})</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-2xl font-bold text-foreground">
+                    {loadingUsageStats ? <Loader2 className="h-5 w-5 animate-spin text-orange-600 inline" /> : (usageStats?.assignmentsCreated ?? 0)}
+                  </p>
+                  {usageStats && usageStats.changes && (
+                    <span className={`inline-flex items-center gap-0.5 text-xs font-bold ${usageStats.changes.assignmentsCreated >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {usageStats.changes.assignmentsCreated >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                      {Math.abs(usageStats.changes.assignmentsCreated)}%
                     </span>
                   )}
                 </div>
