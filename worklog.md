@@ -262,3 +262,26 @@ Stage Summary:
 - Both teacher and student use the same GPS acquisition method, so they'll get consistent location types
 - Distance > 1km detected as GPS/IP mismatch with helpful error message
 - MAX_DISTANCE_METERS stays at 20m as requested
+
+---
+Task ID: gps-qr-smart-verification
+Agent: Main Agent
+Task: Fix GPS/IP mismatch blocking QR check-in when devices are next to each other
+
+Work Log:
+- Analyzed error log: Teacher at (29.122, 30.694), Student at (29.478, 30.961) — ~47km apart
+- VLM analyzed uploaded screenshot: Shows GPS signal weak, device falling back to cell tower/Wi-Fi geolocation
+- Root cause: When GPS is weak on one device, browser falls back to IP/cell tower location which is 40-50km off
+- Previous fix (distance > 1km = block ALL check-ins) was wrong — it blocked QR check-in too
+- Key insight: QR code scanning PROVES physical proximity (student must be near teacher's screen to scan). GPS mismatch should NOT block QR check-in.
+- Rewrote performCheckIn with smart method-aware GPS verification:
+  - **QR check-in**: GPS verification is informational only. If GPS/IP mismatch detected (distance > 1km), show warning toast but ALLOW check-in. The QR scan is the proof of proximity.
+  - **GPS-only check-in**: GPS is the ONLY proof, so mismatch still blocks. Error message now suggests using QR as alternative.
+  - For small GPS inaccuracy (20m-1km) with QR: allow check-in silently
+- GPS-only check-in now suggests "استخدام مسح QR بدلاً من ذلك" (use QR scan instead) when GPS is unreliable
+
+Stage Summary:
+- QR check-in now works even when GPS/IP mismatch occurs — the QR scan proves proximity
+- GPS-only check-in still requires accurate GPS (as it should)
+- Students get helpful error messages directing them to QR when GPS fails
+- MAX_DISTANCE_METERS stays at 20m for GPS-only check-in

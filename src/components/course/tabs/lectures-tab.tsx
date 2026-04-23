@@ -832,26 +832,16 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
           const pos = await getBestGpsPosition();
           if (pos) {
             // Validate coordinates - reject null island (0,0)
-            if (pos.coords.latitude === 0 && pos.coords.longitude === 0) {
-              if (method === 'gps') {
-                toast.error('لم يتم تحديد موقعك بدقة. يرجى تفعيل GPS والمحاولة مرة أخرى.');
-                return;
-              }
-            } else {
+            if (!(pos.coords.latitude === 0 && pos.coords.longitude === 0)) {
               studentLat = pos.coords.latitude;
               studentLon = pos.coords.longitude;
               studentAccuracy = pos.coords.accuracy;
             }
           }
-        } catch {
-          if (method === 'gps') {
-            toast.error('تعذر تحديد موقعك. يرجى تفعيل خدمات الموقع.');
-            return;
-          }
-        }
+        } catch { /* continue without location */ }
       }
 
-      // If GPS method but no location obtained, block
+      // For GPS method: location is required
       if (method === 'gps' && !studentLat) {
         toast.error('تعذر تحديد موقعك. يرجى تفعيل GPS وحاول مرة أخرى.');
         setCheckingIn(false);
@@ -869,28 +859,46 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
           
           // Log GPS data for debugging
           console.log('[GPS Check]', {
+            method,
             teacher: { lat: teacherLat.toFixed(6), lon: teacherLon.toFixed(6) },
             student: { lat: studentLat.toFixed(6), lon: studentLon.toFixed(6), accuracy: studentAccuracy ? Math.round(studentAccuracy) : 'N/A' },
             distance: Math.round(distance),
           });
           
-          // If distance is very large (> 1km), it's almost certainly a GPS/IP location mismatch
-          // One device used real GPS and the other used IP-based location
-          if (distance > 1000) {
-            console.error('[GPS] Huge distance detected - likely GPS/IP mismatch. Teacher:', teacherLat, teacherLon, 'Student:', studentLat, studentLon);
-            toast.error(`المسافة كبيرة جداً (${Math.round(distance)} متر). قد يكون أحد الأجهزة يستخدم الموقع التقريبي من الإنترنت بدلاً من GPS. يرجى التأكد من تفعيل GPS على كلا الجهازين والمحاولة مرة أخرى.`, { duration: 10000 });
-            return;
-          }
+          // Detect GPS/IP mismatch: distance > 1km means one device used real GPS and the other used IP/cell tower location
+          // This is a common issue when GPS is weak or disabled on one device
+          const isLocationMismatch = distance > 1000;
           
-          if (distance > MAX_DISTANCE_METERS) {
-            console.warn('[GPS] Distance too far:', Math.round(distance), 'meters');
-            // If accuracy is poor, give a more helpful message
-            if (studentAccuracy && studentAccuracy > 100) {
-              toast.error(`أنت بعيد عن المعلم بمسافة ${Math.round(distance)} متر. دقة الموقع ضعيفة (${Math.round(studentAccuracy)} متر) - يرجى تفعيل GPS من إعدادات الجهاز للحصول على موقع أدق.`, { duration: 8000 });
-            } else {
-              toast.error(`أنت بعيد عن المعلم بمسافة ${Math.round(distance)} متر. يجب أن تكون ضمن ${MAX_DISTANCE_METERS} متر.`, { duration: 6000 });
+          if (method === 'qr') {
+            // QR check-in: The QR scan itself proves physical proximity (student scanned teacher's screen).
+            // GPS verification is informational only — a GPS/IP mismatch should NOT block QR check-in.
+            if (isLocationMismatch) {
+              console.warn('[GPS] QR check-in with GPS mismatch (distance:', Math.round(distance), 'm). QR scan proves proximity, allowing check-in.');
+              toast(`تم التحقق من قربك عبر مسح QR. الموقع GPS غير متطابق (${Math.round(distance)} متر) — يرجى تفعيل GPS لتحسين الدقة.`, { duration: 6000 });
+              // Don't return — allow QR check-in to proceed
+            } else if (distance > MAX_DISTANCE_METERS) {
+              // Small distance mismatch (20m-1km): likely GPS inaccuracy, not IP mismatch
+              // For QR, still allow — the scan proves proximity
+              console.warn('[GPS] QR check-in, distance slightly over threshold:', Math.round(distance), 'm. Allowing via QR proof.');
             }
-            return;
+            // For QR: always proceed regardless of GPS distance
+          } else {
+            // GPS-only check-in: GPS is the ONLY proof of proximity — must be accurate
+            if (isLocationMismatch) {
+              console.error('[GPS] GPS check-in mismatch. Teacher:', teacherLat.toFixed(6), teacherLon.toFixed(6), 'Student:', studentLat.toFixed(6), studentLon.toFixed(6));
+              toast.error(`المسافة كبيرة جداً (${Math.round(distance)} متر). يبدو أن GPS غير مُفعّل على جهازك ويتم استخدام الموقع التقريبي. يرجى تفعيل GPS من إعدادات الجهاز أو استخدام مسح QR بدلاً من ذلك.`, { duration: 10000 });
+              return;
+            }
+            
+            if (distance > MAX_DISTANCE_METERS) {
+              console.warn('[GPS] GPS check-in distance too far:', Math.round(distance), 'meters');
+              if (studentAccuracy && studentAccuracy > 100) {
+                toast.error(`دقة الموقع ضعيفة (${Math.round(studentAccuracy)} متر) والمسافة ${Math.round(distance)} متر. يرجى تفعيل GPS أو استخدام مسح QR.`, { duration: 8000 });
+              } else {
+                toast.error(`أنت بعيد عن المعلم بمسافة ${Math.round(distance)} متر. يجب أن تكون ضمن ${MAX_DISTANCE_METERS} متر.`, { duration: 6000 });
+              }
+              return;
+            }
           }
         }
       }
