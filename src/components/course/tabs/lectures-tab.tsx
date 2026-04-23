@@ -118,7 +118,7 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 const MAX_DISTANCE_METERS = 20;
-const MAX_GPS_ACCURACY = 50; // Reject GPS positions with accuracy worse than 50m
+const MAX_GPS_ACCURACY = 50; // Reject GPS positions with accuracy worse than 50m (IP-based location is 100-5000m)
 
 // Get high-accuracy GPS position using watchPosition (more reliable than getCurrentPosition)
 function getAccuratePosition(timeoutMs: number = 15000): Promise<GeolocationPosition | null> {
@@ -597,7 +597,17 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
         try {
           const pos = await getAccuratePosition(12000);
           if (pos) {
-            location = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy };
+            // Reject IP-based location (accuracy > 50m means it's not real GPS)
+            if (pos.coords.accuracy > 50) {
+              toast.error(`دقة الموقع ضعيفة (${Math.round(pos.coords.accuracy)} متر). يرجى تفعيل GPS من إعدادات جهازك لضمان دقة تسجيل الحضور. يمكنك إعادة المحاولة بعد تفعيل GPS.`, { duration: 8000 });
+              // Continue without location - students won't have GPS check
+              location = null;
+            } else if (pos.coords.latitude === 0 && pos.coords.longitude === 0) {
+              // Null island - invalid coordinates
+              location = null;
+            } else {
+              location = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy };
+            }
           }
         } catch { /* continue without location */ }
       }
@@ -836,6 +846,13 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
         }
       }
 
+      // If GPS method but no location obtained, block
+      if (method === 'gps' && !studentLat) {
+        toast.error('تعذر تحديد موقعك. يرجى تفعيل GPS وحاول مرة أخرى.');
+        setCheckingIn(false);
+        return;
+      }
+
       const { data: session } = await supabase.from('attendance_sessions').select('*').eq('id', sessionId).single();
 
       if (session && studentLat && studentLon) {
@@ -852,14 +869,16 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
             distance: Math.round(distance),
           });
           
-          // Reject if GPS accuracy is too poor (likely IP-based location)
-          if (studentAccuracy && studentAccuracy > 200) {
-            toast.error(`دقة الموقع ضعيفة (${Math.round(studentAccuracy)} متر). يرجى تفعيل GPS والمحاولة مرة أخرى.`);
+          // Reject if GPS accuracy is too poor - IP-based location typically reports 50-5000m accuracy
+          // Real GPS gives 3-15m accuracy. Anything above 50m is likely NOT real GPS.
+          if (studentAccuracy && studentAccuracy > 50) {
+            toast.error(`دقة الموقع ضعيفة جداً (${Math.round(studentAccuracy)} متر). يبدو أن GPS غير مفعل وجاري استخدام الموقع التقريبي من الإنترنت. يرجى تفعيل GPS من إعدادات الجهاز والمحاولة مرة أخرى.`, { duration: 8000 });
             return;
           }
           
           if (distance > MAX_DISTANCE_METERS) {
-            toast.error(`أنت بعيد عن المعلم بمسافة ${Math.round(distance)} متر. يجب أن تكون ضمن ${MAX_DISTANCE_METERS} متر.`);
+            console.warn('[GPS] Distance too far. Teacher:', teacherLat, teacherLon, 'Student:', studentLat, studentLon, 'Distance:', Math.round(distance));
+            toast.error(`أنت بعيد عن المعلم بمسافة ${Math.round(distance)} متر. يجب أن تكون ضمن ${MAX_DISTANCE_METERS} متر.`, { duration: 6000 });
             return;
           }
         }
