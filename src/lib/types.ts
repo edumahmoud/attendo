@@ -314,8 +314,8 @@ export type AppPage =
   | 'summary'
   | 'profile';
 
-export type StudentSection = 'dashboard' | 'subjects' | 'summaries' | 'files' | 'assignments' | 'teachers' | 'chat' | 'settings';
-export type TeacherSection = 'dashboard' | 'subjects' | 'students' | 'files' | 'assignments' | 'analytics' | 'chat' | 'settings';
+export type StudentSection = 'dashboard' | 'subjects' | 'summaries' | 'quizzes' | 'files' | 'assignments' | 'attendance' | 'teachers' | 'chat' | 'settings' | 'notifications';
+export type TeacherSection = 'dashboard' | 'subjects' | 'students' | 'files' | 'assignments' | 'attendance' | 'analytics' | 'chat' | 'settings' | 'notifications';
 export type AdminSection = 'dashboard' | 'users' | 'subjects' | 'reports' | 'announcements' | 'banned' | 'settings';
 
 // API response types

@@ -45,7 +45,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import type { UserProfile, UserFile, FileShare, Subject } from '@/lib/types';
-import UserAvatar from '@/components/shared/user-avatar';
+import UserAvatar, { getRoleLabel, getTitleLabel } from '@/components/shared/user-avatar';
+import { useAppStore } from '@/stores/app-store';
 
 // -------------------------------------------------------
 // Props
@@ -210,6 +211,8 @@ interface PendingUpload {
 // Main Component
 // -------------------------------------------------------
 export default function PersonalFilesSection({ profile, role }: PersonalFilesSectionProps) {
+  const { openProfile } = useAppStore();
+
   // ─── Tab state ───
   const [activeTab, setActiveTab] = useState<'my-files' | 'shared'>('my-files');
   const [categoryFilter, setCategoryFilter] = useState<FileCategory>('الكل');
@@ -1772,10 +1775,18 @@ export default function PersonalFilesSection({ profile, role }: PersonalFilesSec
                   <UserAvatar name={file.shared_by_user?.name || 'مستخدم'} avatarUrl={file.shared_by_user?.avatar_url} size="xs" />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs text-muted-foreground truncate">
-                      شاركك{' '}
-                      <span className="font-medium text-foreground">
-                        {file.shared_by_user?.name || 'مستخدم'}
+                      شارك معك{' '}
+                      <span className="text-emerald-600">
+                        {getTitleLabel(file.shared_by_user?.title_id, file.shared_by_user?.gender) || getRoleLabel(file.shared_by_user?.role || 'student', file.shared_by_user?.gender, file.shared_by_user?.title_id)}
                       </span>
+                      {' : '}
+                      <button
+                        onClick={() => file.shared_by_user?.id && openProfile(file.shared_by_user.id)}
+                        className="font-medium text-foreground hover:text-emerald-600 transition-colors cursor-pointer"
+                      >
+                        {file.shared_by_user?.name || 'مستخدم'}
+                      </button>
+                      {' هذا الملف'}
                     </p>
                   </div>
                   {file.permission && (

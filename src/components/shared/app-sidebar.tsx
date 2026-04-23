@@ -13,6 +13,7 @@ import {
   Settings,
   ChevronRight,
   MessageCircle,
+  Bell,
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -51,6 +52,7 @@ const studentNavItems: NavItem[] = [
   { id: 'summaries', label: 'الملخصات', icon: <FileText className="h-5 w-5" /> },
   { id: 'assignments', label: 'المهام', icon: <FileSpreadsheet className="h-5 w-5" /> },
   { id: 'files', label: 'ملفاتي', icon: <FolderOpen className="h-5 w-5" /> },
+  { id: 'notifications', label: 'الإشعارات', icon: <Bell className="h-5 w-5" /> },
   { id: 'settings', label: 'الإعدادات', icon: <Settings className="h-5 w-5" /> },
 ];
 
@@ -61,6 +63,7 @@ const teacherNavItems: NavItem[] = [
   { id: 'students', label: 'الطلاب', icon: <Users className="h-5 w-5" /> },
   { id: 'files', label: 'ملفاتي', icon: <FolderOpen className="h-5 w-5" /> },
   { id: 'analytics', label: 'التقارير', icon: <TrendingUp className="h-5 w-5" /> },
+  { id: 'notifications', label: 'الإشعارات', icon: <Bell className="h-5 w-5" /> },
   { id: 'settings', label: 'الإعدادات', icon: <Settings className="h-5 w-5" /> },
 ];
 

@@ -20,6 +20,8 @@ import {
   Inbox,
   FolderOpen,
   CalendarDays,
+  ZoomIn,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -37,8 +39,9 @@ import UserLink from '@/components/shared/user-link';
 import { useAuthStore } from '@/stores/auth-store';
 import { useAppStore } from '@/stores/app-store';
 import { toast } from 'sonner';
-import type { UserProfile, UserFile, FileRequest } from '@/lib/types';
+import type { UserProfile, UserFile, FileRequest, UserStatus } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
+import { useSharedSocket, useSocketEvent } from '@/lib/socket';
 
 // ─── Props ───────────────────────────────────────────────
 interface UserProfilePageProps {
@@ -177,6 +180,13 @@ export default function UserProfilePage({ userId, currentUser, onBack }: UserPro
   // Approve/reject loading
   const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
 
+  // Photo enlargement state
+  const [photoEnlarged, setPhotoEnlarged] = useState(false);
+
+  // User status state
+  const [profileUserStatus, setProfileUserStatus] = useState<UserStatus>('offline');
+  const { socket, isConnected } = useSharedSocket();
+
   const { openProfile } = useAppStore();
 
   // ─── Auth headers ─────────────────────────────────────
@@ -260,6 +270,24 @@ export default function UserProfilePage({ userId, currentUser, onBack }: UserPro
       setLoadingRequests(false);
     }
   }, [userId, currentUser.id]);
+
+  // ─── Fetch user status from socket ───────────────────
+  useEffect(() => {
+    if (socket && isConnected && userId) {
+      socket.emit('get-user-status', { userIds: [userId] }, (response: { statuses: Record<string, UserStatus> }) => {
+        if (response?.statuses && response.statuses[userId]) {
+          setProfileUserStatus(response.statuses[userId]);
+        }
+      });
+    }
+  }, [socket, isConnected, userId]);
+
+  // Listen for status changes of the profile user
+  useSocketEvent<{ userId: string; status: UserStatus }>('user-status-changed', (data) => {
+    if (data.userId === userId) {
+      setProfileUserStatus(data.status);
+    }
+  });
 
   // ─── Initial load ─────────────────────────────────────
   useEffect(() => {
@@ -393,15 +421,25 @@ export default function UserProfilePage({ userId, currentUser, onBack }: UserPro
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
               {/* Avatar */}
               <div className="shrink-0">
-                <div className="relative">
+                <div className="relative cursor-pointer" onClick={() => profile.avatar_url && setPhotoEnlarged(true)}>
                   <UserAvatar
                     name={profile.name}
                     avatarUrl={profile.avatar_url}
                     size="xl"
                     className="ring-4 ring-emerald-200/60 dark:ring-emerald-800/40"
                   />
-                  {/* Online indicator */}
-                  <span className="absolute bottom-1 left-1 h-4 w-4 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-gray-900" />
+                  {profile.avatar_url && (
+                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/0 hover:bg-black/20 transition-colors">
+                      <ZoomIn className="h-6 w-6 text-white opacity-0 hover:opacity-100 transition-opacity" />
+                    </div>
+                  )}
+                  {/* Status indicator */}
+                  <span className={`absolute bottom-1 left-1 h-4 w-4 rounded-full ring-2 ring-white dark:ring-gray-900 ${
+                    profileUserStatus === 'online' ? 'bg-emerald-500' :
+                    profileUserStatus === 'busy' ? 'bg-amber-500' :
+                    profileUserStatus === 'away' ? 'bg-orange-500' :
+                    'bg-gray-400'
+                  } ${profileUserStatus === 'online' ? 'animate-pulse' : ''}`} />
                 </div>
               </div>
 
@@ -426,7 +464,7 @@ export default function UserProfilePage({ userId, currentUser, onBack }: UserPro
                   </p>
                 )}
 
-                {/* Role badge */}
+                {/* Role badge + Status */}
                 <div className="flex items-center justify-center sm:justify-start gap-2 mb-3">
                   <Badge
                     variant={getRoleBadgeVariant(profile.role)}
@@ -434,6 +472,29 @@ export default function UserProfilePage({ userId, currentUser, onBack }: UserPro
                   >
                     {roleLabel}
                   </Badge>
+                  {/* Status indicator */}
+                  {profileUserStatus && profileUserStatus !== 'invisible' && (
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] font-medium gap-1 ${
+                        profileUserStatus === 'online' ? 'border-emerald-300 text-emerald-600' :
+                        profileUserStatus === 'busy' ? 'border-amber-300 text-amber-600' :
+                        profileUserStatus === 'away' ? 'border-orange-300 text-orange-600' :
+                        'border-gray-300 text-gray-500'
+                      }`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${
+                        profileUserStatus === 'online' ? 'bg-emerald-500' :
+                        profileUserStatus === 'busy' ? 'bg-amber-500' :
+                        profileUserStatus === 'away' ? 'bg-orange-500' :
+                        'bg-gray-400'
+                      }`} />
+                      {profileUserStatus === 'online' ? 'متصل' :
+                       profileUserStatus === 'busy' ? 'مشغول' :
+                       profileUserStatus === 'away' ? 'بعيد' :
+                       'غير متصل'}
+                    </Badge>
+                  )}
                 </div>
 
                 {/* Join date */}
@@ -756,6 +817,25 @@ export default function UserProfilePage({ userId, currentUser, onBack }: UserPro
           )}
         </motion.section>
       )}
+
+      {/* Photo enlargement dialog */}
+      <Dialog open={photoEnlarged} onOpenChange={setPhotoEnlarged}>
+        <DialogContent className="max-w-lg p-0 border-0 bg-transparent shadow-none" dir="rtl">
+          <div className="relative">
+            <img
+              src={profile.avatar_url || ''}
+              alt={profile.name}
+              className="w-full h-auto rounded-2xl object-contain"
+            />
+            <button
+              onClick={() => setPhotoEnlarged(false)}
+              className="absolute top-2 left-2 h-8 w-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -18,6 +18,9 @@ import {
   Check,
   UserCheck,
   UserX,
+  BarChart3,
+  Award,
+  ClipboardList,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -182,6 +185,15 @@ export default function StudentsTab({ profile, subjectId }: StudentsTabProps) {
 
   // Status column detection
   const [statusColumnExists, setStatusColumnExists] = useState(true);
+
+  // Performance modal state
+  const [performanceStudentId, setPerformanceStudentId] = useState<string | null>(null);
+  const [performanceData, setPerformanceData] = useState<{
+    avgGrade: number | null;
+    submissions: { assignmentName: string; grade: number; total: number; submittedAt: string }[];
+    attendance: { present: number; total: number; percentage: number };
+  } | null>(null);
+  const [loadingPerformance, setLoadingPerformance] = useState(false);
 
   // -------------------------------------------------------
   // Fetch pending enrollment requests
@@ -541,6 +553,63 @@ export default function StudentsTab({ profile, subjectId }: StudentsTabProps) {
   };
 
   // -------------------------------------------------------
+  // Fetch student performance
+  // -------------------------------------------------------
+  const fetchStudentPerformance = async (studentId: string) => {
+    setLoadingPerformance(true);
+    try {
+      // Fetch quiz scores for this student in this subject
+      const { data: scores } = await supabase
+        .from('quiz_scores')
+        .select('score, total, quiz_title, completed_at')
+        .eq('student_id', studentId)
+        .eq('subject_id', subjectId)
+        .order('completed_at', { ascending: false });
+
+      // Fetch attendance for this student in this subject
+      const { data: attendance } = await supabase
+        .from('attendance_records')
+        .select('id')
+        .eq('student_id', studentId);
+
+      // Get total sessions for this subject
+      const { data: sessions } = await supabase
+        .from('attendance_sessions')
+        .select('id')
+        .eq('subject_id', subjectId);
+
+      const totalSessions = sessions?.length || 0;
+      const presentCount = attendance?.length || 0;
+      const attendancePercentage = totalSessions > 0 ? Math.round((presentCount / totalSessions) * 100) : 0;
+
+      // Calculate average grade
+      const validScores = (scores || []).filter((s: { total: number }) => s.total > 0);
+      const avgGrade = validScores.length > 0
+        ? Math.round(validScores.reduce((sum: number, s: { score: number; total: number }) => sum + (s.score / s.total) * 100, 0) / validScores.length)
+        : null;
+
+      setPerformanceData({
+        avgGrade,
+        submissions: (scores || []).map((s: { quiz_title: string; score: number; total: number; completed_at: string }) => ({
+          assignmentName: s.quiz_title || 'اختبار',
+          grade: s.score,
+          total: s.total,
+          submittedAt: s.completed_at,
+        })),
+        attendance: {
+          present: presentCount,
+          total: totalSessions,
+          percentage: attendancePercentage,
+        },
+      });
+    } catch (err) {
+      console.error('Error fetching performance:', err);
+    } finally {
+      setLoadingPerformance(false);
+    }
+  };
+
+  // -------------------------------------------------------
   // Filter enrolled students by search
   // -------------------------------------------------------
   const filteredStudents = enrolledSearchQuery.trim()
@@ -771,6 +840,16 @@ export default function StudentsTab({ profile, subjectId }: StudentsTabProps) {
                 </div>
                 <div className="col-span-2 flex items-center gap-1">
                   <button
+                    onClick={() => {
+                      setPerformanceStudentId(student.id);
+                      fetchStudentPerformance(student.id);
+                    }}
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-emerald-50 hover:text-emerald-600 transition-colors"
+                    title="أداء الطالب"
+                  >
+                    <BarChart3 className="h-3.5 w-3.5" />
+                  </button>
+                  <button
                     onClick={() => handleOpenProfile(student.id)}
                     className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                     title="الملف الشخصي"
@@ -893,6 +972,130 @@ export default function StudentsTab({ profile, subjectId }: StudentsTabProps) {
         onCancel={() => setRejectAllConfirmOpen(false)}
         variant="danger"
       />
+
+      {/* Student Performance Modal */}
+      <AnimatePresence>
+        {performanceStudentId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            onClick={() => { setPerformanceStudentId(null); setPerformanceData(null); }}
+          >
+            <motion.div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', duration: 0.4 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-md rounded-2xl border bg-background shadow-2xl max-h-[80vh] overflow-y-auto"
+              dir="rtl"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b p-5">
+                <div className="flex items-center gap-3">
+                  <BarChart3 className="h-5 w-5 text-emerald-600" />
+                  <h3 className="text-lg font-bold text-foreground">أداء الطالب</h3>
+                </div>
+                <button
+                  onClick={() => { setPerformanceStudentId(null); setPerformanceData(null); }}
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-5 space-y-5">
+                {loadingPerformance ? (
+                  <div className="flex items-center justify-center py-10">
+                    <Loader2 className="h-8 w-8 text-emerald-500 animate-spin" />
+                  </div>
+                ) : performanceData ? (
+                  <>
+                    {/* Average Grade */}
+                    <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/50">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
+                        <Award className="h-6 w-6 text-emerald-600" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-xs text-muted-foreground">متوسط الدرجات</p>
+                        <p className="text-2xl font-bold text-foreground">
+                          {performanceData.avgGrade !== null ? `${performanceData.avgGrade}%` : '—'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Attendance */}
+                    <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/50">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-teal-100">
+                        <UserCheck className="h-6 w-6 text-teal-600" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-xs text-muted-foreground">الحضور</p>
+                        <p className="text-lg font-bold text-foreground">
+                          {performanceData.attendance.present} / {performanceData.attendance.total}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          نسبة الحضور: {performanceData.attendance.percentage}%
+                        </p>
+                      </div>
+                      {/* Progress bar for attendance */}
+                      <div className="w-20">
+                        <div className="h-2 rounded-full bg-muted">
+                          <div
+                            className={`h-2 rounded-full transition-all ${
+                              performanceData.attendance.percentage >= 75 ? 'bg-emerald-500' :
+                              performanceData.attendance.percentage >= 50 ? 'bg-amber-500' : 'bg-rose-500'
+                            }`}
+                            style={{ width: `${performanceData.attendance.percentage}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Submissions by task */}
+                    <div>
+                      <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                        <ClipboardList className="h-4 w-4 text-amber-600" />
+                        التسليمات ({performanceData.submissions.length})
+                      </h4>
+                      {performanceData.submissions.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">لا توجد تسليمات</p>
+                      ) : (
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {performanceData.submissions.map((sub, i) => {
+                            const pct = sub.total > 0 ? Math.round((sub.grade / sub.total) * 100) : 0;
+                            return (
+                              <div key={i} className="flex items-center gap-3 rounded-lg border p-3">
+                                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                                  pct >= 75 ? 'bg-emerald-50' : pct >= 50 ? 'bg-amber-50' : 'bg-rose-50'
+                                }`}>
+                                  <span className={`text-xs font-bold ${
+                                    pct >= 75 ? 'text-emerald-600' : pct >= 50 ? 'text-amber-600' : 'text-rose-600'
+                                  }`}>{pct}%</span>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-foreground truncate">{sub.assignmentName}</p>
+                                  <p className="text-xs text-muted-foreground">{sub.grade}/{sub.total}</p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-center text-muted-foreground py-4">لا توجد بيانات</p>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Student Profile Modal */}
       {selectedStudentId && (

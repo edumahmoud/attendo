@@ -2,10 +2,13 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, Check, Trash2, ClipboardList, Award, BookOpen, FileText, Info, CheckCheck, UserCheck, BellOff, UserPlus } from 'lucide-react';
+import { Bell, Check, Trash2, ClipboardList, Award, BookOpen, FileText, Info, CheckCheck, UserCheck, BellOff, UserPlus, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { useNotificationStore } from '@/stores/notification-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { useAppStore } from '@/stores/app-store';
+import { supabase } from '@/lib/supabase';
+import { toast } from 'sonner';
+import UserAvatar from '@/components/shared/user-avatar';
 
 function timeAgo(dateStr: string): string {
   const now = new Date();
@@ -42,6 +45,8 @@ export default function NotificationBell() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+  const [linkRequestModal, setLinkRequestModal] = useState<{teacherId: string; notificationId: string; teacher: any | null; loading: boolean} | null>(null);
+  const [processingAction, setProcessingAction] = useState(false);
   const { 
     notifications, 
     unreadCount, 
@@ -94,13 +99,102 @@ export default function NotificationBell() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [isOpen]);
 
+  /** Fetch teacher info for the link request modal */
+  const fetchTeacherForModal = async (teacherId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', teacherId)
+        .single();
+      if (!error && data) {
+        setLinkRequestModal(prev => prev ? { ...prev, teacher: data, loading: false } : null);
+      } else {
+        setLinkRequestModal(prev => prev ? { ...prev, loading: false } : null);
+      }
+    } catch {
+      setLinkRequestModal(prev => prev ? { ...prev, loading: false } : null);
+    }
+  };
+
+  /** Accept a link request from a teacher */
+  const handleAcceptLinkRequest = async () => {
+    if (!linkRequestModal) return;
+    setProcessingAction(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+      const res = await fetch('/api/link-student-approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ action: 'accept', teacherId: linkRequestModal.teacherId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success('تم قبول طلب الارتباط');
+        setLinkRequestModal(null);
+      } else {
+        toast.error(data.error || 'حدث خطأ');
+      }
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setProcessingAction(false);
+    }
+  };
+
+  /** Reject a link request from a teacher */
+  const handleRejectLinkRequest = async () => {
+    if (!linkRequestModal) return;
+    setProcessingAction(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+      const res = await fetch('/api/link-student-approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ action: 'reject', teacherId: linkRequestModal.teacherId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success('تم رفض طلب الارتباط');
+        setLinkRequestModal(null);
+      } else {
+        toast.error(data.error || 'حدث خطأ');
+      }
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setProcessingAction(false);
+    }
+  };
+
   /** Handle clicking a notification — mark as read and navigate if link is provided */
-  const handleNotificationClick = (notif: { id: string; read: boolean; link?: string | null }) => {
+  const handleNotificationClick = (notif: { id: string; type: string; title?: string; read: boolean; link?: string | null; message?: string }) => {
     if (!notif.read) {
       markAsRead(notif.id);
     }
 
-    if (notif.link) {
+    // Handle link_request notifications - show modal instead of navigating
+    if (notif.type === 'link_request' || notif.link?.startsWith('link_request:')) {
+      const teacherId = notif.link?.replace('link_request:', '');
+      if (teacherId) {
+        setLinkRequestModal({ teacherId, notificationId: notif.id, teacher: null, loading: true });
+        fetchTeacherForModal(teacherId);
+      }
+      return;
+    }
+
+    // Handle file request notifications - navigate to profile where file requests can be managed
+    if (notif.type === 'file' && notif.link === 'settings' && notif.title?.includes('طلب ملف')) {
+      setIsOpen(false);
+      // Navigate to own profile to see/act on file requests
+      const { openProfile } = useAppStore.getState();
+      if (user?.id) openProfile(user.id);
+      return;
+    }
+
+    if (notif.link && notif.link !== 'settings') {
       setIsOpen(false);
       navigateToLink(notif.link);
     }
@@ -114,15 +208,15 @@ export default function NotificationBell() {
     const role = user?.role;
 
     if (role === 'student') {
-      const validSections = ['dashboard', 'subjects', 'summaries', 'quizzes', 'files', 'assignments', 'attendance', 'teachers', 'settings'];
+      const validSections = ['dashboard', 'subjects', 'summaries', 'quizzes', 'files', 'assignments', 'attendance', 'teachers', 'settings', 'notifications'];
       if (validSections.includes(section)) {
-        setStudentSection(section as 'dashboard' | 'subjects' | 'summaries' | 'quizzes' | 'files' | 'assignments' | 'attendance' | 'teachers' | 'settings');
+        setStudentSection(section as 'dashboard' | 'subjects' | 'summaries' | 'quizzes' | 'files' | 'assignments' | 'attendance' | 'teachers' | 'settings' | 'notifications');
         setCurrentPage('student-dashboard');
       }
     } else if (role === 'teacher') {
-      const validSections = ['dashboard', 'subjects', 'students', 'files', 'assignments', 'attendance', 'analytics', 'settings'];
+      const validSections = ['dashboard', 'subjects', 'students', 'files', 'assignments', 'attendance', 'analytics', 'settings', 'notifications'];
       if (validSections.includes(section)) {
-        setTeacherSection(section as 'dashboard' | 'subjects' | 'students' | 'files' | 'assignments' | 'attendance' | 'analytics' | 'settings');
+        setTeacherSection(section as 'dashboard' | 'subjects' | 'students' | 'files' | 'assignments' | 'attendance' | 'analytics' | 'settings' | 'notifications');
         setCurrentPage('teacher-dashboard');
       }
     }
@@ -257,6 +351,61 @@ export default function NotificationBell() {
                 </p>
               </div>
             )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Link Request Modal */}
+      <AnimatePresence>
+        {linkRequestModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[10000] flex items-center justify-center p-4"
+            onClick={() => !processingAction && setLinkRequestModal(null)}
+          >
+            <motion.div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-sm rounded-2xl border bg-background shadow-2xl p-6"
+              dir="rtl"
+            >
+              <div className="flex flex-col items-center text-center">
+                {linkRequestModal.loading ? (
+                  <Loader2 className="h-12 w-12 text-emerald-500 animate-spin mb-4" />
+                ) : (
+                  <>
+                    <UserAvatar name={linkRequestModal.teacher?.name || 'معلم'} avatarUrl={linkRequestModal.teacher?.avatar_url} size="lg" />
+                    <h3 className="text-lg font-bold text-foreground mt-3 mb-1">طلب ارتباط</h3>
+                    <p className="text-sm text-muted-foreground mb-6">
+                      أرسل {linkRequestModal.teacher?.gender === 'female' ? 'المعلمة' : 'المعلم'} <span className="font-semibold text-foreground">{linkRequestModal.teacher?.name || 'معلم'}</span> طلب ارتباط بك
+                    </p>
+                    <div className="flex items-center gap-3 w-full">
+                      <button
+                        onClick={handleAcceptLinkRequest}
+                        disabled={processingAction}
+                        className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
+                      >
+                        {processingAction ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                        قبول
+                      </button>
+                      <button
+                        onClick={handleRejectLinkRequest}
+                        disabled={processingAction}
+                        className="flex-1 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-rose-700 disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
+                      >
+                        {processingAction ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                        رفض
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

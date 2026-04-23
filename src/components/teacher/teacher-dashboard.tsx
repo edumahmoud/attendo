@@ -49,11 +49,12 @@ import StatCard from '@/components/shared/stat-card';
 import SubjectsSection from '@/components/shared/subjects-section';
 import PersonalFilesSection from '@/components/shared/personal-files-section';
 import AnnouncementsBanner from '@/components/shared/announcements-banner';
+import NotificationsSection from '@/components/shared/notifications-section';
 import CoursePage from '@/components/course/course-page';
 import { useAppStore } from '@/stores/app-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { toast } from 'sonner';
-import type { UserProfile, Quiz, Score, TeacherSection, Subject } from '@/lib/types';
+import type { UserProfile, Quiz, Score, Subject, TeacherSection } from '@/lib/types';
 import UserAvatar from '@/components/shared/user-avatar';
 import UserLink from '@/components/shared/user-link';
 
@@ -1618,161 +1619,6 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
         </motion.div>
       )}
 
-      {/* Student detail modal */}
-      <AnimatePresence>
-        {studentDetailOpen && selectedStudent && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onClick={() => { if (!resettingStudent) setStudentDetailOpen(false); }}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0, y: 10 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 10 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-lg rounded-2xl border bg-background shadow-xl max-h-[85vh] overflow-y-auto"
-              dir="rtl"
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between border-b p-5">
-                <UserLink
-                  userId={selectedStudent.id}
-                  name={selectedStudent.name}
-                  avatarUrl={selectedStudent.avatar_url}
-                  role="student"
-                  gender={selectedStudent.gender}
-                  size="md"
-                  showAvatar={true}
-                  showUsername={false}
-                />
-                <button
-                  onClick={() => setStudentDetailOpen(false)}
-                  className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              {/* Scores list */}
-              <div className="p-5 space-y-3 max-h-72 overflow-y-auto custom-scrollbar">
-                {getStudentScores(selectedStudent.id).length === 0 ? (
-                  <div className="text-center py-6 text-muted-foreground text-sm">
-                    لا توجد نتائج لهذا الطالب
-                  </div>
-                ) : (
-                  getStudentScores(selectedStudent.id).map((score) => {
-                    const pct = scorePercentage(score.score, score.total);
-                    return (
-                      <div key={score.id} className="flex items-center gap-3 rounded-lg border p-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal-50">
-                          <ClipboardList className="h-4 w-4 text-teal-600" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-foreground truncate">{score.quiz_title}</p>
-                          <p className="text-xs text-muted-foreground">{score.score}/{score.total} · {formatDate(score.completed_at)}</p>
-                        </div>
-                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${pctColorClass(pct)}`}>
-                          {pct}%
-                        </span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {/* Footer */}
-              <div className="flex items-center gap-3 border-t p-5">
-                <button
-                  onClick={() => handleResetStudent(selectedStudent.id)}
-                  disabled={resettingStudent}
-                  className="flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-60"
-                >
-                  {resettingStudent ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RotateCcw className="h-4 w-4" />
-                  )}
-                  تصفير حالة الطالب
-                </button>
-                <button
-                  onClick={() => setConfirmRemoveOpen(true)}
-                  disabled={processingRequestId === selectedStudent.id}
-                  className="flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-500 transition-colors hover:bg-rose-100 hover:border-rose-300 disabled:opacity-60"
-                >
-                  {processingRequestId === selectedStudent.id ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-3 w-3" />
-                  )}
-                  إزالة
-                </button>
-                <button
-                  onClick={() => setStudentDetailOpen(false)}
-                  className="rounded-lg border px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted"
-                >
-                  إغلاق
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Remove Student Confirmation Dialog */}
-      <AnimatePresence>
-        {confirmRemoveOpen && selectedStudent && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          >
-            <motion.div
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-              onClick={() => setConfirmRemoveOpen(false)}
-            />
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              transition={{ type: 'spring', duration: 0.4 }}
-              className="relative w-full max-w-sm rounded-2xl border bg-background shadow-2xl p-6"
-              dir="rtl"
-            >
-              <div className="flex flex-col items-center text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-rose-100 mb-4">
-                  <Trash2 className="h-7 w-7 text-rose-600" />
-                </div>
-                <h3 className="text-lg font-bold text-foreground mb-2">إزالة طالب</h3>
-                <p className="text-sm text-muted-foreground mb-6">
-                  هل أنت متأكد من إزالة الطالب <span className="font-semibold text-foreground">{selectedStudent.name}</span> من قائمة المرتبطين بك؟ سيتم حذف جميع بيانات الارتباط.
-                </p>
-                <div className="flex items-center gap-3 w-full">
-                  <button
-                    onClick={() => {
-                      setConfirmRemoveOpen(false);
-                      handleRemoveStudent(selectedStudent.id);
-                    }}
-                    className="flex-1 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-rose-700"
-                  >
-                    حذف
-                  </button>
-                  <button
-                    onClick={() => setConfirmRemoveOpen(false)}
-                    className="flex-1 rounded-xl border px-4 py-2.5 text-sm font-semibold text-muted-foreground hover:bg-muted transition-colors"
-                  >
-                    إلغاء
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </motion.div>
   );
 
@@ -2011,11 +1857,168 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                 {activeSection === 'analytics' && renderAnalytics()}
                 {activeSection === 'chat' && <ChatSection profile={profile} role="teacher" />}
                 {activeSection === 'settings' && <SettingsSection profile={profile} onUpdateProfile={handleUpdateProfile} onDeleteAccount={handleDeleteAccount} />}
+                {activeSection === 'notifications' && <NotificationsSection />}
               </motion.div>
             </AnimatePresence>
           )}
         </div>
       </main>
+
+      {/* Student detail modal - rendered at top level so it works from any section */}
+      <AnimatePresence>
+        {studentDetailOpen && selectedStudent && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={() => { if (!resettingStudent) setStudentDetailOpen(false); }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-lg rounded-2xl border bg-background shadow-xl max-h-[85vh] overflow-y-auto"
+              dir="rtl"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b p-5">
+                <UserLink
+                  userId={selectedStudent.id}
+                  name={selectedStudent.name}
+                  avatarUrl={selectedStudent.avatar_url}
+                  role="student"
+                  gender={selectedStudent.gender}
+                  size="md"
+                  showAvatar={true}
+                  showUsername={false}
+                />
+                <button
+                  onClick={() => setStudentDetailOpen(false)}
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Scores list */}
+              <div className="p-5 space-y-3 max-h-72 overflow-y-auto custom-scrollbar">
+                {getStudentScores(selectedStudent.id).length === 0 ? (
+                  <div className="text-center py-6 text-muted-foreground text-sm">
+                    لا توجد نتائج لهذا الطالب
+                  </div>
+                ) : (
+                  getStudentScores(selectedStudent.id).map((score) => {
+                    const pct = scorePercentage(score.score, score.total);
+                    return (
+                      <div key={score.id} className="flex items-center gap-3 rounded-lg border p-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal-50">
+                          <ClipboardList className="h-4 w-4 text-teal-600" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-foreground truncate">{score.quiz_title}</p>
+                          <p className="text-xs text-muted-foreground">{score.score}/{score.total} · {formatDate(score.completed_at)}</p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${pctColorClass(pct)}`}>
+                          {pct}%
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center gap-3 border-t p-5">
+                <button
+                  onClick={() => handleResetStudent(selectedStudent.id)}
+                  disabled={resettingStudent}
+                  className="flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-60"
+                >
+                  {resettingStudent ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RotateCcw className="h-4 w-4" />
+                  )}
+                  تصفير حالة الطالب
+                </button>
+                <button
+                  onClick={() => setConfirmRemoveOpen(true)}
+                  disabled={processingRequestId === selectedStudent.id}
+                  className="flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-500 transition-colors hover:bg-rose-100 hover:border-rose-300 disabled:opacity-60"
+                >
+                  {processingRequestId === selectedStudent.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3 w-3" />
+                  )}
+                  إزالة
+                </button>
+                <button
+                  onClick={() => setStudentDetailOpen(false)}
+                  className="rounded-lg border px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted"
+                >
+                  إغلاق
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Remove Student Confirmation Dialog - rendered at top level */}
+      <AnimatePresence>
+        {confirmRemoveOpen && selectedStudent && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+          >
+            <motion.div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              onClick={() => setConfirmRemoveOpen(false)}
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', duration: 0.4 }}
+              className="relative w-full max-w-sm rounded-2xl border bg-background shadow-2xl p-6"
+              dir="rtl"
+            >
+              <div className="flex flex-col items-center text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-rose-100 mb-4">
+                  <Trash2 className="h-7 w-7 text-rose-600" />
+                </div>
+                <h3 className="text-lg font-bold text-foreground mb-2">إزالة طالب</h3>
+                <p className="text-sm text-muted-foreground mb-6">
+                  هل أنت متأكد من إزالة الطالب <span className="font-semibold text-foreground">{selectedStudent.name}</span> من قائمة المرتبطين بك؟ سيتم حذف جميع بيانات الارتباط.
+                </p>
+                <div className="flex items-center gap-3 w-full">
+                  <button
+                    onClick={() => {
+                      setConfirmRemoveOpen(false);
+                      handleRemoveStudent(selectedStudent.id);
+                    }}
+                    className="flex-1 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-rose-700"
+                  >
+                    حذف
+                  </button>
+                  <button
+                    onClick={() => setConfirmRemoveOpen(false)}
+                    className="flex-1 rounded-xl border px-4 py-2.5 text-sm font-semibold text-muted-foreground hover:bg-muted transition-colors"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

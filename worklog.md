@@ -485,3 +485,31 @@ Stage Summary:
 - Fallback names use 'مستخدم' (Arabic for 'User') where names might be undefined
 - avatarUrl fields that may not exist in data (e.g., record.student_avatar) are passed as-is — UserAvatar handles undefined gracefully
 - All imports added correctly, no duplicates
+
+---
+Task ID: 8
+Agent: Main Orchestrator
+Task: Fix shared files text, profile photo enlarge, student performance, notification modals, z-index fix, status on profile, notifications section
+
+Work Log:
+- Fixed shared files text in personal-files-section.tsx: Changed "شاركك {name}" to "شارك معك {titleLabel/roleLabel} : {name} هذا الملف" with clickable name link using openProfile
+- Made profile photo clickable in user-profile-page.tsx: Added Dialog for fullscreen view with ZoomIn hover effect on avatar
+- Added student performance action button in students-tab.tsx: BarChart3 icon button opens modal showing average grades, submissions by task, attendance count/percentage with progress bars
+- Fixed link_request notification handling in notification-bell.tsx: Shows accept/reject modal with teacher info instead of navigating to settings
+- Fixed file request notification handling: Navigates to user's own profile instead of settings page
+- Fixed z-index issue in teacher-dashboard.tsx: Moved student detail modal and confirm remove dialog from renderStudents() to main component return, changed z-index to z-[100]
+- Added status display on profile page in user-profile-page.tsx: Uses socket.io get-user-status to fetch status, shows colored dot on avatar and status badge next to role badge
+- Created notifications-section.tsx: Full notifications page with clickable items, link request accept/reject modal, mark all read, clear all
+- Added 'notifications' to StudentSection and TeacherSection types
+- Added notifications nav item to app-sidebar.tsx for both student and teacher
+- Integrated NotificationsSection into student-dashboard.tsx and teacher-dashboard.tsx
+- All lint checks pass, dev server running correctly
+
+Stage Summary:
+- **Shared files text**: Now shows "شارك معك {اللقب} : {الاسم} هذا الملف" with clickable name
+- **Profile photo enlarge**: Click avatar to view full-size photo in dialog
+- **Student performance**: BarChart3 button in students table shows modal with grades, submissions, attendance
+- **Notification modals**: link_request and file notifications show accept/reject modal instead of redirecting to settings
+- **z-index fix**: Student detail modal now renders at top level, works from dashboard section
+- **Status on profile**: Shows user's online/busy/away/offline status with colored indicators
+- **Notifications section**: Dedicated page accessible from sidebar with clickable notifications
