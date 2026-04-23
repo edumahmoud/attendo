@@ -161,6 +161,7 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
   const [confirmRejectAllOpen, setConfirmRejectAllOpen] = useState(false);
   const [processingBulk, setProcessingBulk] = useState(false);
   const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
+  const [pendingPanelOpen, setPendingPanelOpen] = useState(false);
 
   // ─── Teacher subjects ───
   const [teacherSubjects, setTeacherSubjects] = useState<Subject[]>([]);
@@ -953,16 +954,33 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
       <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-foreground">الطلاب</h2>
-          <p className="text-muted-foreground mt-1">إدارة الطلاب المسجلين لديك</p>
+          <p className="text-muted-foreground mt-1">{students.length} طالب مسجل</p>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Pending Link Requests Button */}
+          <button
+            onClick={() => setPendingPanelOpen(true)}
+            className="relative flex items-center gap-2 rounded-xl border border-amber-200/70 bg-gradient-to-b from-amber-50 to-orange-50/50 px-3.5 py-2 text-sm font-medium text-amber-700 hover:from-amber-100 hover:to-orange-100/60 shadow-sm shadow-amber-100/30 hover:shadow-md hover:shadow-amber-100/40 transition-all duration-200 active:scale-[0.97]"
+          >
+            <UserPlus className="h-4 w-4" />
+            <span>طلبات الارتباط</span>
+            {pendingStudents.length > 0 ? (
+              <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white shadow-sm shadow-amber-300/50">
+                {pendingStudents.length}
+              </span>
+            ) : (
+              <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-amber-200/80 px-1.5 text-[10px] font-bold text-amber-600">
+                0
+              </span>
+            )}
+          </button>
           <div className="relative">
             <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
               value={studentSearch}
               onChange={(e) => setStudentSearch(e.target.value)}
-              placeholder="بحث عن طالب بالاسم أو البريد الإلكتروني..."
+              placeholder="بحث عن طالب..."
               className="w-full sm:w-48 rounded-lg border bg-background pr-10 pl-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-colors"
               dir="rtl"
             />
@@ -997,88 +1015,151 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
             className="flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700 whitespace-nowrap"
           >
             <Download className="h-4 w-4" />
-            تصدير الملخصات (Excel)
+            تصدير الملخصات
           </button>
         </div>
       </motion.div>
 
-      {/* Pending link requests */}
-      {pendingStudents.length > 0 && (
-        <motion.div variants={itemVariants}>
-          <div className="rounded-xl border border-amber-200 bg-amber-50/50 shadow-sm overflow-hidden">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-amber-200 p-4">
-              <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-100">
-                  <UserPlus className="h-4 w-4 text-amber-600" />
-                </div>
-                <h3 className="font-semibold text-amber-800">طلبات الارتباط المعلقة</h3>
-                <span className="rounded-full bg-amber-200 px-2 py-0.5 text-xs font-bold text-amber-800">
-                  {pendingStudents.length}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setConfirmAcceptAllOpen(true)}
-                  disabled={processingBulk}
-                  className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition-colors disabled:opacity-60"
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  قبول الكل
-                </button>
-                <button
-                  onClick={() => setConfirmRejectAllOpen(true)}
-                  disabled={processingBulk}
-                  className="flex items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100 transition-colors disabled:opacity-60"
-                >
-                  <XCircle className="h-3.5 w-3.5" />
-                  رفض الكل
-                </button>
-              </div>
-            </div>
-            <div className="divide-y divide-amber-100 max-h-80 overflow-y-auto custom-scrollbar">
-              {pendingStudents.map((student) => (
-                <div key={student.id} className="flex items-center justify-between p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 text-sm font-bold">
-                      {student.name.charAt(0)}
+      {/* ============================================================ */}
+      {/* Centered Modal for Pending Link Requests (same as subjects)  */}
+      {/* ============================================================ */}
+      <AnimatePresence>
+        {pendingPanelOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+            className="fixed inset-0 z-40 flex items-center justify-center p-4"
+          >
+            {/* Soft warm overlay */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.4 }}
+              className="absolute inset-0 bg-black/15 backdrop-blur-[3px]"
+              onClick={() => setPendingPanelOpen(false)}
+            />
+            {/* Modal */}
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.92, opacity: 0, y: 20 }}
+              transition={{ duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] }}
+              className="relative w-full max-w-md max-h-[85vh] flex flex-col rounded-3xl border border-border/50 bg-background shadow-2xl shadow-black/8 overflow-hidden"
+              dir="rtl"
+            >
+              {/* Modal Header - warm gradient */}
+              <div className="shrink-0 px-6 pt-6 pb-5 bg-gradient-to-b from-amber-50/60 via-emerald-50/30 to-transparent">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3.5">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-100 shadow-sm shadow-emerald-200/50">
+                      <UserPlus className="h-5 w-5 text-emerald-600" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-foreground">{student.name}</p>
-                      <p className="text-xs text-muted-foreground">{student.email}</p>
+                      <h3 className="text-lg font-bold text-foreground">طلبات الارتباط</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {pendingStudents.length > 0
+                          ? `${pendingStudents.length} طلب بانتظار المراجعة`
+                          : 'لا توجد طلبات معلقة حالياً'}
+                      </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleApproveStudent(student.id)}
-                      disabled={processingRequestId === student.id || processingBulk}
-                      className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition-colors disabled:opacity-60"
-                    >
-                      {processingRequestId === student.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                      )}
-                      قبول
-                    </button>
-                    <button
-                      onClick={() => handleRejectStudent(student.id)}
-                      disabled={processingRequestId === student.id || processingBulk}
-                      className="flex items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100 transition-colors disabled:opacity-60"
-                    >
-                      {processingRequestId === student.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <XCircle className="h-3.5 w-3.5" />
-                      )}
-                      رفض
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => setPendingPanelOpen(false)}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground hover:bg-white/60 hover:text-foreground transition-all duration-200"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
-              ))}
-            </div>
-          </div>
-        </motion.div>
-      )}
+                {/* Bulk actions */}
+                {pendingStudents.length > 1 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: 0.15 }}
+                    className="flex items-center gap-2.5 mt-5"
+                  >
+                    <button
+                      onClick={() => setConfirmAcceptAllOpen(true)}
+                      disabled={processingBulk}
+                      className="flex items-center gap-2 rounded-xl bg-emerald-600/90 px-4 py-2.5 text-xs font-semibold text-white shadow-sm shadow-emerald-200/50 hover:bg-emerald-600 hover:shadow-md hover:shadow-emerald-200/60 transition-all duration-200 disabled:opacity-50 disabled:shadow-none"
+                    >
+                      {processingBulk ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                      قبول الكل ({pendingStudents.length})
+                    </button>
+                    <button
+                      onClick={() => setConfirmRejectAllOpen(true)}
+                      disabled={processingBulk}
+                      className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-2.5 text-xs font-semibold text-rose-600 hover:bg-rose-100 hover:border-rose-300 transition-all duration-200 disabled:opacity-50"
+                    >
+                      {processingBulk ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                      رفض الكل
+                    </button>
+                  </motion.div>
+                )}
+              </div>
+              {/* Pending list */}
+              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+                {pendingStudents.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-50 mb-4">
+                      <UserPlus className="h-7 w-7 text-amber-300" />
+                    </div>
+                    <p className="text-sm font-medium text-muted-foreground">لا توجد طلبات معلقة</p>
+                    <p className="text-xs text-muted-foreground/70 mt-1">عندما يرسل طالب طلب ارتباط سيظهر هنا</p>
+                  </div>
+                ) : (
+                  pendingStudents.map((student) => (
+                    <motion.div
+                      key={student.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.25 }}
+                      className="flex items-center gap-3 rounded-2xl border border-border/40 bg-card/80 p-3.5 shadow-sm hover:shadow-md transition-all duration-200"
+                    >
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-100 to-orange-100 text-amber-700 text-sm font-bold shadow-sm shadow-amber-100/50">
+                        {student.name.charAt(0)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-foreground truncate">{student.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{student.email}</p>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={() => handleApproveStudent(student.id)}
+                          disabled={processingRequestId === student.id || processingBulk}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-all duration-200 active:scale-90"
+                          title="قبول"
+                        >
+                          {processingRequestId === student.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="h-4 w-4" />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleRejectStudent(student.id)}
+                          disabled={processingRequestId === student.id || processingBulk}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-500 hover:bg-rose-100 hover:border-rose-300 disabled:opacity-50 transition-all duration-200 active:scale-90"
+                          title="رفض"
+                        >
+                          {processingRequestId === student.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <XCircle className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                    </motion.div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Accept All Confirmation Dialog */}
       <AnimatePresence>
@@ -1087,42 +1168,40 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onClick={() => { if (!processingBulk) setConfirmAcceptAllOpen(false); }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
+              initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-sm rounded-2xl border bg-background shadow-xl p-6"
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', duration: 0.4 }}
+              className="relative w-full max-w-sm rounded-2xl border bg-background shadow-2xl p-6"
               dir="rtl"
             >
-              <div className="flex items-center gap-3 mb-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+              <div className="flex flex-col items-center text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 mb-4">
+                  <CheckCircle2 className="h-7 w-7 text-amber-600" />
                 </div>
-                <h3 className="text-lg font-bold text-foreground">قبول جميع الطلبات</h3>
-              </div>
-              <p className="text-sm text-muted-foreground mb-6">
-                هل أنت متأكد من قبول جميع طلبات الارتباط المعلقة ({pendingStudents.length} طلب)؟
-              </p>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleAcceptAll}
-                  disabled={processingBulk}
-                  className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60 transition-colors"
-                >
-                  {processingBulk ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  قبول الكل
-                </button>
-                <button
-                  onClick={() => setConfirmAcceptAllOpen(false)}
-                  disabled={processingBulk}
-                  className="rounded-lg border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted disabled:opacity-60 transition-colors"
-                >
-                  إلغاء
-                </button>
+                <h3 className="text-lg font-bold text-foreground mb-2">قبول جميع الطلبات</h3>
+                <p className="text-sm text-muted-foreground mb-6">
+                  هل أنت متأكد من قبول جميع طلبات الارتباط المعلقة ({pendingStudents.length} طلب)؟
+                </p>
+                <div className="flex items-center gap-3 w-full">
+                  <button
+                    onClick={handleAcceptAll}
+                    disabled={processingBulk}
+                    className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60 transition-colors"
+                  >
+                    {processingBulk ? <Loader2 className="h-4 w-4 animate-spin inline-block" /> : `قبول الكل (${pendingStudents.length})`}
+                  </button>
+                  <button
+                    onClick={() => setConfirmAcceptAllOpen(false)}
+                    disabled={processingBulk}
+                    className="flex-1 rounded-xl border px-4 py-2.5 text-sm font-semibold text-muted-foreground hover:bg-muted disabled:opacity-60 transition-colors"
+                  >
+                    إلغاء
+                  </button>
+                </div>
               </div>
             </motion.div>
           </motion.div>
@@ -1136,42 +1215,40 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onClick={() => { if (!processingBulk) setConfirmRejectAllOpen(false); }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
+              initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-sm rounded-2xl border bg-background shadow-xl p-6"
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', duration: 0.4 }}
+              className="relative w-full max-w-sm rounded-2xl border bg-background shadow-2xl p-6"
               dir="rtl"
             >
-              <div className="flex items-center gap-3 mb-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-100">
-                  <XCircle className="h-5 w-5 text-rose-600" />
+              <div className="flex flex-col items-center text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-rose-100 mb-4">
+                  <AlertTriangle className="h-7 w-7 text-rose-600" />
                 </div>
-                <h3 className="text-lg font-bold text-foreground">رفض جميع الطلبات</h3>
-              </div>
-              <p className="text-sm text-muted-foreground mb-6">
-                هل أنت متأكد من رفض جميع طلبات الارتباط المعلقة ({pendingStudents.length} طلب)؟
-              </p>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleRejectAll}
-                  disabled={processingBulk}
-                  className="flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-60 transition-colors"
-                >
-                  {processingBulk ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  رفض الكل
-                </button>
-                <button
-                  onClick={() => setConfirmRejectAllOpen(false)}
-                  disabled={processingBulk}
-                  className="rounded-lg border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted disabled:opacity-60 transition-colors"
-                >
-                  إلغاء
-                </button>
+                <h3 className="text-lg font-bold text-foreground mb-2">رفض جميع الطلبات</h3>
+                <p className="text-sm text-muted-foreground mb-6">
+                  هل أنت متأكد من رفض جميع طلبات الارتباط المعلقة ({pendingStudents.length} طلب)؟ لا يمكن التراجع عن هذا الإجراء.
+                </p>
+                <div className="flex items-center gap-3 w-full">
+                  <button
+                    onClick={handleRejectAll}
+                    disabled={processingBulk}
+                    className="flex-1 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-rose-700 disabled:opacity-60 transition-colors"
+                  >
+                    {processingBulk ? <Loader2 className="h-4 w-4 animate-spin inline-block" /> : `رفض الكل (${pendingStudents.length})`}
+                  </button>
+                  <button
+                    onClick={() => setConfirmRejectAllOpen(false)}
+                    disabled={processingBulk}
+                    className="flex-1 rounded-xl border px-4 py-2.5 text-sm font-semibold text-muted-foreground hover:bg-muted disabled:opacity-60 transition-colors"
+                  >
+                    إلغاء
+                  </button>
+                </div>
               </div>
             </motion.div>
           </motion.div>
