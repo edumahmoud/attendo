@@ -429,6 +429,19 @@ export default function AssignmentsTab({ profile, role, subjectId }: Assignments
       if (error) toast.error('حدث خطأ أثناء إنشاء المهمة');
       else {
         toast.success('تم إنشاء المهمة بنجاح');
+        // Send notification to all students in the subject
+        try {
+          await fetch('/api/notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'assignment_created',
+              subjectId,
+              assignmentTitle: currentTitle,
+              teacherName: profile.name,
+            }),
+          });
+        } catch { /* notification failure is non-critical */ }
         setCreateOpen(false);
         setNewTitle('');
         setNewDesc('');
@@ -626,6 +639,20 @@ export default function AssignmentsTab({ profile, role, subjectId }: Assignments
       if (error) toast.error('حدث خطأ أثناء التسليم');
       else {
         toast.success('تم تسليم المهمة بنجاح');
+        // Send notification to teacher
+        try {
+          await fetch('/api/notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'assignment_submitted',
+              assignmentId: selectedAssignment.id,
+              teacherId: selectedAssignment.teacher_id,
+              studentName: profile.name,
+              assignmentTitle: selectedAssignment.title,
+            }),
+          });
+        } catch { /* notification failure is non-critical */ }
         setSubmitContent('');
         setSubmitFile(null);
         setSelectedExistingFile(null);
@@ -663,6 +690,24 @@ export default function AssignmentsTab({ profile, role, subjectId }: Assignments
       if (error) toast.error('حدث خطأ أثناء حفظ الدرجة');
       else {
         toast.success('تم حفظ الدرجة');
+        // Send notification to the student
+        const gradedSubmission = submissions.find((s) => s.id === submissionId);
+        if (gradedSubmission && selectedAssignment) {
+          try {
+            await fetch('/api/notify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'assignment_graded',
+                studentId: gradedSubmission.student_id,
+                assignmentTitle: selectedAssignment.title,
+                score: scoreVal,
+                maxScore: selectedAssignment.max_score,
+                teacherName: profile.name,
+              }),
+            });
+          } catch { /* notification failure is non-critical */ }
+        }
         setGradingId(null);
         setGradeScore('');
         setGradeFeedback('');

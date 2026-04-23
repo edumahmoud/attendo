@@ -518,6 +518,19 @@ export default function AssignmentsSection({ profile, role }: AssignmentsSection
         toast.error('حدث خطأ أثناء إنشاء المهمة');
       } else {
         toast.success('تم إنشاء المهمة بنجاح');
+        // Send notification to all students in the subject
+        try {
+          await fetch('/api/notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'assignment_created',
+              subjectId: newSubjectId,
+              assignmentTitle: title,
+              teacherName: profile.name,
+            }),
+          });
+        } catch { /* notification failure is non-critical */ }
         setCreateOpen(false);
         setNewTitle('');
         setNewSubjectId('');
@@ -647,6 +660,24 @@ export default function AssignmentsSection({ profile, role }: AssignmentsSection
       if (error) toast.error('حدث خطأ أثناء حفظ الدرجة');
       else {
         toast.success('تم حفظ الدرجة بنجاح');
+        // Send notification to the student
+        const gradedSubmission = submissions.find((s) => s.id === submissionId);
+        if (gradedSubmission && selectedAssignment) {
+          try {
+            await fetch('/api/notify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'assignment_graded',
+                studentId: gradedSubmission.student_id,
+                assignmentTitle: selectedAssignment.title,
+                score: scoreVal,
+                maxScore: selectedAssignment.max_score,
+                teacherName: profile.name,
+              }),
+            });
+          } catch { /* notification failure is non-critical */ }
+        }
         setGradingSubmissionId(null);
         setGradeScore('');
         setGradeFeedback('');
@@ -738,6 +769,20 @@ export default function AssignmentsSection({ profile, role }: AssignmentsSection
         toast.error('حدث خطأ أثناء تسليم المهمة');
       } else {
         toast.success('تم تسليم المهمة بنجاح');
+        // Send notification to teacher
+        try {
+          await fetch('/api/notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'assignment_submitted',
+              assignmentId: selectedAssignment.id,
+              teacherId: selectedAssignment.teacher_id,
+              studentName: profile.name,
+              assignmentTitle: selectedAssignment.title,
+            }),
+          });
+        } catch { /* notification failure is non-critical */ }
         setSubmitContent('');
         setSubmitFile(null);
         setSelectedExistingFile(null);

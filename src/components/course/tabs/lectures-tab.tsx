@@ -562,6 +562,21 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
       }
 
       toast.success(location ? 'تم بدء تسجيل الحضور مع تحديد الموقع' : 'تم بدء تسجيل الحضور');
+      // Send notification to all students in the subject
+      try {
+        const lectureTitle = lectures.find((l) => l.id === lectureId)?.title || '';
+        await fetch('/api/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'attendance_started',
+            subjectId,
+            subjectName: subject.name,
+            lectureTitle,
+            teacherName: profile.name,
+          }),
+        });
+      } catch { /* notification failure is non-critical */ }
       fetchLectures();
     } catch { toast.error('حدث خطأ غير متوقع'); }
     finally { setStartingAttendance(null); }

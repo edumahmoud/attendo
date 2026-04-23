@@ -640,6 +640,22 @@ export default function AttendanceSection({ profile, role }: AttendanceSectionPr
       } else {
         toast.success('تم بدء جلسة الحضور بنجاح');
         setActiveSession(data as AttendanceSession);
+        // Send notification to all students in the subject
+        try {
+          const subjectName = subjects.find((s) => s.id === selectedSubjectId)?.name || '';
+          const lectureTitle = lectures.find((l) => l.id === selectedLectureId)?.title || '';
+          await fetch('/api/notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'attendance_started',
+              subjectId: selectedSubjectId,
+              subjectName,
+              lectureTitle,
+              teacherName: profile.name,
+            }),
+          });
+        } catch { /* notification failure is non-critical */ }
       }
     } catch {
       toast.error('حدث خطأ غير متوقع');

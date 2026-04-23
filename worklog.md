@@ -838,3 +838,25 @@ Stage Summary:
 - **Multi-teacher UX improved**: Students see all teachers, co-teachers can leave courses, edit/delete restricted to owners
 - **Admin reports enhanced**: 8 stat cards (was 4), added quizzes/lectures/assignments metrics, improved active users tracking
 - **FULL_SETUP.sql updated**: Includes subject_teachers table and co-teacher RLS policies
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Implement 5 notification triggers for assignments, attendance, and notes
+
+Work Log:
+- Created `/api/notify/route.ts` - server-side API endpoint using `supabaseServer` (service role key) to bypass RLS when inserting notifications for other users
+- Supports 5 actions: assignment_created, assignment_submitted, assignment_graded, attendance_started, public_note_created
+- Each action fetches required data server-side (e.g., student IDs for bulk notifications) and inserts into `notifications` table
+- Added notification calls in `assignments-tab.tsx`: create, submit, grade
+- Added notification calls in `assignments-section.tsx` (dashboard): create, submit, grade
+- Added notification calls in `attendance-section.tsx`: start session
+- Added notification calls in `lectures-tab.tsx`: start attendance
+- Added notification calls in `notes-tab.tsx`: create public note (only for new notes, not edits)
+- All notification calls are non-blocking and fail silently to not disrupt the main operation
+- Lint check passes with no errors
+
+Stage Summary:
+- 5 notification triggers implemented across 5 client components + 1 API route
+- Notification types used: 'assignment', 'grade', 'attendance', 'system'
+- API route at `/api/notify` handles all notification dispatching with service role key

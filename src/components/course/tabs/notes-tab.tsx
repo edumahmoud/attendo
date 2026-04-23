@@ -343,6 +343,22 @@ export default function NotesTab({ profile, role, subjectId, teacherName }: Note
         if (error) toast.error('حدث خطأ أثناء حفظ الملاحظة');
         else {
           toast.success(noteVisibility === 'public' ? 'تم نشر الملاحظة للطلاب' : 'تم حفظ الملاحظة كمسودة');
+          // Send notification to all students for public notes only
+          if (noteVisibility === 'public' && !editingNoteId) {
+            try {
+              const preview = content.length > 50 ? content.substring(0, 50) + '...' : content;
+              await fetch('/api/notify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'public_note_created',
+                  subjectId,
+                  notePreview: preview,
+                  teacherName: profile.name,
+                }),
+              });
+            } catch { /* notification failure is non-critical */ }
+          }
         }
       }
       setNoteContent('');
