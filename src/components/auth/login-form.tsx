@@ -86,7 +86,7 @@ export default function LoginForm({ onSwitchToRegister, onForgotPassword }: Logi
   };
 
   return (
-    <div dir="rtl" className="w-full max-w-md mx-auto">
+    <div dir="rtl" className="w-full max-w-md mx-auto flex flex-col h-full sm:h-auto">
       {/* Configuration Warning */}
       {!isSupabaseConfigured && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
@@ -99,26 +99,26 @@ export default function LoginForm({ onSwitchToRegister, onForgotPassword }: Logi
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
       >
-        <Card className="border-0 shadow-2xl bg-white/95 backdrop-blur-sm">
-          <CardHeader className="text-center pb-2">
+        <Card className="border-0 shadow-2xl bg-white/95 backdrop-blur-sm flex-1 sm:flex-none flex flex-col sm:block">
+          <CardHeader className="text-center pb-1 pt-3 sm:pt-6 sm:pb-2 px-4 sm:px-6">
             <motion.div
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
-              className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg"
+              className="mx-auto mb-2 sm:mb-4 flex h-12 w-12 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg"
             >
               <GraduationCap className="h-8 w-8 text-white" />
             </motion.div>
-            <CardTitle className="text-2xl font-bold text-gray-900">
+            <CardTitle className="text-xl sm:text-2xl font-bold text-gray-900">
               مرحباً بك في أتيندو
             </CardTitle>
-            <CardDescription className="text-gray-500 mt-2">
+            <CardDescription className="text-gray-500 mt-1 sm:mt-2 text-xs sm:text-sm">
               سجّل دخولك للمتابعة إلى منصتك التعليمية
             </CardDescription>
           </CardHeader>
 
-          <CardContent className="pt-4">
-            <form onSubmit={handleSubmit} className="space-y-5">
+          <CardContent className="pt-2 sm:pt-4 px-4 sm:px-6 pb-4 sm:pb-6">
+            <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-5">
               {/* Email Field */}
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
@@ -126,7 +126,7 @@ export default function LoginForm({ onSwitchToRegister, onForgotPassword }: Logi
                 transition={{ delay: 0.3 }}
                 className="space-y-2"
               >
-                <Label htmlFor="email" className="text-gray-700 font-medium">
+                <Label htmlFor="email" className="text-gray-700 font-medium text-xs sm:text-sm">
                   البريد الإلكتروني
                 </Label>
                 <div className="relative">
@@ -136,7 +136,7 @@ export default function LoginForm({ onSwitchToRegister, onForgotPassword }: Logi
                     placeholder="أدخل بريدك الإلكتروني"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="pr-10 h-11 bg-gray-50/50 border-gray-200 focus:border-emerald-500 focus:ring-emerald-500/20 text-right"
+                    className="pr-10 h-10 sm:h-11 bg-gray-50/50 border-gray-200 focus:border-emerald-500 focus:ring-emerald-500/20 text-right"
                     disabled={isLoading}
                     dir="ltr"
                     maxLength={254}
@@ -152,7 +152,7 @@ export default function LoginForm({ onSwitchToRegister, onForgotPassword }: Logi
                 transition={{ delay: 0.4 }}
                 className="space-y-2"
               >
-                <Label htmlFor="password" className="text-gray-700 font-medium">
+                <Label htmlFor="password" className="text-gray-700 font-medium text-xs sm:text-sm">
                   كلمة المرور
                 </Label>
                 <div className="relative">
@@ -162,7 +162,7 @@ export default function LoginForm({ onSwitchToRegister, onForgotPassword }: Logi
                     placeholder="أدخل كلمة المرور"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="pr-10 pl-10 h-11 bg-gray-50/50 border-gray-200 focus:border-emerald-500 focus:ring-emerald-500/20 text-right"
+                    className="pr-10 pl-10 h-10 sm:h-11 bg-gray-50/50 border-gray-200 focus:border-emerald-500 focus:ring-emerald-500/20 text-right"
                     disabled={isLoading}
                     dir="ltr"
                   />
@@ -228,7 +228,7 @@ export default function LoginForm({ onSwitchToRegister, onForgotPassword }: Logi
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.6 }}
-              className="relative my-6"
+              className="relative my-3 sm:my-6"
             >
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-gray-200" />
@@ -283,7 +283,7 @@ export default function LoginForm({ onSwitchToRegister, onForgotPassword }: Logi
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.8 }}
-                className="mt-6 text-center"
+                className="mt-3 sm:mt-6 text-center"
               >
                 <p className="text-sm text-gray-500">
                   ليس لديك حساب؟{' '}

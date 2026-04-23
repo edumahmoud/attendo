@@ -94,13 +94,13 @@ export default function AppHeader({
 
   return (
     <header className="fixed top-0 right-0 left-0 z-40 h-14 sm:h-16 border-b bg-background/95 backdrop-blur-md shadow-sm" dir="rtl">
-      <div className="flex h-full items-center justify-between px-3 sm:px-5">
+      <div className="flex h-full items-center justify-between px-2 sm:px-5">
         {/* ── Right side: Logo + App name ── */}
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1">
           {/* Sidebar toggle */}
           <button
             onClick={onToggleSidebar}
-            className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted/60 active:bg-muted/80 hover:text-foreground transition-colors touch-manipulation"
             aria-label={sidebarCollapsed ? 'فتح القائمة' : 'إغلاق القائمة'}
           >
             <svg
@@ -128,12 +128,12 @@ export default function AppHeader({
             أتيندو
           </h1>
 
-          {/* Section label on mobile */}
+          {/* Section label - hidden on very small screens */}
           <ActiveSectionLabel role={userRole} />
         </div>
 
         {/* ── Left side: Notifications + User ── */}
-        <div className="flex items-center gap-1 sm:gap-2">
+        <div className="flex items-center gap-0.5 sm:gap-2 shrink-0">
           {/* Notification Bell */}
           <NotificationBell />
 
@@ -142,7 +142,7 @@ export default function AppHeader({
             <button
               ref={buttonRef}
               onClick={() => setDropdownOpen(!dropdownOpen)}
-              className="flex items-center gap-2 sm:gap-2.5 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 hover:bg-muted/50 transition-colors min-w-0"
+              className="flex items-center gap-1.5 sm:gap-2.5 rounded-lg px-1.5 sm:px-3 py-1.5 sm:py-2 hover:bg-muted/50 active:bg-muted/80 transition-colors min-w-0 touch-manipulation"
             >
               {/* Avatar + Name — clicking opens profile */}
               <div
@@ -150,19 +150,23 @@ export default function AppHeader({
                 tabIndex={0}
                 onClick={(e) => { e.stopPropagation(); openProfile(userId); }}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openProfile(userId); } }}
-                className="flex items-center gap-2 sm:gap-2.5 rounded-lg px-1 py-0.5 -mx-1 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors group/profile min-w-0 cursor-pointer"
+                className="hidden sm:flex items-center gap-2 sm:gap-2.5 rounded-lg px-1 py-0.5 -mx-1 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors group/profile min-w-0 cursor-pointer"
               >
                 <div className="flex flex-col items-end min-w-0">
-                  <span className="text-xs sm:text-sm font-semibold text-foreground truncate max-w-[80px] sm:max-w-[140px] group-hover/profile:text-emerald-600 transition-colors">
+                  <span className="text-sm font-semibold text-foreground truncate max-w-[140px] group-hover/profile:text-emerald-600 transition-colors">
                     {userName}
                   </span>
-                  <span className="text-[10px] sm:text-xs text-emerald-600 font-medium">
+                  <span className="text-xs text-emerald-600 font-medium">
                     {roleLabel}
                   </span>
                 </div>
                 <UserAvatar name={userName} avatarUrl={avatarUrl} size="sm" />
               </div>
-              <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`} />
+              {/* Mobile: Just avatar */}
+              <div className="sm:hidden">
+                <UserAvatar name={userName} avatarUrl={avatarUrl} size="sm" />
+              </div>
+              <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform duration-200 hidden sm:block ${dropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {/* Dropdown menu */}
@@ -174,7 +178,7 @@ export default function AppHeader({
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -8, scale: 0.95 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute left-0 top-full mt-2 w-52 rounded-xl border bg-background shadow-lg overflow-hidden z-50"
+                  className="absolute left-0 top-full mt-2 w-56 rounded-xl border bg-background shadow-lg overflow-hidden z-50"
                   dir="rtl"
                 >
                   {/* User info in dropdown */}
@@ -189,7 +193,7 @@ export default function AppHeader({
                         setDropdownOpen(false);
                         onOpenSettings();
                       }}
-                      className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted/50 transition-colors"
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted/50 active:bg-muted/80 transition-colors"
                     >
                       <Settings className="h-4 w-4 text-muted-foreground" />
                       الإعدادات
@@ -199,7 +203,7 @@ export default function AppHeader({
                         setDropdownOpen(false);
                         onSignOut();
                       }}
-                      className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-rose-600 hover:bg-rose-50 transition-colors"
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-rose-600 hover:bg-rose-50 active:bg-rose-100 transition-colors"
                     >
                       <LogOut className="h-4 w-4" />
                       تسجيل الخروج
@@ -240,10 +244,6 @@ function ActiveSectionLabel({ role }: { role: 'student' | 'teacher' | 'admin' | 
     <>
       <span className="hidden sm:inline text-muted-foreground/40 mx-1">·</span>
       <span className="hidden sm:inline text-xs sm:text-sm font-medium text-muted-foreground truncate">
-        {label}
-      </span>
-      <span className="sm:hidden text-muted-foreground/40 mx-0.5">·</span>
-      <span className="sm:hidden text-[11px] font-medium text-muted-foreground truncate">
         {label}
       </span>
     </>

@@ -340,3 +340,53 @@
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
+
+/* ─── Mobile App-like Experience ─── */
+@layer base {
+  /* Prevent text size adjustment on orientation change (iOS) */
+  html {
+    -webkit-text-size-adjust: 100%;
+    -moz-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  /* Touch action optimization */
+  button, a, [role="button"], input, select, textarea {
+    touch-action: manipulation;
+  }
+
+  /* Safe area insets for modern phones */
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Prevent iOS bounce scroll on fixed elements */
+  body {
+    overscroll-behavior-y: none;
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Better tap highlight on mobile */
+  @media (hover: none) and (pointer: coarse) {
+    * {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Remove hover effects on touch devices */
+    button:hover, a:hover, [role="button"]:hover {
+      background-color: inherit;
+    }
+
+    /* Use active states instead */
+    button:active, a:active, [role="button"]:active {
+      opacity: 0.7;
+    }
+  }
+}

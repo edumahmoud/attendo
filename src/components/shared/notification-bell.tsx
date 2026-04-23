@@ -73,10 +73,12 @@ export default function NotificationBell() {
     if (isOpen && buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
       const gap = 8; // mt-2
-      const maxW = Math.min(320, window.innerWidth - 32); // cap to viewport width with 16px margin each side
+      const isMobile = window.innerWidth < 640;
+      const maxW = isMobile ? window.innerWidth - 16 : Math.min(360, window.innerWidth - 32);
 
       // In RTL: align right edge of dropdown with right edge of button
-      const right = Math.max(0, window.innerWidth - rect.right);
+      // On mobile, center the dropdown
+      const right = isMobile ? 8 : Math.max(0, window.innerWidth - rect.right);
       const top = rect.bottom + gap;
 
       setDropdownStyle({
@@ -85,6 +87,7 @@ export default function NotificationBell() {
         right: `${right}px`,
         width: `${maxW}px`,
         zIndex: 9999,
+        maxHeight: isMobile ? 'calc(100vh - 80px)' : undefined,
       });
     }
   }, [isOpen]);
@@ -258,7 +261,7 @@ export default function NotificationBell() {
       <button
         ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
-        className="relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+        className="relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted/50 active:bg-muted/80 hover:text-foreground transition-colors touch-manipulation"
         aria-label="الإشعارات"
       >
         <Bell className="h-5 w-5" />

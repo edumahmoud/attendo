@@ -47,26 +47,26 @@ export default function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordForm
   };
 
   return (
-    <div dir="rtl" className="w-full max-w-md mx-auto">
+    <div dir="rtl" className="w-full max-w-md mx-auto flex flex-col h-full sm:h-auto">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
       >
-        <Card className="border-0 shadow-2xl bg-white/95 backdrop-blur-sm">
-          <CardHeader className="text-center pb-2">
+        <Card className="border-0 shadow-2xl bg-white/95 backdrop-blur-sm flex-1 sm:flex-none flex flex-col sm:block">
+          <CardHeader className="text-center pb-1 pt-3 sm:pt-6 sm:pb-2 px-4 sm:px-6">
             <motion.div
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
-              className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg"
+              className="mx-auto mb-2 sm:mb-4 flex h-12 w-12 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg"
             >
               <GraduationCap className="h-8 w-8 text-white" />
             </motion.div>
-            <CardTitle className="text-2xl font-bold text-gray-900">
+            <CardTitle className="text-xl sm:text-2xl font-bold text-gray-900">
               استعادة كلمة المرور
             </CardTitle>
-            <CardDescription className="text-gray-500 mt-2">
+            <CardDescription className="text-gray-500 mt-1 sm:mt-2 text-xs sm:text-sm">
               {emailSent 
                 ? 'تم إرسال رابط إعادة التعيين إلى بريدك الإلكتروني'
                 : 'أدخل بريدك الإلكتروني وسنرسل لك رابط إعادة التعيين'
@@ -74,14 +74,14 @@ export default function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordForm
             </CardDescription>
           </CardHeader>
 
-          <CardContent className="pt-4">
+          <CardContent className="pt-2 sm:pt-4 px-4 sm:px-6 pb-4 sm:pb-6">
             {emailSent ? (
               <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="text-center space-y-4"
+                className="text-center space-y-3 sm:space-y-4"
               >
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 mx-auto">
+                <div className="flex h-12 w-12 sm:h-16 sm:w-16 items-center justify-center rounded-full bg-emerald-100 mx-auto">
                   <CheckCircle2 className="h-8 w-8 text-emerald-600" />
                 </div>
                 <p className="text-sm text-gray-600">
@@ -100,14 +100,14 @@ export default function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordForm
                 </Button>
               </motion.div>
             ) : (
-              <form onSubmit={handleSubmit} className="space-y-5">
+              <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-5">
                 <motion.div
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.3 }}
                   className="space-y-2"
                 >
-                  <Label htmlFor="reset-email" className="text-gray-700 font-medium">
+                  <Label htmlFor="reset-email" className="text-gray-700 font-medium text-xs sm:text-sm">
                     البريد الإلكتروني
                   </Label>
                   <div className="relative">
@@ -117,7 +117,7 @@ export default function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordForm
                       placeholder="أدخل بريدك الإلكتروني المسجل"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="pr-10 h-11 bg-gray-50/50 border-gray-200 focus:border-emerald-500 focus:ring-emerald-500/20 text-right"
+                      className="pr-10 h-10 sm:h-11 bg-gray-50/50 border-gray-200 focus:border-emerald-500 focus:ring-emerald-500/20 text-right"
                       disabled={isLoading}
                       dir="ltr"
                       maxLength={254}

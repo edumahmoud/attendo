@@ -16,13 +16,14 @@ import AdminDashboard from '@/components/admin/admin-dashboard';
 import QuizView from '@/components/shared/quiz-view';
 import SummaryView from '@/components/shared/summary-view';
 import UserProfilePage from '@/components/shared/user-profile-page';
+import AppHeader from '@/components/shared/app-header';
 import SetupWizard from '@/components/setup/setup-wizard';
 
 type AuthMode = 'login' | 'register' | 'forgot-password';
 
 function HomeContent() {
   const { user, loading, initialized, initialize, signOut, sessionKickedMessage } = useAuthStore();
-  const { currentPage, viewingQuizId, viewingSummaryId, profileUserId, setCurrentPage, reset: resetAppStore } = useAppStore();
+  const { currentPage, viewingQuizId, viewingSummaryId, profileUserId, setCurrentPage, reset: resetAppStore, sidebarOpen, setSidebarOpen } = useAppStore();
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const searchParams = useSearchParams();
 
@@ -160,7 +161,7 @@ function HomeContent() {
   // Auth pages (login / register)
   if (!user || currentPage === 'auth') {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-emerald-600 to-teal-700" dir="rtl">
+      <div className="min-h-screen flex flex-col justify-start pt-6 px-4 pb-4 sm:flex sm:items-center sm:justify-center sm:p-4 bg-gradient-to-br from-emerald-600 to-teal-700" dir="rtl">
         {/* Background decoration */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute -top-40 -right-40 w-80 h-80 bg-white/5 rounded-full blur-3xl" />
@@ -196,7 +197,7 @@ function HomeContent() {
         </div>
 
         {/* Auth form with mode toggle */}
-        <div className="relative z-10 w-full max-w-md">
+        <div className="relative z-10 w-full max-w-md mx-auto">
           <AnimatePresence mode="wait">
             {authMode === 'login' ? (
               <motion.div
@@ -266,16 +267,40 @@ function HomeContent() {
   // Profile view
   if (currentPage === 'profile' && profileUserId) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-teal-50" dir="rtl">
-        <UserProfilePage
-          userId={profileUserId}
-          currentUser={user}
-          onBack={() => setCurrentPage(
-            user.role === 'superadmin' || user.role === 'admin' ? 'admin-dashboard' :
-            user.role === 'teacher' ? 'teacher-dashboard' : 'student-dashboard'
-          )}
-        />
-      </div>
+      <SocketProvider>
+        <div className="min-h-screen bg-background" dir="rtl">
+          <AppHeader
+            userName={user.name}
+            userId={user.id}
+            userRole={user.role as 'student' | 'teacher' | 'admin'}
+            userGender={user.gender}
+            titleId={user.title_id}
+            avatarUrl={user.avatar_url}
+            onSignOut={() => {
+              destroySocket();
+              resetAppStore();
+              setCurrentPage('auth');
+              signOut();
+            }}
+            onOpenSettings={() => setCurrentPage(
+              user.role === 'superadmin' || user.role === 'admin' ? 'admin-dashboard' :
+              user.role === 'teacher' ? 'teacher-dashboard' : 'student-dashboard'
+            )}
+            onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+            sidebarCollapsed={!sidebarOpen}
+          />
+          <main className="pt-14 sm:pt-16">
+            <UserProfilePage
+              userId={profileUserId}
+              currentUser={user}
+              onBack={() => setCurrentPage(
+                user.role === 'superadmin' || user.role === 'admin' ? 'admin-dashboard' :
+                user.role === 'teacher' ? 'teacher-dashboard' : 'student-dashboard'
+              )}
+            />
+          </main>
+        </div>
+      </SocketProvider>
     );
   }
 
