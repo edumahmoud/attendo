@@ -401,8 +401,10 @@ export default function AdminDashboard({ profile, onSignOut }: AdminDashboardPro
         headers: { 'Authorization': `Bearer ${token}` },
       });
       const result = await res.json();
-      if (result.success && result.data) {
+      if (result.success && Array.isArray(result.data)) {
         setBannedUsers(result.data as BannedUser[]);
+      } else {
+        setBannedUsers([]);
       }
     } catch {
       // ignore
