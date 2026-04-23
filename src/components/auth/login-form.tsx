@@ -9,8 +9,9 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useAuthStore } from '@/stores/auth-store';
 import { useAppStore } from '@/stores/app-store';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { AlertTriangle } from 'lucide-react';
 
 interface LoginFormProps {
   onSwitchToRegister?: () => void;
@@ -134,6 +135,23 @@ export default function LoginForm({ onSwitchToRegister }: LoginFormProps) {
           </CardHeader>
 
           <CardContent className="pt-4">
+            {/* Supabase Configuration Warning */}
+            {!isSupabaseConfigured && (
+              <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-right">
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">Supabase غير مضبوط</p>
+                  <p className="text-xs text-amber-700 mt-1">
+                    يرجى إضافة المتغيرات التالية في ملف <code className="bg-amber-100 px-1 rounded">.env.local</code>:
+                  </p>
+                  <div className="mt-2 rounded bg-amber-100/80 p-2 text-left" dir="ltr">
+                    <code className="text-xs text-amber-900 block">NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co</code>
+                    <code className="text-xs text-amber-900 block mt-1">NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key</code>
+                    <code className="text-xs text-amber-900 block mt-1">SUPABASE_SERVICE_ROLE_KEY=your-service-role-key</code>
+                  </div>
+                </div>
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="space-y-5">
               {/* Email Field */}
               <motion.div

@@ -1,6 +1,27 @@
 import { create } from 'zustand';
 import type { UserProfile } from '@/lib/types';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+
+// --- Session Storage Helpers ---
+
+const SESSION_KEY = 'attendo_session';
+
+function storeSession(session: { access_token: string; refresh_token?: string; expires_at?: number } | null) {
+  if (session) {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  } else {
+    localStorage.removeItem(SESSION_KEY);
+  }
+}
+
+function getStoredSession(): { access_token: string; refresh_token?: string; expires_at?: number } | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 
 // --- Input Sanitization Helpers ---
 
@@ -49,7 +70,7 @@ function checkRateLimit(): { allowed: boolean; retryAfterMs: number } {
 
 // --- Safe Error Messages ---
 
-/** Map Supabase error messages to user-friendly Arabic messages */
+/** Map error messages to user-friendly Arabic messages */
 function getSafeErrorMessage(error: unknown): string {
   if (error && typeof error === 'object') {
     const err = error as { message?: string; code?: string; error_code?: string; status?: number; msg?: string };
@@ -74,22 +95,18 @@ function getSafeErrorMessage(error: unknown): string {
     if (msg.includes('network') || msg.includes('failed to fetch') || msg.includes('networkerror')) {
       return 'خطأ في الاتصال بالشبكة';
     }
-    // RLS policy violation - most common cause of registration errors
     if (msg.includes('row-level security') || msg.includes('rls') || code === '42501') {
       return 'خطأ في إنشاء الملف الشخصي. يرجى المحاولة مرة أخرى أو التواصل مع الدعم';
     }
-    // Duplicate key error (trigger already created the profile)
     if (msg.includes('duplicate key') || msg.includes('unique constraint') || code === '23505') {
       return 'الحساب موجود بالفعل. يرجى تسجيل الدخول';
     }
-    // Signup disabled or email provider disabled
-    if (msg.includes('signup is disabled') || msg.includes('signups not allowed') || 
+    if (msg.includes('signup is disabled') || msg.includes('signups not allowed') ||
         msg.includes('email_provider_disabled') || msg.includes('email signups are disabled') ||
         code === 'email_provider_disabled') {
       return 'التسجيل بالبريد الإلكتروني غير مفعّل حالياً. يرجى التواصل مع المشرف أو تفعيل التسجيل من إعدادات Supabase';
     }
   }
-  // Generic message - don't leak internal details
   return 'حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى';
 }
 
@@ -97,7 +114,7 @@ interface AuthState {
   user: UserProfile | null;
   loading: boolean;
   initialized: boolean;
-  
+
   // Actions
   setUser: (user: UserProfile | null) => void;
   initialize: () => Promise<void>;
@@ -113,64 +130,86 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   loading: true,
   initialized: false,
-  
+
   setUser: (user) => set({ user, loading: false }),
-  
+
   initialize: async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session?.user) {
-        let { data: profile } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-        
-        if (!profile) {
-          // Profile doesn't exist - user may have been deleted
-          await supabase.auth.signOut();
-          set({ user: null, loading: false, initialized: true });
-          return;
+      // Try to get the stored session token
+      const storedSession = getStoredSession();
+
+      if (storedSession?.access_token) {
+        // Validate the token server-side
+        try {
+          const res = await fetch('/api/auth/session', {
+            headers: {
+              Authorization: `Bearer ${storedSession.access_token}`,
+            },
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            if (data.profile) {
+              // Also set the session on the Supabase client for RLS queries
+              try {
+                await supabase.auth.setSession({
+                  access_token: storedSession.access_token,
+                  refresh_token: storedSession.refresh_token || '',
+                });
+              } catch {
+                // Session set may fail but we can still use the profile
+              }
+              set({ user: data.profile as UserProfile, loading: false, initialized: true });
+              return;
+            }
+          }
+        } catch {
+          // API call failed, try Supabase client directly as fallback
         }
-        
-        if (profile) {
-          set({ user: profile as UserProfile, loading: false, initialized: true });
-        }
-      } else {
-        set({ user: null, loading: false, initialized: true });
       }
+
+      // Fallback: try Supabase client session
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (session?.user) {
+          // Store the session for future API calls
+          storeSession({
+            access_token: session.access_token,
+            refresh_token: session.refresh_token,
+            expires_at: session.expires_at,
+          });
+
+          const { data: profile } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+
+          if (profile) {
+            set({ user: profile as UserProfile, loading: false, initialized: true });
+            return;
+          }
+        }
+      } catch {
+        // Supabase client not available or not configured
+      }
+
+      // No valid session found
+      storeSession(null);
+      set({ user: null, loading: false, initialized: true });
     } catch {
       set({ user: null, loading: false, initialized: true });
     }
-    
-    // Listen for auth changes
-    supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        let { data: profile } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-        
-        if (!profile) {
-          // Profile doesn't exist - user may have been deleted
-          await supabase.auth.signOut();
-          set({ user: null, loading: false, initialized: true });
-          return;
-        }
-        
-        if (profile) {
-          set({ user: profile as UserProfile, loading: false });
-        }
-      } else if (event === 'SIGNED_OUT') {
-        set({ user: null, loading: false });
-      }
-    });
   },
-  
+
   signInWithEmail: async (email, password) => {
     try {
+      // Check if Supabase is configured
+      if (!isSupabaseConfigured) {
+        return { error: 'Supabase غير مضبوط. يرجى إضافة NEXT_PUBLIC_SUPABASE_URL و NEXT_PUBLIC_SUPABASE_ANON_KEY في ملف .env.local' };
+      }
+
       // Rate limiting check
       const { allowed, retryAfterMs } = checkRateLimit();
       if (!allowed) {
@@ -187,79 +226,58 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return { error: 'يرجى إدخال كلمة المرور' };
       }
 
-      const { error } = await supabase.auth.signInWithPassword({ email: sanitizedEmail, password });
-      if (error) return { error: getSafeErrorMessage(error) };
-      
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) return { error: 'فشل في الحصول على بيانات المستخدم' };
-      
-      let { data: profile } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authUser.id)
-        .single();
-      
-      if (profile) {
-        // Reset rate limit on successful login
-        signInRateLimit.attempts = 0;
-        set({ user: profile as UserProfile, loading: false });
-        return { error: null };
+      // Use server-side auth proxy
+      const res = await fetch('/api/auth/signin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: sanitizedEmail, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        return { error: data.error || 'البريد الإلكتروني أو كلمة المرور غير صحيحة' };
       }
-      
-      // Profile doesn't exist yet - try to create it
-      // This handles users who signed up but profile wasn't created (e.g. email confirmation flow)
-      const userName = authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'مستخدم';
-      const userRole = authUser.user_metadata?.role || 'pending';
-      
-      const { error: createError } = await supabase
-        .from('users')
-        .insert({
-          id: authUser.id,
-          email: authUser.email || sanitizedEmail,
-          name: userName,
-          role: userRole,
+
+      // Store the session
+      if (data.session) {
+        storeSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+          expires_at: data.session.expires_at,
         });
-      
-      if (createError) {
-        // If duplicate key, the profile was just created (race condition) - fetch it
-        const err = createError as { code?: string; message?: string };
-        if (err.code === '23505' || (err.message || '').includes('duplicate key')) {
-          const { data: retryProfile } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', authUser.id)
-            .single();
-          
-          if (retryProfile) {
-            signInRateLimit.attempts = 0;
-            set({ user: retryProfile as UserProfile, loading: false });
-            return { error: null };
-          }
+
+        // Set the session on the Supabase client for RLS queries
+        try {
+          await supabase.auth.setSession({
+            access_token: data.session.access_token,
+            refresh_token: data.session.refresh_token || '',
+          });
+        } catch {
+          // Non-critical - profile is already loaded
         }
-        return { error: 'لم يتم العثور على حساب. يرجى التسجيل أولاً.' };
       }
-      
-      // Fetch the newly created profile
-      const { data: newProfile } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authUser.id)
-        .single();
-      
-      if (newProfile) {
+
+      if (data.profile) {
         signInRateLimit.attempts = 0;
-        set({ user: newProfile as UserProfile, loading: false });
+        set({ user: data.profile as UserProfile, loading: false });
         return { error: null };
       }
-      
+
       return { error: 'لم يتم العثور على حساب. يرجى التسجيل أولاً.' };
-    } catch {
+    } catch (err) {
+      console.error('[Auth] signInWithEmail error:', err);
       return { error: 'حدث خطأ غير متوقع' };
     }
   },
-  
+
   signUpWithEmail: async (email, password, name, role, gender) => {
     try {
+      // Check if Supabase is configured
+      if (!isSupabaseConfigured) {
+        return { error: 'Supabase غير مضبوط. يرجى إضافة NEXT_PUBLIC_SUPABASE_URL و NEXT_PUBLIC_SUPABASE_ANON_KEY في ملف .env.local' };
+      }
+
       // Input validation & sanitization
       const sanitizedEmail = sanitizeInput(email).toLowerCase();
       const sanitizedName = sanitizeInput(name);
@@ -274,91 +292,55 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return { error: 'يجب أن تكون كلمة المرور 6 أحرف على الأقل' };
       }
 
-      const { data: signUpData, error: authError } = await supabase.auth.signUp({ 
-        email: sanitizedEmail, 
-        password,
-        options: {
-          data: { name: sanitizedName, role, ...(gender ? { gender } : {}) }
-        }
+      // Use server-side auth proxy
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: sanitizedEmail,
+          password,
+          name: sanitizedName,
+          role,
+          gender: gender || undefined,
+        }),
       });
-      
-      if (authError) return { error: getSafeErrorMessage(authError) };
 
-      // Check if email confirmation is required
-      // If signUpData.user exists but session is null, user needs to confirm email
-      const needsConfirmation = !!signUpData.user && !signUpData.session;
-      
-      if (needsConfirmation) {
-        // The auth trigger (if set up) will auto-create the profile.
-        // If no trigger, the profile will be created on first login.
-        return { error: null, needsConfirmation: true };
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        return { error: data.error || 'حدث خطأ أثناء التسجيل' };
       }
 
-      // Auto-confirmed: session is available immediately
-      const authUser = signUpData.user;
-      if (!authUser) return { error: 'فشل في إنشاء الحساب' };
-      
-      // Try to fetch existing profile first (may have been created by auth trigger)
-      let { data: profile } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authUser.id)
-        .single();
-      
-      if (profile) {
-        // Profile already exists (created by auth trigger)
-        set({ user: profile as UserProfile, loading: false });
+      if (data.profile) {
+        // Store session if available
+        if (data.session) {
+          storeSession({
+            access_token: data.session.access_token,
+            refresh_token: data.session.refresh_token,
+            expires_at: data.session.expires_at,
+          });
+
+          try {
+            await supabase.auth.setSession({
+              access_token: data.session.access_token,
+              refresh_token: data.session.refresh_token || '',
+            });
+          } catch {
+            // Non-critical
+          }
+        }
+
+        set({ user: data.profile as UserProfile, loading: false });
         return { error: null, needsConfirmation: false };
       }
 
-      // Profile doesn't exist yet - create it manually
-      // This handles the case where the auth trigger hasn't been set up
-      const { error: profileError } = await supabase
-        .from('users')
-        .insert({
-          id: authUser.id,
-          email: sanitizedEmail,
-          name: sanitizedName,
-          role,
-          ...(gender ? { gender } : {}),
-        });
-      
-      if (profileError) {
-        // If duplicate key error, the profile was created by the trigger
-        // after our select but before our insert - just fetch it
-        const err = profileError as { code?: string; message?: string };
-        if (err.code === '23505' || (err.message || '').includes('duplicate key')) {
-          const { data: retryProfile } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', authUser.id)
-            .single();
-          
-          if (retryProfile) {
-            set({ user: retryProfile as UserProfile, loading: false });
-            return { error: null, needsConfirmation: false };
-          }
-        }
-        return { error: getSafeErrorMessage(profileError) };
-      }
-      
-      // Fetch the created profile (with teacher_code if teacher)
-      const { data: newProfile } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authUser.id)
-        .single();
-      
-      if (newProfile) {
-        set({ user: newProfile as UserProfile, loading: false });
-      }
-      
-      return { error: null, needsConfirmation: false };
-    } catch {
+      return { error: null, needsConfirmation: data.needsConfirmation ?? false };
+    } catch (err) {
+      console.error('[Auth] signUpWithEmail error:', err);
       return { error: 'حدث خطأ غير متوقع أثناء التسجيل' };
     }
   },
-  
+
   signInWithGoogle: async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
@@ -367,24 +349,40 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           redirectTo: `${window.location.origin}`,
         },
       });
-      
+
       if (error) return { error: getSafeErrorMessage(error) };
       return { error: null };
     } catch {
       return { error: 'حدث خطأ غير متوقع' };
     }
   },
-  
+
   signOut: async () => {
     try {
-      // Clean up all active Supabase channels before signing out
-      // to prevent realtime events from re-triggering state updates
-      supabase.removeAllChannels();
-      
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error('[Auth] signOut error:', error);
-        // Still clear local state even if server signOut fails
+      // Notify server
+      const storedSession = getStoredSession();
+      if (storedSession?.access_token) {
+        try {
+          await fetch('/api/auth/signout', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${storedSession.access_token}`,
+            },
+          });
+        } catch {
+          // Ignore server signout errors
+        }
+      }
+
+      // Clean up local session
+      storeSession(null);
+
+      // Clean up Supabase channels
+      try {
+        supabase.removeAllChannels();
+        await supabase.auth.signOut();
+      } catch {
+        // Ignore
       }
     } catch (err) {
       console.error('[Auth] signOut exception:', err);
@@ -392,11 +390,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Always clear local state
     set({ user: null, loading: false });
   },
-  
+
   updateProfile: async (updates) => {
     const { user } = get();
     if (!user) return { error: 'لم يتم تسجيل الدخول' };
-    
+
     // Sanitize text fields in updates
     const sanitizedUpdates: Partial<UserProfile> = { ...updates };
     if (sanitizedUpdates.name) {
@@ -413,32 +411,62 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     try {
-      const { error } = await supabase
-        .from('users')
-        .update(sanitizedUpdates)
-        .eq('id', user.id);
-      
-      if (error) return { error: getSafeErrorMessage(error) };
-      
+      // Use server-side profile update to bypass RLS
+      const res = await fetch('/api/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, updates: sanitizedUpdates }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        return { error: data.error || 'حدث خطأ أثناء التحديث' };
+      }
+
       set({ user: { ...user, ...sanitizedUpdates } });
       return { error: null };
     } catch {
       return { error: 'حدث خطأ غير متوقع' };
     }
   },
-  
+
   refreshProfile: async () => {
     const { user } = get();
     if (!user) return;
-    
-    const { data: profile } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-    
-    if (profile) {
-      set({ user: profile as UserProfile });
+
+    try {
+      const storedSession = getStoredSession();
+      const headers: Record<string, string> = {};
+      if (storedSession?.access_token) {
+        headers['Authorization'] = `Bearer ${storedSession.access_token}`;
+      }
+
+      const res = await fetch('/api/auth/session', { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.profile) {
+          set({ user: data.profile as UserProfile });
+          return;
+        }
+      }
+    } catch {
+      // Fallback
+    }
+
+    // Fallback: try Supabase client directly
+    try {
+      const { data: profile } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (profile) {
+        set({ user: profile as UserProfile });
+      }
+    } catch {
+      // Ignore
     }
   },
 }));
