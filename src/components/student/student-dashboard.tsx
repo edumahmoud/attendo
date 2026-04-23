@@ -28,6 +28,8 @@ import {
   Unlink,
   Folder,
   TrendingUp,
+  XCircle,
+  AlertTriangle,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import AppSidebar from '@/components/shared/app-sidebar';
@@ -176,6 +178,14 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
 
   // ─── Cancel pending link request ───
   const [cancelingRequestId, setCancelingRequestId] = useState<string | null>(null);
+
+  // ─── Incoming teacher link requests (from notifications) ───
+  const [incomingLinkRequests, setIncomingLinkRequests] = useState<{ teacher: UserProfile; notificationId: string }[]>([]);
+  const [processingIncomingId, setProcessingIncomingId] = useState<string | null>(null);
+  const [processingIncomingBulk, setProcessingIncomingBulk] = useState(false);
+  const [confirmIncomingAcceptAllOpen, setConfirmIncomingAcceptAllOpen] = useState(false);
+  const [confirmIncomingRejectAllOpen, setConfirmIncomingRejectAllOpen] = useState(false);
+  const [incomingPanelOpen, setIncomingPanelOpen] = useState(false);
 
   // ─── Teacher detail modal ───
   const [selectedTeacher, setSelectedTeacher] = useState<UserProfile | null>(null);
@@ -344,13 +354,61 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
     }
   }, [profile.id]);
 
+  const fetchIncomingLinkRequests = useCallback(async () => {
+    // Fetch unread link_request notifications
+    const { data: notifs, error } = await supabase
+      .from('notifications')
+      .select('id, link, created_at')
+      .eq('user_id', profile.id)
+      .eq('type', 'link_request')
+      .eq('read', false)
+      .order('created_at', { ascending: false });
+
+    if (error || !notifs || notifs.length === 0) {
+      setIncomingLinkRequests([]);
+      return;
+    }
+
+    // Extract teacher IDs from link field (format: "link_request:TEACHER_ID")
+    const teacherEntries: { tid: string; nid: string }[] = [];
+    for (const n of notifs) {
+      const tid = n.link?.replace('link_request:', '');
+      if (tid) teacherEntries.push({ tid, nid: n.id });
+    }
+
+    if (teacherEntries.length === 0) {
+      setIncomingLinkRequests([]);
+      return;
+    }
+
+    // Fetch teacher profiles
+    const teacherIds = teacherEntries.map((e) => e.tid);
+    const { data: teachers, error: teachersError } = await supabase
+      .from('users')
+      .select('*')
+      .in('id', teacherIds);
+
+    if (teachersError || !teachers) {
+      setIncomingLinkRequests([]);
+      return;
+    }
+
+    const requests = teacherEntries.map((entry) => ({
+      teacher: (teachers as UserProfile[]).find((t) => t.id === entry.tid)!,
+      notificationId: entry.nid,
+    })).filter((r) => r.teacher);
+
+    setIncomingLinkRequests(requests);
+  }, [profile.id]);
+
   // Refresh teachers data when navigating to teachers section
   // This ensures pending/rejected link requests are always up-to-date
   useEffect(() => {
     if (activeSection === 'teachers') {
       fetchLinkedTeachers();
+      fetchIncomingLinkRequests();
     }
-  }, [activeSection, fetchLinkedTeachers]);
+  }, [activeSection, fetchLinkedTeachers, fetchIncomingLinkRequests]);
 
   const fetchFileCount = useCallback(async () => {
     const { count, error } = await supabase
@@ -365,9 +423,9 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
   // Load all data
   const fetchAllData = useCallback(async () => {
     setLoadingData(true);
-    await Promise.all([fetchSummaries(), fetchQuizzes(), fetchScores(), fetchLinkedTeachers(), fetchFileCount()]);
+    await Promise.all([fetchSummaries(), fetchQuizzes(), fetchScores(), fetchLinkedTeachers(), fetchIncomingLinkRequests(), fetchFileCount()]);
     setLoadingData(false);
-  }, [fetchSummaries, fetchQuizzes, fetchScores, fetchLinkedTeachers, fetchFileCount]);
+  }, [fetchSummaries, fetchQuizzes, fetchScores, fetchLinkedTeachers, fetchIncomingLinkRequests, fetchFileCount]);
 
   useEffect(() => {
     fetchAllData();
@@ -748,6 +806,122 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
       toast.error('حدث خطأ غير متوقع');
     } finally {
       setCancelingRequestId(null);
+    }
+  };
+
+  // -------------------------------------------------------
+  // Accept incoming teacher link request
+  // -------------------------------------------------------
+  const handleAcceptIncomingRequest = async (teacherId: string, notificationId: string) => {
+    setProcessingIncomingId(teacherId);
+    try {
+      const response = await fetch('/api/link-student-approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approve', teacherId, notificationId }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        toast.error(data.error || 'حدث خطأ أثناء قبول الطلب');
+      } else {
+        toast.success(data.message || 'تم قبول المعلم بنجاح');
+        fetchIncomingLinkRequests();
+        fetchLinkedTeachers();
+        fetchQuizzes();
+      }
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setProcessingIncomingId(null);
+    }
+  };
+
+  // -------------------------------------------------------
+  // Reject incoming teacher link request
+  // -------------------------------------------------------
+  const handleRejectIncomingRequest = async (teacherId: string, notificationId: string) => {
+    setProcessingIncomingId(teacherId);
+    try {
+      const response = await fetch('/api/link-student-approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reject', teacherId, notificationId }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        toast.error(data.error || 'حدث خطأ أثناء رفض الطلب');
+      } else {
+        toast.success(data.message || 'تم رفض الطلب');
+        fetchIncomingLinkRequests();
+        fetchLinkedTeachers();
+      }
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setProcessingIncomingId(null);
+    }
+  };
+
+  // -------------------------------------------------------
+  // Accept ALL incoming teacher link requests
+  // -------------------------------------------------------
+  const handleAcceptAllIncoming = async () => {
+    setProcessingIncomingBulk(true);
+    try {
+      const response = await fetch('/api/link-student-approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approveAll' }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        toast.error(data.error || 'حدث خطأ أثناء قبول جميع الطلبات');
+      } else {
+        toast.success(data.message || `تم قبول جميع الطلبات بنجاح`);
+        setConfirmIncomingAcceptAllOpen(false);
+        fetchIncomingLinkRequests();
+        fetchLinkedTeachers();
+        fetchQuizzes();
+      }
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setProcessingIncomingBulk(false);
+    }
+  };
+
+  // -------------------------------------------------------
+  // Reject ALL incoming teacher link requests
+  // -------------------------------------------------------
+  const handleRejectAllIncoming = async () => {
+    setProcessingIncomingBulk(true);
+    try {
+      const response = await fetch('/api/link-student-approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'rejectAll' }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        toast.error(data.error || 'حدث خطأ أثناء رفض جميع الطلبات');
+      } else {
+        toast.success(data.message || `تم رفض جميع الطلبات`);
+        setConfirmIncomingRejectAllOpen(false);
+        fetchIncomingLinkRequests();
+        fetchLinkedTeachers();
+      }
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setProcessingIncomingBulk(false);
     }
   };
 
@@ -1328,13 +1502,32 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
           <h2 className="text-2xl font-bold text-foreground">المعلمون</h2>
           <p className="text-muted-foreground mt-1">معلموك المسجلون في المنصة</p>
         </div>
-        <button
-          onClick={() => setLinkTeacherOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700"
-        >
-          <UserPlus className="h-4 w-4" />
-          الارتباط بمعلم جديد
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Incoming Link Requests Button */}
+          <button
+            onClick={() => setIncomingPanelOpen(true)}
+            className="relative flex items-center gap-2 rounded-xl border border-amber-200/70 bg-gradient-to-b from-amber-50 to-orange-50/50 px-3.5 py-2 text-sm font-medium text-amber-700 hover:from-amber-100 hover:to-orange-100/60 shadow-sm shadow-amber-100/30 hover:shadow-md hover:shadow-amber-100/40 transition-all duration-200 active:scale-[0.97]"
+          >
+            <UserPlus className="h-4 w-4" />
+            <span>طلبات واردة</span>
+            {incomingLinkRequests.length > 0 ? (
+              <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white shadow-sm shadow-amber-300/50">
+                {incomingLinkRequests.length}
+              </span>
+            ) : (
+              <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-amber-200/80 px-1.5 text-[10px] font-bold text-amber-600">
+                0
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setLinkTeacherOpen(true)}
+            className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700"
+          >
+            <UserPlus className="h-4 w-4" />
+            الارتباط بمعلم جديد
+          </button>
+        </div>
       </motion.div>
 
       {/* Empty state */}
@@ -1359,6 +1552,245 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
           </button>
         </motion.div>
       )}
+
+      {/* ============================================================ */}
+      {/* Centered Modal for Incoming Link Requests                     */}
+      {/* ============================================================ */}
+      <AnimatePresence>
+        {incomingPanelOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+            className="fixed inset-0 z-40 flex items-center justify-center p-4"
+          >
+            {/* Soft warm overlay */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.4 }}
+              className="absolute inset-0 bg-black/15 backdrop-blur-[3px]"
+              onClick={() => setIncomingPanelOpen(false)}
+            />
+            {/* Modal */}
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.92, opacity: 0, y: 20 }}
+              transition={{ duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] }}
+              className="relative w-full max-w-md max-h-[85vh] flex flex-col rounded-3xl border border-border/50 bg-background shadow-2xl shadow-black/8 overflow-hidden"
+              dir="rtl"
+            >
+              {/* Modal Header */}
+              <div className="shrink-0 px-6 pt-6 pb-5 bg-gradient-to-b from-amber-50/60 via-emerald-50/30 to-transparent">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3.5">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-100 to-orange-100 shadow-sm shadow-amber-200/50">
+                      <UserPlus className="h-5 w-5 text-amber-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-foreground">طلبات الارتباط الواردة</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {incomingLinkRequests.length > 0
+                          ? `${incomingLinkRequests.length} طلب بانتظار المراجعة`
+                          : 'لا توجد طلبات واردة حالياً'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIncomingPanelOpen(false)}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground hover:bg-white/60 hover:text-foreground transition-all duration-200"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                {/* Bulk actions */}
+                {incomingLinkRequests.length > 1 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: 0.15 }}
+                    className="flex items-center gap-2.5 mt-5"
+                  >
+                    <button
+                      onClick={() => setConfirmIncomingAcceptAllOpen(true)}
+                      disabled={processingIncomingBulk}
+                      className="flex items-center gap-2 rounded-xl bg-emerald-600/90 px-4 py-2.5 text-xs font-semibold text-white shadow-sm shadow-emerald-200/50 hover:bg-emerald-600 hover:shadow-md hover:shadow-emerald-200/60 transition-all duration-200 disabled:opacity-50 disabled:shadow-none"
+                    >
+                      {processingIncomingBulk ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                      قبول الكل ({incomingLinkRequests.length})
+                    </button>
+                    <button
+                      onClick={() => setConfirmIncomingRejectAllOpen(true)}
+                      disabled={processingIncomingBulk}
+                      className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-2.5 text-xs font-semibold text-rose-600 hover:bg-rose-100 hover:border-rose-300 transition-all duration-200 disabled:opacity-50"
+                    >
+                      {processingIncomingBulk ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                      رفض الكل
+                    </button>
+                  </motion.div>
+                )}
+              </div>
+              {/* Incoming requests list */}
+              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+                {incomingLinkRequests.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-50 mb-4">
+                      <UserPlus className="h-7 w-7 text-amber-300" />
+                    </div>
+                    <p className="text-sm font-medium text-muted-foreground">لا توجد طلبات واردة</p>
+                    <p className="text-xs text-muted-foreground/70 mt-1">عندما يرسل معلم طلب ارتباط سيظهر هنا</p>
+                  </div>
+                ) : (
+                  incomingLinkRequests.map(({ teacher, notificationId }) => (
+                    <motion.div
+                      key={teacher.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.25 }}
+                      className="flex items-center gap-3 rounded-2xl border border-border/40 bg-card/80 p-3.5 shadow-sm hover:shadow-md transition-all duration-200"
+                    >
+                      {teacher.avatar_url ? (
+                        <img src={teacher.avatar_url} alt={teacher.name} className="h-11 w-11 shrink-0 rounded-full object-cover border-2 border-amber-200" />
+                      ) : (
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-100 to-orange-100 text-amber-700 text-sm font-bold shadow-sm shadow-amber-100/50">
+                          {teacher.name.charAt(0)}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-foreground truncate">{teacher.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{teacher.email}</p>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={() => handleAcceptIncomingRequest(teacher.id, notificationId)}
+                          disabled={processingIncomingId === teacher.id || processingIncomingBulk}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-all duration-200 active:scale-90"
+                          title="قبول"
+                        >
+                          {processingIncomingId === teacher.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="h-4 w-4" />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleRejectIncomingRequest(teacher.id, notificationId)}
+                          disabled={processingIncomingId === teacher.id || processingIncomingBulk}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-500 hover:bg-rose-100 hover:border-rose-300 disabled:opacity-50 transition-all duration-200 active:scale-90"
+                          title="رفض"
+                        >
+                          {processingIncomingId === teacher.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <XCircle className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                    </motion.div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Accept All Incoming Confirmation Dialog */}
+      <AnimatePresence>
+        {confirmIncomingAcceptAllOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', duration: 0.4 }}
+              className="relative w-full max-w-sm rounded-2xl border bg-background shadow-2xl p-6"
+              dir="rtl"
+            >
+              <div className="flex flex-col items-center text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 mb-4">
+                  <CheckCircle2 className="h-7 w-7 text-amber-600" />
+                </div>
+                <h3 className="text-lg font-bold text-foreground mb-2">قبول جميع الطلبات</h3>
+                <p className="text-sm text-muted-foreground mb-6">
+                  هل أنت متأكد من قبول جميع طلبات الارتباط الواردة ({incomingLinkRequests.length} طلب)؟
+                </p>
+                <div className="flex items-center gap-3 w-full">
+                  <button
+                    onClick={handleAcceptAllIncoming}
+                    disabled={processingIncomingBulk}
+                    className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60 transition-colors"
+                  >
+                    {processingIncomingBulk ? <Loader2 className="h-4 w-4 animate-spin inline-block" /> : `قبول الكل (${incomingLinkRequests.length})`}
+                  </button>
+                  <button
+                    onClick={() => setConfirmIncomingAcceptAllOpen(false)}
+                    disabled={processingIncomingBulk}
+                    className="flex-1 rounded-xl border px-4 py-2.5 text-sm font-semibold text-muted-foreground hover:bg-muted disabled:opacity-60 transition-colors"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Reject All Incoming Confirmation Dialog */}
+      <AnimatePresence>
+        {confirmIncomingRejectAllOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', duration: 0.4 }}
+              className="relative w-full max-w-sm rounded-2xl border bg-background shadow-2xl p-6"
+              dir="rtl"
+            >
+              <div className="flex flex-col items-center text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-rose-100 mb-4">
+                  <AlertTriangle className="h-7 w-7 text-rose-600" />
+                </div>
+                <h3 className="text-lg font-bold text-foreground mb-2">رفض جميع الطلبات</h3>
+                <p className="text-sm text-muted-foreground mb-6">
+                  هل أنت متأكد من رفض جميع طلبات الارتباط الواردة ({incomingLinkRequests.length} طلب)؟ لا يمكن التراجع عن هذا الإجراء.
+                </p>
+                <div className="flex items-center gap-3 w-full">
+                  <button
+                    onClick={handleRejectAllIncoming}
+                    disabled={processingIncomingBulk}
+                    className="flex-1 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-rose-700 disabled:opacity-60 transition-colors"
+                  >
+                    {processingIncomingBulk ? <Loader2 className="h-4 w-4 animate-spin inline-block" /> : `رفض الكل (${incomingLinkRequests.length})`}
+                  </button>
+                  <button
+                    onClick={() => setConfirmIncomingRejectAllOpen(false)}
+                    disabled={processingIncomingBulk}
+                    className="flex-1 rounded-xl border px-4 py-2.5 text-sm font-semibold text-muted-foreground hover:bg-muted disabled:opacity-60 transition-colors"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Pending requests */}
       {pendingLinkTeachers.length > 0 && (

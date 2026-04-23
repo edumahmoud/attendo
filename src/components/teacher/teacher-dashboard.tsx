@@ -163,6 +163,13 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
   const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
   const [pendingPanelOpen, setPendingPanelOpen] = useState(false);
 
+  // ─── Send link request to student ───
+  const [sendRequestOpen, setSendRequestOpen] = useState(false);
+  const [studentEmailInput, setStudentEmailInput] = useState('');
+  const [studentPreview, setStudentPreview] = useState<UserProfile | null>(null);
+  const [searchingStudent, setSearchingStudent] = useState(false);
+  const [sendingRequest, setSendingRequest] = useState(false);
+
   // ─── Teacher subjects ───
   const [teacherSubjects, setTeacherSubjects] = useState<Subject[]>([]);
   const [teacherFilesCount, setTeacherFilesCount] = useState(0);
@@ -670,6 +677,78 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
   };
 
   // -------------------------------------------------------
+  // Search student by email for link request
+  // -------------------------------------------------------
+  const handleSearchStudent = async () => {
+    const email = studentEmailInput.trim().toLowerCase();
+    if (!email) {
+      toast.error('يرجى إدخال البريد الإلكتروني للطالب');
+      return;
+    }
+
+    setSearchingStudent(true);
+    setStudentPreview(null);
+
+    try {
+      const response = await fetch('/api/link-teacher-send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentEmail: email, action: 'search' }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        toast.error(data.error || 'لم يتم العثور على طالب بهذا البريد');
+        return;
+      }
+
+      setStudentPreview(data.student);
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setSearchingStudent(false);
+    }
+  };
+
+  // -------------------------------------------------------
+  // Confirm send link request to student
+  // -------------------------------------------------------
+  const handleConfirmSendRequest = async () => {
+    if (!studentPreview) return;
+
+    setSendingRequest(true);
+
+    try {
+      const response = await fetch('/api/link-teacher-send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentEmail: studentEmailInput.trim().toLowerCase() }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        toast.error(data.error || 'حدث خطأ أثناء إرسال طلب الارتباط');
+        return;
+      }
+
+      toast.success(data.message || 'تم إرسال طلب الارتباط بنجاح');
+      setStudentEmailInput('');
+      setStudentPreview(null);
+      setSendRequestOpen(false);
+
+      if (data.autoApproved) {
+        fetchStudents();
+      }
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setSendingRequest(false);
+    }
+  };
+
+  // -------------------------------------------------------
   // Remove student from linked list (uses server-side API)
   // -------------------------------------------------------
   const handleRemoveStudent = async (studentId: string) => {
@@ -974,6 +1053,13 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
               </span>
             )}
           </button>
+          <button
+            onClick={() => setSendRequestOpen(true)}
+            className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
+          >
+            <UserPlus className="h-4 w-4" />
+            إرسال طلب لطالب
+          </button>
           <div className="relative">
             <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -1250,6 +1336,144 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
                   </button>
                 </div>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ============================================================ */}
+      {/* Send Link Request to Student Modal                            */}
+      {/* ============================================================ */}
+      <AnimatePresence>
+        {sendRequestOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+            onClick={() => {
+              if (!sendingRequest) {
+                setSendRequestOpen(false);
+                setStudentPreview(null);
+                setStudentEmailInput('');
+              }
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              transition={{ type: 'spring', duration: 0.4 }}
+              className="relative w-full max-w-sm rounded-2xl border bg-background shadow-2xl p-6"
+              dir="rtl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => {
+                  if (!sendingRequest) {
+                    setSendRequestOpen(false);
+                    setStudentPreview(null);
+                    setStudentEmailInput('');
+                  }
+                }}
+                className="absolute left-4 top-4 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <div className="flex flex-col items-center text-center mb-6">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 mb-3">
+                  <UserPlus className="h-6 w-6 text-emerald-600" />
+                </div>
+                <h3 className="text-lg font-bold text-foreground">إرسال طلب ارتباط</h3>
+                <p className="text-xs text-muted-foreground mt-1">أرسل طلب ربط لطالب عبر بريده الإلكتروني</p>
+              </div>
+
+              {!studentPreview ? (
+                /* Step 1: Enter email */
+                <div className="space-y-4">
+                  <div className="relative">
+                    <Mail className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type="email"
+                      value={studentEmailInput}
+                      onChange={(e) => setStudentEmailInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSearchStudent();
+                      }}
+                      placeholder="البريد الإلكتروني للطالب"
+                      className="w-full rounded-lg border bg-background pr-10 pl-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-colors"
+                      dir="ltr"
+                    />
+                  </div>
+                  <button
+                    onClick={handleSearchStudent}
+                    disabled={searchingStudent || !studentEmailInput.trim()}
+                    className="w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60 transition-colors"
+                  >
+                    {searchingStudent ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        جاري البحث...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="h-4 w-4" />
+                        بحث عن الطالب
+                      </>
+                    )}
+                  </button>
+                </div>
+              ) : (
+                /* Step 2: Preview and confirm */
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 rounded-xl border bg-card p-3">
+                    {studentPreview.avatar_url ? (
+                      <img src={studentPreview.avatar_url} alt={studentPreview.name} className="h-10 w-10 rounded-full object-cover border-2 border-emerald-200" />
+                    ) : (
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold text-sm border-2 border-emerald-200">
+                        {studentPreview.name.charAt(0)}
+                      </div>
+                    )}
+                    <div className="text-right min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-foreground truncate">{studentPreview.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{studentPreview.email}</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    سيتم إرسال إشعار للطالب ويمكنه قبول أو رفض طلب الارتباط
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleConfirmSendRequest}
+                      disabled={sendingRequest}
+                      className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60 transition-colors"
+                    >
+                      {sendingRequest ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          جاري الإرسال...
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus className="h-4 w-4" />
+                          إرسال الطلب
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setStudentPreview(null);
+                        setStudentEmailInput('');
+                      }}
+                      disabled={sendingRequest}
+                      className="rounded-lg border px-4 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted transition-colors"
+                    >
+                      رجوع
+                    </button>
+                  </div>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}
