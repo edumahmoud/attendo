@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GraduationCap, Loader2, BookOpen, BrainCircuit, Users, Shield } from 'lucide-react';
@@ -16,6 +16,7 @@ import AdminDashboard from '@/components/admin/admin-dashboard';
 import QuizView from '@/components/shared/quiz-view';
 import SummaryView from '@/components/shared/summary-view';
 import UserProfilePage from '@/components/shared/user-profile-page';
+import SetupWizard from '@/components/setup/setup-wizard';
 
 type AuthMode = 'login' | 'register' | 'forgot-password';
 
@@ -24,6 +25,38 @@ function HomeContent() {
   const { currentPage, viewingQuizId, viewingSummaryId, profileUserId, setCurrentPage, reset: resetAppStore } = useAppStore();
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const searchParams = useSearchParams();
+
+  // ─── Setup Wizard state ───
+  const [setupCheckDone, setSetupCheckDone] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState(false);
+
+  // Check if the system needs initial setup (no institution data)
+  const checkSetupStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/setup');
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.initialized) {
+          setNeedsSetup(true);
+        }
+      }
+    } catch {
+      // If the API fails, assume setup is not needed (don't block)
+    }
+    setSetupCheckDone(true);
+  }, []);
+
+  // Handle setup wizard completion
+  const handleSetupComplete = useCallback(() => {
+    setNeedsSetup(false);
+    // Re-initialize auth to pick up the new admin account
+    initialize();
+  }, [initialize]);
+
+  // Check setup status on mount (before auth)
+  useEffect(() => {
+    checkSetupStatus();
+  }, [checkSetupStatus]);
 
   // Handle OAuth callback parameters
   useEffect(() => {
@@ -96,7 +129,7 @@ function HomeContent() {
   }, [user]);
 
   // Loading state
-  if (loading || !initialized) {
+  if (loading || !initialized || !setupCheckDone) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-teal-50" dir="rtl">
         <motion.div
@@ -117,6 +150,11 @@ function HomeContent() {
         </motion.div>
       </div>
     );
+  }
+
+  // Setup Wizard — shown when system is not initialized (no institution data)
+  if (needsSetup && !user) {
+    return <SetupWizard onComplete={handleSetupComplete} />;
   }
 
   // Auth pages (login / register)

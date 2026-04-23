@@ -860,3 +860,31 @@ Stage Summary:
 - 5 notification triggers implemented across 5 client components + 1 API route
 - Notification types used: 'assignment', 'grade', 'attendance', 'system'
 - API route at `/api/notify` handles all notification dispatching with service role key
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Implement Setup Wizard for first-time system initialization
+
+Work Log:
+- Created `/api/setup/route.ts` - API endpoint that checks if institution_settings table exists and saves institution data. Uses `supabaseServer` (service role key) to bypass RLS.
+- GET endpoint checks `institution_settings` table existence and returns `{ initialized, tableExists, institution? }`
+- POST endpoint supports `save_institution` action - tries RPC `setup_initialize_system` first, falls back to direct insert/update
+- Created `supabase/migrations/v13_institution_settings.sql` - migration SQL that creates the `institution_settings` table, RLS policies, updated_at trigger, and `setup_initialize_system()` RPC function
+- Created `src/components/setup/setup-wizard.tsx` - multi-step wizard with:
+  - Step 0: DB Migration (shown only when table doesn't exist) - displays SQL for user to run in Supabase SQL Editor
+  - Step 1: Admin Account creation (name, email, password) - no Google sign-in option
+  - Step 2: Institution Info (name, name_en, type selector center/school/university, country, city, address, phone, email, website, academic_year, description)
+  - Step 3: Completion screen with summary
+- Modified `src/app/page.tsx` - added setup check logic:
+  - Checks `/api/setup` on mount to determine if system needs initialization
+  - Shows SetupWizard instead of login page when `needsSetup && !user`
+  - After wizard completes, re-initializes auth to pick up the admin account
+- Added proper error handling for PGRST205 (PostgREST schema cache error when table not found)
+- Lint passes with no errors
+
+Stage Summary:
+- Setup wizard fully implemented with 3-4 steps depending on table existence
+- Institution types supported: center (سنتر تعليمي), school (مدرسة), university (جامعة)
+- Migration SQL needs to be run manually in Supabase SQL Editor before the wizard can save data
+- The wizard auto-detects if the table exists and shows migration step only when needed
