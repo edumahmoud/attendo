@@ -17,10 +17,10 @@ export async function GET(request: NextRequest) {
         const userId = searchParams.get('userId');
         if (!userId) return NextResponse.json({ error: 'userId required' }, { status: 400 });
 
-        // Get all conversations the user is part of
+        // Step 1: Get all conversation IDs the user is part of
         const { data: participations, error: pError } = await supabaseServer
           .from('conversation_participants')
-          .select('conversation_id, last_read_at, conversations:id!conversation_id(id, type, subject_id, title, created_at, updated_at)')
+          .select('conversation_id, last_read_at')
           .eq('user_id', userId);
 
         if (pError) {
@@ -28,35 +28,56 @@ export async function GET(request: NextRequest) {
           return NextResponse.json({ error: pError.message }, { status: 500 });
         }
 
-        // For each conversation, get last message and unread count
+        if (!participations || participations.length === 0) {
+          return NextResponse.json({ conversations: [] });
+        }
+
+        // Step 2: Get all conversation details for those IDs
+        const convIds = participations.map((p: { conversation_id: string }) => p.conversation_id);
+        const lastReadMap = new Map<string, string | null>();
+        participations.forEach((p: { conversation_id: string; last_read_at: string | null }) => {
+          lastReadMap.set(p.conversation_id, p.last_read_at);
+        });
+
+        const { data: convsData, error: convsError } = await supabaseServer
+          .from('conversations')
+          .select('id, type, subject_id, title, created_at, updated_at')
+          .in('id', convIds);
+
+        if (convsError) {
+          console.error('[Chat API] Conversations fetch error:', convsError);
+          return NextResponse.json({ error: convsError.message }, { status: 500 });
+        }
+
+        // Step 3: For each conversation, get last message and unread count
         const conversations = await Promise.all(
-          (participations || []).map(async (p: Record<string, unknown>) => {
-            const conv = p.conversations as Record<string, unknown>;
-            if (!conv) return null;
+          (convsData || []).map(async (conv: Record<string, unknown>) => {
+            const convId = conv.id as string;
+            const lastReadAt = lastReadMap.get(convId) || null;
 
             // Get last message
             const { data: lastMsgs } = await supabaseServer
               .from('messages')
               .select('id, sender_id, content, created_at')
-              .eq('conversation_id', conv.id)
+              .eq('conversation_id', convId)
               .order('created_at', { ascending: false })
               .limit(1);
 
             // Get unread count
             let unreadCount = 0;
-            if (p.last_read_at) {
+            if (lastReadAt) {
               const { count } = await supabaseServer
                 .from('messages')
                 .select('id', { count: 'exact', head: true })
-                .eq('conversation_id', conv.id)
-                .gt('created_at', p.last_read_at as string)
+                .eq('conversation_id', convId)
+                .gt('created_at', lastReadAt)
                 .neq('sender_id', userId);
               unreadCount = count || 0;
             } else {
               const { count } = await supabaseServer
                 .from('messages')
                 .select('id', { count: 'exact', head: true })
-                .eq('conversation_id', conv.id)
+                .eq('conversation_id', convId)
                 .neq('sender_id', userId);
               unreadCount = count || 0;
             }
@@ -66,20 +87,30 @@ export async function GET(request: NextRequest) {
             if (conv.type === 'individual') {
               const { data: otherParts } = await supabaseServer
                 .from('conversation_participants')
-                .select('user_id, users!user_id(id, name, email, avatar_url, title_id, gender, role)')
-                .eq('conversation_id', conv.id as string)
-                .neq('user_id', userId);
-              otherParticipant = (otherParts as Record<string, unknown>[])?.[0]?.users || null;
+                .select('user_id')
+                .eq('conversation_id', convId)
+                .neq('user_id', userId)
+                .limit(1);
+
+              if (otherParts && otherParts.length > 0) {
+                const otherUserId = (otherParts[0] as { user_id: string }).user_id;
+                const { data: otherUser } = await supabaseServer
+                  .from('users')
+                  .select('id, name, email, avatar_url, title_id, gender, role')
+                  .eq('id', otherUserId)
+                  .single();
+                otherParticipant = otherUser || null;
+              }
             }
 
             return {
-              id: conv.id,
+              id: convId,
               type: conv.type,
               subjectId: conv.subject_id,
               title: conv.title,
               createdAt: conv.created_at,
               updatedAt: conv.updated_at,
-              lastReadAt: p.last_read_at,
+              lastReadAt,
               lastMessage: lastMsgs?.[0] || null,
               unreadCount,
               otherParticipant,
@@ -101,21 +132,32 @@ export async function GET(request: NextRequest) {
 
         if (!conversationId) return NextResponse.json({ error: 'conversationId required' }, { status: 400 });
 
-        let query = supabaseServer
+        // Fetch messages
+        const { data: messages, error } = await supabaseServer
           .from('messages')
-          .select('id, sender_id, content, created_at, is_deleted, is_edited, sender:users!sender_id(id, name, email, avatar_url, title_id, gender, role)')
+          .select('id, sender_id, content, created_at, is_deleted, is_edited')
           .eq('conversation_id', conversationId)
           .order('created_at', { ascending: false })
           .limit(limit);
-
-        const { data: messages, error } = await query;
 
         if (error) {
           console.error('[Chat API] Messages error:', error);
           return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
-        return NextResponse.json({ messages: (messages || []).reverse() });
+        // Enrich with sender info
+        const enrichedMessages = await Promise.all(
+          (messages || []).map(async (msg: Record<string, unknown>) => {
+            const { data: sender } = await supabaseServer
+              .from('users')
+              .select('id, name, email, avatar_url, title_id, gender, role')
+              .eq('id', msg.sender_id as string)
+              .single();
+            return { ...msg, sender: sender || null };
+          })
+        );
+
+        return NextResponse.json({ messages: enrichedMessages.reverse() });
       }
 
       case 'group-conversation': {
@@ -136,12 +178,24 @@ export async function GET(request: NextRequest) {
         const conversationId = searchParams.get('conversationId');
         if (!conversationId) return NextResponse.json({ error: 'conversationId required' }, { status: 400 });
 
-        const { data: participants } = await supabaseServer
+        const { data: parts } = await supabaseServer
           .from('conversation_participants')
-          .select('user_id, joined_at, last_read_at, users!user_id(id, name, email, avatar_url, title_id, gender, role)')
+          .select('user_id, joined_at, last_read_at')
           .eq('conversation_id', conversationId);
 
-        return NextResponse.json({ participants: participants || [] });
+        // Enrich with user info
+        const participants = await Promise.all(
+          (parts || []).map(async (p: Record<string, unknown>) => {
+            const { data: user } = await supabaseServer
+              .from('users')
+              .select('id, name, email, avatar_url, title_id, gender, role')
+              .eq('id', p.user_id as string)
+              .single();
+            return { ...p, users: user || null };
+          })
+        );
+
+        return NextResponse.json({ participants });
       }
 
       case 'search-users': {
@@ -154,19 +208,40 @@ export async function GET(request: NextRequest) {
         // Search users enrolled in the same subject
         const { data: enrollments } = await supabaseServer
           .from('subject_students')
-          .select('student_id, users!student_id(id, name, email, avatar_url, title_id, gender, role)')
+          .select('student_id')
           .eq('subject_id', subjectId);
 
-        // Also include the teacher
+        // Get student details
+        const studentIds = (enrollments || []).map((e: { student_id: string }) => e.student_id);
+        let studentUsers: Record<string, unknown>[] = [];
+        if (studentIds.length > 0) {
+          const { data } = await supabaseServer
+            .from('users')
+            .select('id, name, email, avatar_url, title_id, gender, role')
+            .in('id', studentIds);
+          studentUsers = (data || []) as Record<string, unknown>[];
+        }
+
+        // Also get the teacher
         const { data: subjectData } = await supabaseServer
           .from('subjects')
-          .select('teacher_id, users!teacher_id(id, name, email, avatar_url, title_id, gender, role)')
+          .select('teacher_id')
           .eq('id', subjectId)
           .single();
 
+        let teacherUser: Record<string, unknown> | null = null;
+        if (subjectData?.teacher_id) {
+          const { data } = await supabaseServer
+            .from('users')
+            .select('id, name, email, avatar_url, title_id, gender, role')
+            .eq('id', subjectData.teacher_id)
+            .single();
+          teacherUser = data as Record<string, unknown> || null;
+        }
+
         const allUsers = [
-          ...(enrollments || []).map((e: Record<string, unknown>) => e.users),
-          subjectData?.users,
+          ...studentUsers,
+          teacherUser,
         ]
           .filter(Boolean)
           .filter((u: Record<string, unknown>) => u.id !== userId)
@@ -243,19 +318,24 @@ export async function POST(request: NextRequest) {
         // Check if conversation already exists between these two users
         const { data: existingParts } = await supabaseServer
           .from('conversation_participants')
-          .select('conversation_id, conversations!conversation_id(id, type, subject_id)')
+          .select('conversation_id')
           .eq('user_id', userId1);
 
-        // Find individual conversations
-        const individualConvs = (existingParts || []).filter((p: Record<string, unknown>) => {
-          const conv = p.conversations as Record<string, unknown>;
-          return conv?.type === 'individual';
-        });
+        // Get the actual conversation details for those IDs
+        const existingConvIds = (existingParts || []).map((p: { conversation_id: string }) => p.conversation_id);
+        let individualConvs: Record<string, unknown>[] = [];
+        if (existingConvIds.length > 0) {
+          const { data } = await supabaseServer
+            .from('conversations')
+            .select('id, type, subject_id')
+            .in('id', existingConvIds)
+            .eq('type', 'individual');
+          individualConvs = (data || []) as Record<string, unknown>[];
+        }
 
         // Check each individual conversation to see if userId2 is also a participant
-        for (const p of individualConvs) {
-          const convId = p.conversation_id as string;
-          const conv = p.conversations as Record<string, unknown>;
+        for (const conv of individualConvs) {
+          const convId = conv.id as string;
 
           const { data: otherPart } = await supabaseServer
             .from('conversation_participants')
