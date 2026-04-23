@@ -158,6 +158,7 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
 
   // ─── Cancel / Leave loading state ───
   const [leavingSubjectId, setLeavingSubjectId] = useState<string | null>(null);
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState<{ subjectId: string; subjectName: string } | null>(null);
 
   // ─── Refs for stable real-time callbacks ───
   const fetchSubjectsRef = useRef<(() => Promise<void>) | undefined>(undefined);
@@ -467,6 +468,12 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
   // Cancel / Dismiss / Leave subject (student only)
   // -------------------------------------------------------
   const handleSubjectAction = async (subjectId: string, action: 'cancel' | 'dismiss' | 'leave') => {
+    // For 'leave', show confirmation first
+    if (action === 'leave') {
+      const subjectObj = subjects.find(s => s.id === subjectId);
+      setLeaveConfirmOpen({ subjectId, subjectName: subjectObj?.name || 'المقرر' });
+      return;
+    }
     setLeavingSubjectId(subjectId);
     try {
       const headers = await getAuthHeaders();
@@ -474,6 +481,32 @@ export default function SubjectsSection({ profile, role }: SubjectsSectionProps)
         method: 'POST',
         headers,
         body: JSON.stringify({ action, subjectId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(data.message);
+        fetchSubjects();
+      } else {
+        toast.error(data.error || 'حدث خطأ');
+      }
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setLeavingSubjectId(null);
+    }
+  };
+
+  const handleConfirmLeave = async () => {
+    if (!leaveConfirmOpen) return;
+    const subjectId = leaveConfirmOpen.subjectId;
+    setLeaveConfirmOpen(null);
+    setLeavingSubjectId(subjectId);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/leave-subject', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action: 'leave', subjectId }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
