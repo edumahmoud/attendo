@@ -822,6 +822,27 @@ export default function TeacherDashboard({ profile, onSignOut }: TeacherDashboar
   };
 
   const handleDeleteAccount = async () => {
+    // Get the current session token for authorization
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error('لا يوجد جلسة نشطة');
+    }
+
+    // Call the server-side API to delete the account from the database
+    const res = await fetch('/api/auth/delete-account', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'فشل في حذف الحساب');
+    }
+
+    // Sign out after successful deletion
     await authSignOut();
   };
 
