@@ -170,19 +170,50 @@ export async function POST(request: NextRequest) {
 
       // ─── 6) Teacher creates a new lecture → notify all students ───
       case 'lecture_created': {
-        const { subjectId, lectureTitle, teacherName, lectureDate } = body;
+        const { subjectId, lectureTitle, teacherName, lectureDate, lectureTime } = body;
         if (!subjectId) {
           return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
         }
 
         const studentIds = await getStudentIds(subjectId);
         const titleText = lectureTitle ? ` "${lectureTitle}"` : '';
-        const dateText = lectureDate ? ` (${lectureDate})` : '';
+
+        // Format date and time together
+        let dateTimeText = '';
+        if (lectureDate && lectureTime) {
+          // Format the date nicely in Arabic and append the time
+          try {
+            const formattedDate = new Date(lectureDate).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' });
+            const [h, m] = lectureTime.split(':').map(Number);
+            const period = h >= 12 ? 'م' : 'ص';
+            const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+            const timeStr = `${hour12}:${m.toString().padStart(2, '0')} ${period}`;
+            dateTimeText = ` (${formattedDate} - ${timeStr})`;
+          } catch {
+            dateTimeText = ` (${lectureDate} - ${lectureTime})`;
+          }
+        } else if (lectureDate) {
+          try {
+            const formattedDate = new Date(lectureDate).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' });
+            dateTimeText = ` (${formattedDate})`;
+          } catch {
+            dateTimeText = ` (${lectureDate})`;
+          }
+        } else if (lectureTime) {
+          try {
+            const [h, m] = lectureTime.split(':').map(Number);
+            const period = h >= 12 ? 'م' : 'ص';
+            const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+            dateTimeText = ` (${hour12}:${m.toString().padStart(2, '0')} ${period})`;
+          } catch {
+            dateTimeText = ` (${lectureTime})`;
+          }
+        }
 
         // Try 'lecture' type first (better categorization), fall back to 'system' if DB constraint doesn't support it
         let usedType = 'lecture';
         const notifTitle = 'محاضرة جديدة';
-        const notifMessage = `أنشأ المعلم ${teacherName || 'المعلم'} محاضرة${titleText}${dateText}`;
+        const notifMessage = `أنشأ المعلم ${teacherName || 'المعلم'} محاضرة${titleText}${dateTimeText}`;
         const notifLink = `subject:${subjectId}`;
 
         // Try inserting with 'lecture' type for the first student

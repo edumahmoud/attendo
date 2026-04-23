@@ -133,3 +133,66 @@ Stage Summary:
 - Added 'lecture' notification type (TypeScript) with fallback to 'system' (DB constraint not yet updated)
 - Migration file created but needs to be applied manually via Supabase SQL Editor
 - The lecture creation notification now works end-to-end (verified with curl test)
+
+---
+Task ID: lecture-notification-time
+Agent: Main Agent
+Task: Add time with date in lecture notification message
+
+Work Log:
+- Updated lectures-tab.tsx handleCreateLecture to pass `lectureTime: newTime || null` to /api/notify
+- Updated /api/notify/route.ts `lecture_created` case to accept `lectureTime` parameter
+- Added comprehensive date+time formatting in Arabic (e.g., "١٥ أبريل ٢٠٢٦ - ٢:٣٠ م")
+- Handles all cases: date+time, date only, time only, neither
+- 12-hour Arabic time format (ص/م) for consistency with UI
+
+Stage Summary:
+- Lecture notifications now show both date AND time in the message
+- Format: "أنشأ المعلم X محاضرة "Y" (١٥ أبريل ٢٠٢٦ - ٢:٣٠ م)"
+
+---
+Task ID: manual-attendance-register
+Agent: Main Agent
+Task: Add teacher ability to manually register student in attendance
+
+Work Log:
+- Added state variables: absentStudents, loadingAbsent, manualRegistering, showAbsentList to lecture-modal.tsx
+- Added fetchAbsentStudents() function that compares enrolled students vs checked-in records
+- Added handleManualRegister() function that inserts attendance_records with check_in_method='manual'
+- Added "تسجيل يدوي" (Manual Register) button in attendance records header (only when absentCount > 0)
+- Added absent students list section with avatar, name, email, and "تسجيل حضور" button per student
+- Updated check_in_method display to show "يدوي" for manual registrations
+- Added 'manual' to check_in_method TypeScript type in types.ts
+- Added UserPlus icon import to lecture-modal.tsx
+
+Stage Summary:
+- Teachers can now manually register absent students from the lecture modal
+- "تسجيل يدوي" button appears in attendance header when there are absent students
+- Expands to show list of absent students with one-click registration
+- Manual registrations show "يدوي" badge in the attendance records list
+- DB already supports 'manual' check_in_method (verified with test insert)
+
+---
+Task ID: fix-gps-distance
+Agent: Main Agent
+Task: Fix GPS distance calculation showing 47295m when devices are next to each other
+
+Work Log:
+- Root cause: getCurrentPosition returns cached/inaccurate GPS coordinates when GPS is freshly activated
+- Created getAccuratePosition() helper using watchPosition instead of getCurrentPosition
+  - Watches GPS until accuracy ≤ 100m, with configurable timeout
+  - Returns best (most accurate) position seen during watch period
+  - maximumAge: 0 to prevent cached positions
+- Increased MAX_DISTANCE_METERS from 20 to 100 meters (GPS accuracy is typically 5-15m)
+- Added accuracy-based margin: effectiveMaxDistance = MAX_DISTANCE_METERS + min(accuracy*0.5, 50)
+- Updated teacher GPS capture: uses getAccuratePosition(12000) instead of getCurrentPosition with 5s timeout
+- Updated student GPS capture: uses getAccuratePosition(15000) instead of getCurrentPosition
+- Teacher toast now shows GPS accuracy: "تم بدء تسجيل الحضور مع تحديد الموقع (دقة 15م)"
+- Added MAX_GPS_ACCURACY constant (100m) to reject extremely inaccurate positions
+
+Stage Summary:
+- GPS now uses watchPosition for more accurate coordinates (waits for better fix)
+- Distance threshold increased from 20m to 100m to account for GPS inaccuracy
+- Added dynamic accuracy margin when GPS accuracy is poor
+- Teacher gets feedback on GPS accuracy when starting attendance
+- maximumAge: 0 prevents stale cached GPS coordinates

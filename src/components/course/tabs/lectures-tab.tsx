@@ -117,7 +117,65 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 }
 
-const MAX_DISTANCE_METERS = 20;
+const MAX_DISTANCE_METERS = 100;
+const MAX_GPS_ACCURACY = 100; // Reject GPS positions with accuracy worse than 100m
+
+// Get high-accuracy GPS position using watchPosition (more reliable than getCurrentPosition)
+function getAccuratePosition(timeoutMs: number = 15000): Promise<GeolocationPosition | null> {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+
+    let resolved = false;
+    let bestPosition: GeolocationPosition | null = null;
+    let watchId: number | null = null;
+
+    const cleanup = () => {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
+      if (!resolved) {
+        resolved = true;
+        // Return best position we got, even if not ideal
+        resolve(bestPosition);
+      }
+    };
+
+    // Timeout fallback
+    const tid = setTimeout(cleanup, timeoutMs);
+
+    watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        // Keep the best (most accurate) position so far
+        if (!bestPosition || pos.coords.accuracy < bestPosition.coords.accuracy) {
+          bestPosition = pos;
+        }
+
+        // If accuracy is good enough (under threshold), resolve immediately
+        if (pos.coords.accuracy <= MAX_GPS_ACCURACY && !resolved) {
+          clearTimeout(tid);
+          resolved = true;
+          if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+          resolve(pos);
+        }
+      },
+      () => {
+        // Error - but don't give up yet, the timeout might still give us a position
+        // If we already have a position, use it
+        if (bestPosition && !resolved) {
+          clearTimeout(tid);
+          resolved = true;
+          if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+          resolve(bestPosition);
+        }
+      },
+      { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 }
+    );
+  });
+}
 
 // -------------------------------------------------------
 // Pending file type for upload with rename + progress
@@ -451,6 +509,7 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
             lectureTitle: title,
             teacherName: profile.name,
             lectureDate: newDate || null,
+            lectureTime: newTime || null,
           }),
         });
       } catch {
@@ -532,18 +591,14 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
     if (startingAttendance) return;
     setStartingAttendance(lectureId);
     try {
-      // Get teacher GPS location with timeout fallback
-      let location: { lat: number; lon: number } | null = null;
+      // Get teacher GPS location with improved accuracy
+      let location: { lat: number; lon: number; accuracy: number } | null = null;
       if (navigator.geolocation) {
         try {
-          location = await new Promise<{ lat: number; lon: number } | null>((resolve) => {
-            const tid = setTimeout(() => resolve(null), 6000);
-            navigator.geolocation.getCurrentPosition(
-              (pos) => { clearTimeout(tid); resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }); },
-              () => { clearTimeout(tid); resolve(null); },
-              { enableHighAccuracy: true, timeout: 5000 }
-            );
-          });
+          const pos = await getAccuratePosition(12000);
+          if (pos) {
+            location = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy };
+          }
         } catch { /* continue without location */ }
       }
 
@@ -579,7 +634,7 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
         }
       }
 
-      toast.success(location ? 'تم بدء تسجيل الحضور مع تحديد الموقع' : 'تم بدء تسجيل الحضور');
+      toast.success(location ? `تم بدء تسجيل الحضور مع تحديد الموقع (دقة ${Math.round(location.accuracy)}م)` : 'تم بدء تسجيل الحضور');
       // Send notification to all students in the subject
       try {
         const lectureTitle = lectures.find((l) => l.id === lectureId)?.title || '';
@@ -755,14 +810,16 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
     try {
       let studentLat: number | null = null;
       let studentLon: number | null = null;
+      let studentAccuracy: number | null = null;
 
       if (navigator.geolocation) {
         try {
-          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
-          });
-          studentLat = pos.coords.latitude;
-          studentLon = pos.coords.longitude;
+          const pos = await getAccuratePosition(15000);
+          if (pos) {
+            studentLat = pos.coords.latitude;
+            studentLon = pos.coords.longitude;
+            studentAccuracy = pos.coords.accuracy;
+          }
         } catch {
           if (method === 'gps') {
             toast.error('تعذر تحديد موقعك. يرجى تفعيل خدمات الموقع.');
@@ -779,7 +836,12 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
 
         if (teacherLat && teacherLon) {
           const distance = calculateDistance(teacherLat, teacherLon, studentLat, studentLon);
-          if (distance > MAX_DISTANCE_METERS) {
+          // Add GPS accuracy margin to the distance check
+          // If GPS accuracy is poor, add extra tolerance
+          const accuracyMargin = studentAccuracy ? Math.min(studentAccuracy * 0.5, 50) : 0;
+          const effectiveMaxDistance = MAX_DISTANCE_METERS + accuracyMargin;
+          
+          if (distance > effectiveMaxDistance) {
             toast.error(`أنت بعيد عن المعلم بمسافة ${Math.round(distance)} متر. يجب أن تكون ضمن ${MAX_DISTANCE_METERS} متر.`);
             return;
           }

@@ -240,7 +240,7 @@ export interface AttendanceRecord {
   checked_in_at: string;
   student_latitude?: number | null;
   student_longitude?: number | null;
-  check_in_method?: 'qr' | 'gps' | null;
+  check_in_method?: 'qr' | 'gps' | 'manual' | null;
   created_at: string;
 }
 

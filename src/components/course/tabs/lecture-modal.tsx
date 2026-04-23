@@ -26,6 +26,7 @@ import {
   Pencil,
   Check,
   Plus,
+  UserPlus,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -210,6 +211,10 @@ export default function LectureModal({
   // ─── State ───
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecordWithStudent[]>([]);
   const [loadingRecords, setLoadingRecords] = useState(false);
+  const [absentStudents, setAbsentStudents] = useState<{ id: string; name: string; email: string; avatar_url: string | null }[]>([]);
+  const [loadingAbsent, setLoadingAbsent] = useState(false);
+  const [manualRegistering, setManualRegistering] = useState<string | null>(null);
+  const [showAbsentList, setShowAbsentList] = useState(false);
   const [notes, setNotes] = useState<LectureNoteWithAuthor[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
   const [newNote, setNewNote] = useState('');
@@ -255,6 +260,76 @@ export default function LectureModal({
     } catch { setAttendanceRecords([]); }
     finally { setLoadingRecords(false); }
   }, [lecture.attendance_session]);
+
+  // ─── Fetch absent students (enrolled but not checked in) ───
+  const fetchAbsentStudents = useCallback(async () => {
+    if (!lecture.attendance_session) { setAbsentStudents([]); return; }
+    setLoadingAbsent(true);
+    try {
+      // Get all approved students in the subject
+      const { data: enrollments } = await supabase
+        .from('subject_students')
+        .select('student_id')
+        .eq('subject_id', subjectId)
+        .eq('status', 'approved');
+
+      if (!enrollments || enrollments.length === 0) {
+        // Fallback: try without status filter
+        const { data: fallbackEnrollments } = await supabase
+          .from('subject_students')
+          .select('student_id')
+          .eq('subject_id', subjectId);
+        if (!fallbackEnrollments || fallbackEnrollments.length === 0) {
+          setAbsentStudents([]);
+          return;
+        }
+        const allStudentIds = fallbackEnrollments.map((e: { student_id: string }) => e.student_id);
+        const presentStudentIds = new Set(attendanceRecords.map((r) => r.student_id));
+        const absentIds = allStudentIds.filter((id: string) => !presentStudentIds.has(id));
+        if (absentIds.length === 0) { setAbsentStudents([]); return; }
+        const { data: students } = await supabase.from('users').select('id, name, email, avatar_url').in('id', absentIds);
+        setAbsentStudents((students || []) as { id: string; name: string; email: string; avatar_url: string | null }[]);
+        return;
+      }
+
+      const allStudentIds = enrollments.map((e: { student_id: string }) => e.student_id);
+      const presentStudentIds = new Set(attendanceRecords.map((r) => r.student_id));
+      const absentIds = allStudentIds.filter((id: string) => !presentStudentIds.has(id));
+
+      if (absentIds.length === 0) { setAbsentStudents([]); return; }
+
+      const { data: students } = await supabase.from('users').select('id, name, email, avatar_url').in('id', absentIds);
+      setAbsentStudents((students || []) as { id: string; name: string; email: string; avatar_url: string | null }[]);
+    } catch { setAbsentStudents([]); }
+    finally { setLoadingAbsent(false); }
+  }, [lecture.attendance_session, subjectId, attendanceRecords]);
+
+  // ─── Manually register a student as present ───
+  const handleManualRegister = async (studentId: string) => {
+    if (!lecture.attendance_session) return;
+    setManualRegistering(studentId);
+    try {
+      const { error } = await supabase.from('attendance_records').insert({
+        session_id: lecture.attendance_session.id,
+        student_id: studentId,
+        check_in_method: 'manual',
+      });
+      if (error) {
+        if (error.code === '23505') {
+          toast.error('تم تسجيل حضور هذا الطالب بالفعل');
+        } else {
+          toast.error('حدث خطأ أثناء تسجيل الحضور');
+        }
+      } else {
+        toast.success('تم تسجيل حضور الطالب بنجاح');
+        fetchAttendanceRecords();
+      }
+    } catch {
+      toast.error('حدث خطأ غير متوقع');
+    } finally {
+      setManualRegistering(null);
+    }
+  };
 
   // ─── Fetch lecture notes ───
   const fetchNotes = useCallback(async () => {
@@ -886,6 +961,18 @@ export default function LectureModal({
                       </h4>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-bold text-emerald-700">{presentCount}/{totalStudents}</span>
+                        {role === 'teacher' && absentCount > 0 && (
+                          <button
+                            onClick={() => {
+                              if (!showAbsentList) fetchAbsentStudents();
+                              setShowAbsentList(!showAbsentList);
+                            }}
+                            className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+                          >
+                            <UserPlus className="h-3.5 w-3.5" />
+                            تسجيل يدوي
+                          </button>
+                        )}
                         {role === 'teacher' && (
                           <button
                             onClick={handleExportExcel}
@@ -918,7 +1005,7 @@ export default function LectureModal({
                                 {record.check_in_method && (
                                   <Badge variant="outline" className="text-[9px]">
                                     <MapPin className="h-2.5 w-2.5 ml-0.5" />
-                                    {record.check_in_method === 'qr' ? 'QR' : 'GPS'}
+                                    {record.check_in_method === 'qr' ? 'QR' : record.check_in_method === 'gps' ? 'GPS' : 'يدوي'}
                                   </Badge>
                                 )}
                                 <span className="text-xs text-muted-foreground whitespace-nowrap">{formatTime(record.checked_in_at)}</span>
@@ -928,6 +1015,47 @@ export default function LectureModal({
                         </div>
                       )}
                     </div>
+
+                    {/* ─── Absent Students Section (Teacher only) ─── */}
+                    {role === 'teacher' && showAbsentList && (
+                      <div className="border-t">
+                        <div className="bg-amber-50/50 px-4 py-2.5 border-b">
+                          <p className="text-xs font-semibold text-amber-700 flex items-center gap-1.5">
+                            <UserX className="h-3.5 w-3.5" />
+                            الطلاب الغائبون ({absentStudents.length})
+                          </p>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto">
+                          {loadingAbsent ? (
+                            <div className="flex items-center justify-center py-6"><Loader2 className="h-4 w-4 animate-spin text-amber-500" /></div>
+                          ) : absentStudents.length === 0 ? (
+                            <div className="py-6 text-center text-xs text-muted-foreground">جميع الطلاب مسجلون ✓</div>
+                          ) : (
+                            <div className="divide-y">
+                              {absentStudents.map((student) => (
+                                <div key={student.id} className="flex items-center justify-between px-4 py-2.5 hover:bg-muted/30 transition-colors">
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <UserAvatar name={student.name} avatarUrl={student.avatar_url} size="sm" />
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-medium text-foreground truncate">{student.name}</p>
+                                      <p className="text-xs text-muted-foreground truncate">{student.email}</p>
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={() => handleManualRegister(student.id)}
+                                    disabled={manualRegistering === student.id}
+                                    className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60 transition-colors shrink-0"
+                                  >
+                                    {manualRegistering === student.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserCheck className="h-3 w-3" />}
+                                    تسجيل حضور
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
