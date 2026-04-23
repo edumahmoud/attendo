@@ -196,3 +196,42 @@ Stage Summary:
 - Added dynamic accuracy margin when GPS accuracy is poor
 - Teacher gets feedback on GPS accuracy when starting attendance
 - maximumAge: 0 prevents stale cached GPS coordinates
+
+---
+Task ID: gps-threshold-and-manual-attendance-fix
+Agent: Main Agent
+Task: 1) Set GPS distance max to 15-20 meters, 2) Fix manual attendance registration (error + redesign as dialog with search)
+
+Work Log:
+- Changed MAX_DISTANCE_METERS from 100 to 20 (user requested 15-20m max)
+- Reduced MAX_GPS_ACCURACY from 100 to 50 (reject GPS positions with accuracy worse than 50m)
+- Removed accuracy margin (was adding up to 50m extra tolerance) - now strict 20m check
+- Added GPS accuracy rejection in student check-in: if accuracy > 200m, shows error "دقة الموقع ضعيفة"
+- Added null island (0,0) coordinate validation to reject obviously wrong GPS data
+- Added console.log for GPS debugging (teacher coords, student coords, distance, accuracy)
+- Fixed manual attendance registration: was using direct Supabase insert which violated RLS (teacher can't insert on behalf of student) and CHECK constraint (check_in_method only allowed 'qr', 'gps')
+- Created new API endpoint /api/attendance/manual-register that uses service role key to bypass RLS
+  - Validates teacher owns the attendance session
+  - Validates session is active
+  - Checks for duplicate registration
+  - Falls back to inserting without check_in_method if 'manual' isn't in the CHECK constraint
+- Redesigned manual attendance UI from inline section to proper dialog
+  - Dialog with title "تسجيل حضور يدوي" and description "سجّل حضور طالب تحسباً لأي ظروف"
+  - Search input with search icon for filtering students by name/email
+  - Scrollable student list (max-h-96) with avatars
+  - One-click "تسجيل" button per student
+  - Students removed from list immediately after successful registration
+  - Footer shows count of absent students
+  - "تسجيل يدوي" button now always visible (not just when absentCount > 0)
+- Created migration SQL v5_manual_check_in.sql to update CHECK constraint and add RLS policy
+- Created migration API endpoint /api/migrate/manual-checkin for checking/applying the migration
+- Updated export Excel to show "يدوي" for manual check_in_method
+- Updated attendance records display to show "يدوي" for manual check_in_method
+
+Stage Summary:
+- GPS distance threshold is now strictly 20 meters (no accuracy margin)
+- Poor GPS accuracy (>200m) is rejected with clear error message
+- Null island coordinates (0,0) are rejected
+- Manual attendance registration now works via server-side API endpoint (bypasses RLS)
+- Manual attendance UI is now a proper dialog with search, scrollable list
+- Migration SQL created for adding 'manual' to CHECK constraint (works without it too via fallback)

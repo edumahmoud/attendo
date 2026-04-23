@@ -27,6 +27,7 @@ import {
   Check,
   Plus,
   UserPlus,
+  Search,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -214,7 +215,8 @@ export default function LectureModal({
   const [absentStudents, setAbsentStudents] = useState<{ id: string; name: string; email: string; avatar_url: string | null }[]>([]);
   const [loadingAbsent, setLoadingAbsent] = useState(false);
   const [manualRegistering, setManualRegistering] = useState<string | null>(null);
-  const [showAbsentList, setShowAbsentList] = useState(false);
+  const [manualDialogOpen, setManualDialogOpen] = useState(false);
+  const [manualSearchQuery, setManualSearchQuery] = useState('');
   const [notes, setNotes] = useState<LectureNoteWithAuthor[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
   const [newNote, setNewNote] = useState('');
@@ -309,20 +311,23 @@ export default function LectureModal({
     if (!lecture.attendance_session) return;
     setManualRegistering(studentId);
     try {
-      const { error } = await supabase.from('attendance_records').insert({
-        session_id: lecture.attendance_session.id,
-        student_id: studentId,
-        check_in_method: 'manual',
+      const res = await fetch('/api/attendance/manual-register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: lecture.attendance_session.id,
+          studentId,
+          teacherId: profile.id,
+        }),
       });
-      if (error) {
-        if (error.code === '23505') {
-          toast.error('تم تسجيل حضور هذا الطالب بالفعل');
-        } else {
-          toast.error('حدث خطأ أثناء تسجيل الحضور');
-        }
-      } else {
+      const data = await res.json();
+      if (res.ok && data.success) {
         toast.success('تم تسجيل حضور الطالب بنجاح');
         fetchAttendanceRecords();
+        // Remove the student from the absent list immediately
+        setAbsentStudents((prev) => prev.filter((s) => s.id !== studentId));
+      } else {
+        toast.error(data.error || 'حدث خطأ أثناء تسجيل الحضور');
       }
     } catch {
       toast.error('حدث خطأ غير متوقع');
@@ -503,7 +508,7 @@ export default function LectureModal({
         'اسم الطالب': r.student_name || 'طالب',
         'البريد الإلكتروني': r.student_email || '—',
         'وقت التسجيل': formatTime(r.checked_in_at),
-        'طريقة التسجيل': r.check_in_method === 'qr' ? 'مسح QR' : r.check_in_method === 'gps' ? 'GPS' : '—',
+        'طريقة التسجيل': r.check_in_method === 'qr' ? 'مسح QR' : r.check_in_method === 'gps' ? 'GPS' : r.check_in_method === 'manual' ? 'يدوي' : '—',
       }));
       const ws = XLSX.utils.json_to_sheet(data);
       XLSX.utils.book_append_sheet(wb, ws, 'سجل الحضور');
@@ -961,11 +966,12 @@ export default function LectureModal({
                       </h4>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-bold text-emerald-700">{presentCount}/{totalStudents}</span>
-                        {role === 'teacher' && absentCount > 0 && (
+                        {role === 'teacher' && (
                           <button
                             onClick={() => {
-                              if (!showAbsentList) fetchAbsentStudents();
-                              setShowAbsentList(!showAbsentList);
+                              setManualSearchQuery('');
+                              setManualDialogOpen(true);
+                              fetchAbsentStudents();
                             }}
                             className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 transition-colors"
                           >
@@ -1005,7 +1011,7 @@ export default function LectureModal({
                                 {record.check_in_method && (
                                   <Badge variant="outline" className="text-[9px]">
                                     <MapPin className="h-2.5 w-2.5 ml-0.5" />
-                                    {record.check_in_method === 'qr' ? 'QR' : record.check_in_method === 'gps' ? 'GPS' : 'يدوي'}
+                                    {record.check_in_method === 'qr' ? 'QR' : record.check_in_method === 'gps' ? 'GPS' : record.check_in_method === 'manual' ? 'يدوي' : '—'}
                                   </Badge>
                                 )}
                                 <span className="text-xs text-muted-foreground whitespace-nowrap">{formatTime(record.checked_in_at)}</span>
@@ -1015,49 +1021,129 @@ export default function LectureModal({
                         </div>
                       )}
                     </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-                    {/* ─── Absent Students Section (Teacher only) ─── */}
-                    {role === 'teacher' && showAbsentList && (
-                      <div className="border-t">
-                        <div className="bg-amber-50/50 px-4 py-2.5 border-b">
-                          <p className="text-xs font-semibold text-amber-700 flex items-center gap-1.5">
-                            <UserX className="h-3.5 w-3.5" />
-                            الطلاب الغائبون ({absentStudents.length})
-                          </p>
+      {/* ─── Manual Attendance Registration Dialog ─── */}
+      <AnimatePresence>
+        {manualDialogOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={() => setManualDialogOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md max-h-[80vh] rounded-2xl border bg-background shadow-xl overflow-hidden"
+              dir="rtl"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b px-5 py-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100">
+                    <UserPlus className="h-5 w-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">تسجيل حضور يدوي</h3>
+                    <p className="text-xs text-muted-foreground">سجّل حضور طالب تحسباً لأي ظروف</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setManualDialogOpen(false)}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Search */}
+              <div className="px-5 py-3 border-b">
+                <div className="relative">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={manualSearchQuery}
+                    onChange={(e) => setManualSearchQuery(e.target.value)}
+                    placeholder="ابحث بالاسم..."
+                    className="w-full rounded-xl border bg-background pr-10 pl-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
+                    dir="rtl"
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              {/* Student List */}
+              <div className="max-h-96 overflow-y-auto custom-scrollbar">
+                {loadingAbsent ? (
+                  <div className="flex items-center justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-amber-500" /></div>
+                ) : absentStudents.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 mb-3">
+                      <CheckCircle2 className="h-6 w-6 text-emerald-600" />
+                    </div>
+                    <p className="text-sm font-medium text-foreground">جميع الطلاب مسجلون ✓</p>
+                    <p className="text-xs text-muted-foreground mt-1">لا يوجد طلاب غائبون</p>
+                  </div>
+                ) : (
+                  <div className="divide-y">
+                    {absentStudents
+                      .filter((student) =>
+                        !manualSearchQuery.trim() ||
+                        student.name.toLowerCase().includes(manualSearchQuery.trim().toLowerCase()) ||
+                        student.email.toLowerCase().includes(manualSearchQuery.trim().toLowerCase())
+                      )
+                      .map((student) => (
+                      <div key={student.id} className="flex items-center justify-between px-5 py-3 hover:bg-muted/30 transition-colors">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <UserAvatar name={student.name} avatarUrl={student.avatar_url} size="sm" />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">{student.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">{student.email}</p>
+                          </div>
                         </div>
-                        <div className="max-h-48 overflow-y-auto">
-                          {loadingAbsent ? (
-                            <div className="flex items-center justify-center py-6"><Loader2 className="h-4 w-4 animate-spin text-amber-500" /></div>
-                          ) : absentStudents.length === 0 ? (
-                            <div className="py-6 text-center text-xs text-muted-foreground">جميع الطلاب مسجلون ✓</div>
-                          ) : (
-                            <div className="divide-y">
-                              {absentStudents.map((student) => (
-                                <div key={student.id} className="flex items-center justify-between px-4 py-2.5 hover:bg-muted/30 transition-colors">
-                                  <div className="flex items-center gap-2.5 min-w-0">
-                                    <UserAvatar name={student.name} avatarUrl={student.avatar_url} size="sm" />
-                                    <div className="min-w-0">
-                                      <p className="text-sm font-medium text-foreground truncate">{student.name}</p>
-                                      <p className="text-xs text-muted-foreground truncate">{student.email}</p>
-                                    </div>
-                                  </div>
-                                  <button
-                                    onClick={() => handleManualRegister(student.id)}
-                                    disabled={manualRegistering === student.id}
-                                    className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60 transition-colors shrink-0"
-                                  >
-                                    {manualRegistering === student.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserCheck className="h-3 w-3" />}
-                                    تسجيل حضور
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                        <button
+                          onClick={() => handleManualRegister(student.id)}
+                          disabled={manualRegistering === student.id}
+                          className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60 transition-colors shrink-0"
+                        >
+                          {manualRegistering === student.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserCheck className="h-3 w-3" />}
+                          تسجيل
+                        </button>
                       </div>
+                    ))}
+                    {absentStudents.filter((student) =>
+                      !manualSearchQuery.trim() ||
+                      student.name.toLowerCase().includes(manualSearchQuery.trim().toLowerCase()) ||
+                      student.email.toLowerCase().includes(manualSearchQuery.trim().toLowerCase())
+                    ).length === 0 && manualSearchQuery.trim() && (
+                      <div className="py-8 text-center text-xs text-muted-foreground">لا توجد نتائج مطابقة للبحث</div>
                     )}
                   </div>
                 )}
+              </div>
+
+              {/* Footer */}
+              <div className="border-t px-5 py-3 flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">
+                  {absentStudents.length > 0 ? `${absentStudents.length} طالب غائب` : ''}
+                </span>
+                <button
+                  onClick={() => setManualDialogOpen(false)}
+                  className="rounded-xl border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  إغلاق
+                </button>
               </div>
             </motion.div>
           </motion.div>

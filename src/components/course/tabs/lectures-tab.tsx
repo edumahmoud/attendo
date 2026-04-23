@@ -117,8 +117,8 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 }
 
-const MAX_DISTANCE_METERS = 100;
-const MAX_GPS_ACCURACY = 100; // Reject GPS positions with accuracy worse than 100m
+const MAX_DISTANCE_METERS = 20;
+const MAX_GPS_ACCURACY = 50; // Reject GPS positions with accuracy worse than 50m
 
 // Get high-accuracy GPS position using watchPosition (more reliable than getCurrentPosition)
 function getAccuratePosition(timeoutMs: number = 15000): Promise<GeolocationPosition | null> {
@@ -816,9 +816,17 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
         try {
           const pos = await getAccuratePosition(15000);
           if (pos) {
-            studentLat = pos.coords.latitude;
-            studentLon = pos.coords.longitude;
-            studentAccuracy = pos.coords.accuracy;
+            // Validate coordinates - reject null island (0,0) and obviously wrong coords
+            if (pos.coords.latitude === 0 && pos.coords.longitude === 0) {
+              if (method === 'gps') {
+                toast.error('لم يتم تحديد موقعك بدقة. يرجى تفعيل GPS والمحاولة مرة أخرى.');
+                return;
+              }
+            } else {
+              studentLat = pos.coords.latitude;
+              studentLon = pos.coords.longitude;
+              studentAccuracy = pos.coords.accuracy;
+            }
           }
         } catch {
           if (method === 'gps') {
@@ -836,12 +844,21 @@ export default function LecturesTab({ profile, role, subjectId, subject, teacher
 
         if (teacherLat && teacherLon) {
           const distance = calculateDistance(teacherLat, teacherLon, studentLat, studentLon);
-          // Add GPS accuracy margin to the distance check
-          // If GPS accuracy is poor, add extra tolerance
-          const accuracyMargin = studentAccuracy ? Math.min(studentAccuracy * 0.5, 50) : 0;
-          const effectiveMaxDistance = MAX_DISTANCE_METERS + accuracyMargin;
           
-          if (distance > effectiveMaxDistance) {
+          // Log GPS data for debugging
+          console.log('[GPS Check]', {
+            teacher: { lat: teacherLat, lon: teacherLon },
+            student: { lat: studentLat, lon: studentLon, accuracy: studentAccuracy },
+            distance: Math.round(distance),
+          });
+          
+          // Reject if GPS accuracy is too poor (likely IP-based location)
+          if (studentAccuracy && studentAccuracy > 200) {
+            toast.error(`دقة الموقع ضعيفة (${Math.round(studentAccuracy)} متر). يرجى تفعيل GPS والمحاولة مرة أخرى.`);
+            return;
+          }
+          
+          if (distance > MAX_DISTANCE_METERS) {
             toast.error(`أنت بعيد عن المعلم بمسافة ${Math.round(distance)} متر. يجب أن تكون ضمن ${MAX_DISTANCE_METERS} متر.`);
             return;
           }
