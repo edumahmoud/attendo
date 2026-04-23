@@ -117,7 +117,7 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 }
 
-const MAX_DISTANCE_METERS = 20;
+const MAX_DISTANCE_METERS = 100;
 
 // Simple, reliable GPS position acquisition.
 // Uses getCurrentPosition with enableHighAccuracy: true.
