@@ -21,10 +21,27 @@ export async function POST(request: Request) {
     }
 
     // 1. Verify the user is authenticated and is a teacher
-    const serverClient = await getSupabaseServerClient();
-    const { data: { user: authUser }, error: authError } = await serverClient.auth.getUser();
+    // Try Authorization header first, then fall back to cookie-based auth
+    let authUser = null;
+    const authHeader = request.headers.get('authorization');
 
-    if (authError || !authUser) {
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      const { data: { user: headerUser }, error: headerError } = await supabaseServer.auth.getUser(token);
+      if (!headerError && headerUser) {
+        authUser = headerUser;
+      }
+    }
+
+    if (!authUser) {
+      const serverClient = await getSupabaseServerClient();
+      const { data: { user: cookieUser }, error: cookieError } = await serverClient.auth.getUser();
+      if (!cookieError && cookieUser) {
+        authUser = cookieUser;
+      }
+    }
+
+    if (!authUser) {
       return NextResponse.json(
         { error: 'يجب تسجيل الدخول أولاً' },
         { status: 401 }

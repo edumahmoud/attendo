@@ -657,6 +657,15 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
   // -------------------------------------------------------
   // Link teacher handler (two-step: search then confirm)
   // -------------------------------------------------------
+  const getAuthHeaders = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token || '';
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    };
+  };
+
   const handleSearchTeacher = async () => {
     const code = teacherCode.trim().toUpperCase();
     if (!code) {
@@ -670,7 +679,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
     try {
       const response = await fetch('/api/link-teacher', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ teacherCode: code, action: 'search' }),
       });
 
@@ -699,7 +708,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
     try {
       const response = await fetch('/api/link-teacher', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ teacherCode: teacherCode.trim().toUpperCase() }),
       });
 
@@ -733,7 +742,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
     try {
       const response = await fetch('/api/link-teacher-unlink', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ teacherId }),
       });
 
@@ -763,7 +772,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
     try {
       const response = await fetch('/api/link-teacher-cancel', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ teacherId, action: 'cancel' }),
       });
 
@@ -790,7 +799,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
     try {
       const response = await fetch('/api/link-teacher-cancel', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ teacherId, action: 'dismiss' }),
       });
 
@@ -817,7 +826,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
     try {
       const response = await fetch('/api/link-student-approve', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ action: 'approve', teacherId, notificationId }),
       });
 
@@ -846,7 +855,7 @@ export default function StudentDashboard({ profile, onSignOut }: StudentDashboar
     try {
       const response = await fetch('/api/link-student-approve', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ action: 'reject', teacherId, notificationId }),
       });
 
